@@ -1,0 +1,55 @@
+import type { UnitBreakdown } from "../../lib/progress";
+import { Badge } from "../ui/Badge";
+import { Table } from "../ui/Table";
+import { formatDisplayDate } from "../../lib/workflow";
+
+export function MultiUnitSplitTable({ units }: { units: UnitBreakdown[] }) {
+  return (
+    <Table
+      keyFor={(u) => u.unitName}
+      rows={units}
+      emptyMessage="No unit/vendor movement recorded for this stage yet."
+      columns={[
+        {
+          header: "Unit / Vendor",
+          render: (u) => (
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-ink-900">{u.unitName}</span>
+              {u.isExternal && <Badge tone="info">External</Badge>}
+            </div>
+          ),
+        },
+        { header: "Allotted", render: (u) => u.qtyReceived.toLocaleString() },
+        { header: "Forwarded", render: (u) => u.qtyForwarded.toLocaleString() },
+        {
+          header: "Shortage",
+          render: (u) =>
+            u.qtyShortage > 0 ? (
+              <span className="font-medium text-status-bad">{u.qtyShortage.toLocaleString()}</span>
+            ) : (
+              "—"
+            ),
+        },
+        {
+          header: "Rejected",
+          render: (u) =>
+            u.qtyRejected > 0 ? (
+              <span className="font-medium text-status-bad">{u.qtyRejected.toLocaleString()}</span>
+            ) : (
+              "—"
+            ),
+        },
+        { header: "Returned", render: (u) => (u.qtyReturned > 0 ? u.qtyReturned.toLocaleString() : "—") },
+        {
+          header: "Status",
+          render: (u) => (
+            <Badge tone={u.isCompleted ? "good" : "warn"}>
+              {u.isCompleted ? "Completed" : "In progress"}
+            </Badge>
+          ),
+        },
+        { header: "Last Update", render: (u) => formatDisplayDate(u.lastEntryDate) },
+      ]}
+    />
+  );
+}
