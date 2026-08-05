@@ -14,7 +14,23 @@
   }
 
   ::selection {
-    @apply bg-ink-900 text-white;
+    @apply bg-brand text-white;
+  }
+}
+
+@layer components {
+  /* Frosted-glass surface for panels sitting on a colored/gradient backdrop. */
+  .glass-panel {
+    @apply border border-white/20 bg-white/10 backdrop-blur-xl;
+  }
+
+  /* Frosted-glass surface for light-mode cards on the app's neutral background. */
+  .glass-card {
+    @apply border border-white/60 bg-white/70 backdrop-blur-md;
+  }
+
+  .gradient-text {
+    @apply bg-brand-gradient bg-clip-text text-transparent;
   }
 }
 
@@ -25,5 +41,8 @@
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
     @apply bg-ink-200 rounded-full;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    @apply bg-ink-300;
   }
 }

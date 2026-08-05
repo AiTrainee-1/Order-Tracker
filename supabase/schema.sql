@@ -103,6 +103,7 @@ create table public.stage_entries (
   unit_name text,
   notes text,
   entered_by uuid not null references public.app_users(id),
+  forwarded_to_user_id uuid references public.app_users(id),
   created_at timestamptz not null default now()
 );
 

@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Button } from "../ui/Button";
 import { Input, Select, Textarea, Toggle } from "../ui/FormControls";
-import type { PurchaseOrder, UnitType } from "../../lib/types";
+import type { AppUser, PurchaseOrder, UnitType } from "../../lib/types";
 
 export interface StageEntryFormValues {
   po_id: string | null;
@@ -20,12 +20,15 @@ export interface StageEntryFormValues {
   is_returned: boolean;
   is_completed: boolean;
   notes: string;
+  forwarded_to_user_id: string | null;
 }
 
 export function StageEntryForm({
   unitType,
   purchaseOrders,
   lockedPoId,
+  possibleRecipients,
+  nextStageLabel,
   onSubmit,
   submitting,
   error,
@@ -33,6 +36,8 @@ export function StageEntryForm({
   unitType: UnitType;
   purchaseOrders: PurchaseOrder[];
   lockedPoId: string | null;
+  possibleRecipients: AppUser[];
+  nextStageLabel?: string;
   onSubmit: (values: StageEntryFormValues) => void;
   submitting: boolean;
   error?: string | null;
@@ -53,6 +58,7 @@ export function StageEntryForm({
   const [isReturned, setIsReturned] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [notes, setNotes] = useState("");
+  const [forwardedToUserId, setForwardedToUserId] = useState("");
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -73,6 +79,7 @@ export function StageEntryForm({
       is_returned: isReturned,
       is_completed: isCompleted,
       notes,
+      forwarded_to_user_id: forwardedToUserId || null,
     });
   }
 
@@ -163,6 +170,21 @@ export function StageEntryForm({
         <Toggle checked={isReturned} onChange={setIsReturned} label="Returned" description="Batch has returned from outside/external unit." />
         <Toggle checked={isCompleted} onChange={setIsCompleted} label="Section Completed" description="Mark this stage as fully completed for this order." />
       </div>
+
+      {possibleRecipients.length > 0 && (
+        <Select
+          label={`Forward To — Next Responsible Person${nextStageLabel ? ` (${nextStageLabel})` : ""}`}
+          value={forwardedToUserId}
+          onChange={(e) => setForwardedToUserId(e.target.value)}
+        >
+          <option value="">Not specified</option>
+          {possibleRecipients.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name} ({u.role})
+            </option>
+          ))}
+        </Select>
+      )}
 
       <Textarea label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any other relevant movement information…" />
 

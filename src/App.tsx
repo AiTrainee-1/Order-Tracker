@@ -4,6 +4,7 @@ import { AdminLayout } from "./components/layout/AdminLayout";
 import { UserLayout } from "./components/layout/UserLayout";
 import { LoginPage } from "./pages/LoginPage";
 import { DashboardPage } from "./pages/admin/DashboardPage";
+import { OrdersPage } from "./pages/admin/OrdersPage";
 import { OrderDetailPage } from "./pages/admin/OrderDetailPage";
 import { UsersPage } from "./pages/admin/UsersPage";
 import { AssignWorkPage } from "./pages/admin/AssignWorkPage";
@@ -25,6 +26,7 @@ export default function App() {
         }
       >
         <Route path="dashboard" element={<DashboardPage />} />
+        <Route path="orders" element={<OrdersPage />} />
         <Route path="orders/:orderId" element={<OrderDetailPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="assign" element={<AssignWorkPage />} />

@@ -1,15 +1,18 @@
 import { useState, type FormEvent } from "react";
 import { Button } from "../ui/Button";
-import { Input } from "../ui/FormControls";
-import { Toggle } from "../ui/FormControls";
+import { Input, Toggle } from "../ui/FormControls";
 import type { CreateUserInput } from "../../hooks/useUsers";
 
+const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
+
 export function UserForm({
+  existingUsernames,
   onSubmit,
   onCancel,
   submitting,
   error,
 }: {
+  existingUsernames: string[];
   onSubmit: (input: CreateUserInput) => void;
   onCancel: () => void;
   submitting: boolean;
@@ -18,16 +21,53 @@ export function UserForm({
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState("");
   const [isMonitorOnly, setIsMonitorOnly] = useState(false);
+  const [touched, setTouched] = useState(false);
+
+  const normalizedUsername = username.trim().toLowerCase();
+  const usernameTaken = existingUsernames.includes(normalizedUsername);
+
+  const usernameError = !touched
+    ? undefined
+    : !normalizedUsername
+      ? "Username is required."
+      : !USERNAME_PATTERN.test(normalizedUsername)
+        ? "3-32 characters: lowercase letters, numbers, dots, underscores, or hyphens only."
+        : usernameTaken
+          ? "This username is already in use."
+          : undefined;
+
+  const passwordError =
+    touched && password.length > 0 && password.length < 6
+      ? "Password must be at least 6 characters."
+      : touched && password.length === 0
+        ? "Password is required."
+        : undefined;
+
+  const isValid =
+    name.trim().length > 0 &&
+    role.trim().length > 0 &&
+    USERNAME_PATTERN.test(normalizedUsername) &&
+    !usernameTaken &&
+    password.length >= 6;
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    onSubmit({ name, username, password, role, isMonitorOnly });
+    setTouched(true);
+    if (!isValid) return;
+    onSubmit({
+      name: name.trim(),
+      username: normalizedUsername,
+      password,
+      role: role.trim(),
+      isMonitorOnly,
+    });
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4" noValidate>
       <Input label="Full Name" value={name} onChange={(e) => setName(e.target.value)} required />
       <Input
         label="Role / Designation"
@@ -42,23 +82,40 @@ export function UserForm({
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           autoComplete="off"
+          error={usernameError}
           required
         />
-        <Input
-          label="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete="new-password"
-          required
-        />
+        <div className="relative">
+          <Input
+            label="Password"
+            type={showPassword ? "text" : "password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+            error={passwordError}
+            className="pr-10"
+            required
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((v) => !v)}
+            className="absolute right-2.5 top-[34px] text-xs font-semibold text-brand hover:text-brand-dark"
+            tabIndex={-1}
+          >
+            {showPassword ? "Hide" : "Show"}
+          </button>
+        </div>
       </div>
+      <p className="-mt-2 text-xs text-ink-400">
+        Minimum 6 characters. The username becomes their login — it can't be changed later.
+      </p>
       <Toggle
         checked={isMonitorOnly}
         onChange={setIsMonitorOnly}
         label="Monitor Only"
         description="Can view assigned sections but cannot enter or modify production data."
       />
-      {error && <p className="text-sm text-status-bad">{error}</p>}
+      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-status-bad">{error}</p>}
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="secondary" onClick={onCancel}>
           Cancel

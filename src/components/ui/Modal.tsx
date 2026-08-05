@@ -16,9 +16,12 @@ export function Modal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-12 sm:pt-20">
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink-950/50 p-4 pt-12 backdrop-blur-sm sm:pt-20"
+      onClick={onClose}
+    >
       <div
-        className={`w-full ${widthClass} rounded-xl bg-white shadow-popover`}
+        className={`w-full ${widthClass} animate-fadeInUp rounded-2xl border border-white/60 bg-white shadow-popover`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
@@ -26,7 +29,7 @@ export function Modal({
           <button
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-700"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700"
           >
             ✕
           </button>

@@ -21,38 +21,43 @@ export function DashboardPage() {
   const stats = buildFleetStats(bundles.map((b) => b.progress));
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
-        <h1 className="text-xl font-semibold text-ink-900">Dashboard</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-ink-900">Dashboard</h1>
         <p className="text-sm text-ink-500">Fleet-wide view of every order in production.</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
-        <StatCard label="Total Orders" value={stats.totalOrders} />
-        <StatCard label="On Track" value={stats.onTrack} tone="good" />
-        <StatCard label="Due Soon" value={stats.dueSoon} tone="warn" />
-        <StatCard label="Delayed" value={stats.delayed} tone="bad" />
-        <StatCard label="Stages Completed" value={stats.totalCompletedStages} tone="good" />
-        <StatCard label="Stages Pending" value={stats.totalPendingStages} tone="warn" />
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <h2 className="mb-3 text-sm font-semibold text-ink-900">All Orders</h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {bundles.map((bundle) => (
-              <OrderCard key={bundle.order.id} bundle={bundle} />
-            ))}
-          </div>
+      <section>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+          <StatCard label="Total Orders" value={stats.totalOrders} icon="📦" />
+          <StatCard label="On Track" value={stats.onTrack} tone="good" icon="✓" />
+          <StatCard label="Due Soon" value={stats.dueSoon} tone="warn" icon="⏱" />
+          <StatCard label="Delayed" value={stats.delayed} tone="bad" icon="⚠" />
+          <StatCard label="Stages Completed" value={stats.totalCompletedStages} tone="brand" icon="🏁" />
+          <StatCard label="Stages Pending" value={stats.totalPendingStages} tone="warn" icon="⧗" />
         </div>
+      </section>
 
-        <Card className="h-fit">
-          <CardHeader title="Delivery Reminders" subtitle="Nearest deadlines first" />
+      <section>
+        <Card>
+          <CardHeader title="Delivery Reminders" subtitle="Nearest deadlines across every active order" />
           <CardBody>
             <DeliveryReminderList bundles={bundles} />
           </CardBody>
         </Card>
-      </div>
+      </section>
+
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-500">All Orders</h2>
+          <span className="text-xs text-ink-400">{bundles.length} total</span>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {bundles.map((bundle) => (
+            <OrderCard key={bundle.order.id} bundle={bundle} />
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

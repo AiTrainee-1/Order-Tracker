@@ -3,15 +3,15 @@ import { forwardRef, type InputHTMLAttributes, type ReactNode, type SelectHTMLAt
 function FieldWrapper({ label, error, children }: { label?: string; error?: string; children: ReactNode }) {
   return (
     <label className="block">
-      {label && <span className="mb-1 block text-xs font-medium text-ink-700">{label}</span>}
+      {label && <span className="mb-1.5 block text-xs font-semibold tracking-wide text-slate-600">{label}</span>}
       {children}
-      {error && <span className="mt-1 block text-xs text-status-bad">{error}</span>}
+      {error && <span className="mt-1 block text-xs font-medium text-rose-600">{error}</span>}
     </label>
   );
 }
 
 const baseInputClass =
-  "w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400 focus:border-ink-900 focus:outline-none focus:ring-1 focus:ring-ink-900 disabled:bg-ink-50 disabled:text-ink-400";
+  "w-full rounded-xl border border-slate-200 bg-white/80 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 shadow-sm transition-all focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 disabled:bg-slate-50 disabled:text-slate-400";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -35,7 +35,7 @@ interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
   ({ label, error, className = "", children, ...rest }, ref) => (
     <FieldWrapper label={label} error={error}>
-      <select ref={ref} className={`${baseInputClass} ${className}`} {...rest}>
+      <select ref={ref} className={`${baseInputClass} cursor-pointer ${className}`} {...rest}>
         {children}
       </select>
     </FieldWrapper>
@@ -51,7 +51,7 @@ interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ label, error, className = "", ...rest }, ref) => (
     <FieldWrapper label={label} error={error}>
-      <textarea ref={ref} className={`${baseInputClass} ${className}`} rows={3} {...rest} />
+      <textarea ref={ref} className={`${baseInputClass} resize-none ${className}`} rows={3} {...rest} />
     </FieldWrapper>
   ),
 );
@@ -69,23 +69,23 @@ export function Toggle({
   description?: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-1">
-      <div>
-        <p className="text-sm font-medium text-ink-800">{label}</p>
-        {description && <p className="text-xs text-ink-500">{description}</p>}
+    <div className="flex items-center justify-between gap-4 py-1.5">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-slate-800">{label}</p>
+        {description && <p className="mt-0.5 text-xs leading-snug text-slate-500">{description}</p>}
       </div>
       <button
         type="button"
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-          checked ? "bg-ink-900" : "bg-ink-200"
+        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 ${
+          checked ? "bg-gradient-to-r from-indigo-600 to-blue-500" : "bg-slate-200"
         }`}
       >
         <span
-          className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-            checked ? "translate-x-5" : "translate-x-0.5"
+          className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+            checked ? "translate-x-5" : "translate-x-0"
           }`}
         />
       </button>
@@ -103,14 +103,14 @@ export function Checkbox({
   label: ReactNode;
 }) {
   return (
-    <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-800">
+    <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 rounded border-ink-300 text-ink-900 focus:ring-ink-900"
+        className="h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
       />
-      {label}
+      <span className="leading-tight">{label}</span>
     </label>
   );
 }

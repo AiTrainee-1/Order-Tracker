@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
 import {
   useCreateUser,
+  useDeleteUser,
   useResetPassword,
   useUpdateUser,
   useUsers,
 } from "../../hooks/useUsers";
 import { useAssignments } from "../../hooks/useAssignments";
+import { useAuth } from "../../context/AuthContext";
 import { Card, CardBody, CardHeader } from "../../components/ui/Card";
 import { Table } from "../../components/ui/Table";
 import { Badge } from "../../components/ui/Badge";
@@ -16,6 +18,7 @@ import { Loader } from "../../components/ui/Loader";
 import { UserForm } from "../../components/forms/UserForm";
 import { StatCard } from "../../components/ui/StatCard";
 import { formatDisplayDate } from "../../lib/workflow";
+import { useToast } from "../../context/ToastContext";
 import type { AppUser } from "../../lib/types";
 import type { CreateUserInput } from "../../hooks/useUsers";
 
@@ -26,11 +29,14 @@ function isActiveToday(lastActivityAt: string | null): boolean {
 }
 
 export function UsersPage() {
+  const toast = useToast();
+  const { appUser } = useAuth();
   const { data: users, isLoading } = useUsers();
   const { data: assignments } = useAssignments();
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
   const resetPassword = useResetPassword();
+  const deleteUser = useDeleteUser();
 
   const [showCreate, setShowCreate] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -38,6 +44,8 @@ export function UsersPage() {
   const [resetTarget, setResetTarget] = useState<AppUser | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [resetError, setResetError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AppUser | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const sectionsByUser = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -49,6 +57,11 @@ export function UsersPage() {
     }
     return map;
   }, [assignments]);
+
+  const existingUsernames = useMemo(
+    () => (users ?? []).map((u) => u.username.toLowerCase()),
+    [users],
+  );
 
   if (isLoading) return <Loader full label="Loading users…" />;
 
@@ -70,8 +83,11 @@ export function UsersPage() {
     try {
       await createUser.mutateAsync(input);
       setShowCreate(false);
+      toast.success(`User "${input.name}" created successfully.`);
     } catch (err) {
-      setCreateError(err instanceof Error ? err.message : "Could not create user.");
+      const message = err instanceof Error ? err.message : "Could not create user.";
+      setCreateError(message);
+      toast.error(message);
     }
   }
 
@@ -82,25 +98,42 @@ export function UsersPage() {
       await resetPassword.mutateAsync({ userId: resetTarget.id, newPassword });
       setResetTarget(null);
       setNewPassword("");
+      toast.success("Password updated successfully.");
     } catch (err) {
-      setResetError(err instanceof Error ? err.message : "Could not reset password.");
+      const message = err instanceof Error ? err.message : "Could not reset password.";
+      setResetError(message);
+      toast.error(message);
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleteError(null);
+    try {
+      await deleteUser.mutateAsync({ userId: deleteTarget.id });
+      toast.success(`User "${deleteTarget.name}" deleted.`);
+      setDeleteTarget(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not delete user.";
+      setDeleteError(message);
+      toast.error(message);
     }
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-ink-900">Users</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-ink-900">Users</h1>
           <p className="text-sm text-ink-500">Create accounts, manage access, and monitor activity.</p>
         </div>
         <Button onClick={() => setShowCreate(true)}>+ Add User</Button>
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <StatCard label="Total Users" value={list.length} />
-        <StatCard label="Active Accounts" value={activeCount} tone="good" />
-        <StatCard label="Active Today" value={activeTodayCount} tone={activeTodayCount ? "good" : "warn"} />
+        <StatCard label="Total Users" value={list.length} tone="brand" icon="👥" />
+        <StatCard label="Active Accounts" value={activeCount} tone="good" icon="✓" />
+        <StatCard label="Active Today" value={activeTodayCount} tone={activeTodayCount ? "good" : "warn"} icon="⚡" />
       </div>
 
       <Card>
@@ -144,10 +177,10 @@ export function UsersPage() {
                 header: "Password",
                 render: (u) => (
                   <div className="flex items-center gap-2 font-mono text-xs">
-                    <span>{revealedIds.has(u.id) ? u.password_plain : "••••••••"}</span>
+                    <span className="min-w-[80px]">{revealedIds.has(u.id) ? u.password_plain : "••••••••"}</span>
                     <button
                       onClick={() => toggleReveal(u.id)}
-                      className="text-ink-400 hover:text-ink-900"
+                      className="rounded-md px-1.5 py-0.5 text-[11px] font-sans font-semibold text-brand hover:bg-indigo-50"
                       title="Toggle visibility"
                     >
                       {revealedIds.has(u.id) ? "Hide" : "View"}
@@ -179,10 +212,26 @@ export function UsersPage() {
               },
               {
                 header: "",
+                className: "text-right",
                 render: (u) => (
-                  <Button variant="ghost" size="sm" onClick={() => setResetTarget(u)}>
-                    Reset Password
-                  </Button>
+                  <div className="flex justify-end gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => setResetTarget(u)}>
+                      Reset Password
+                    </Button>
+                    {u.id !== appUser?.id && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-status-bad hover:bg-red-50"
+                        onClick={() => {
+                          setDeleteError(null);
+                          setDeleteTarget(u);
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    )}
+                  </div>
                 ),
               },
             ]}
@@ -192,6 +241,7 @@ export function UsersPage() {
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Add User">
         <UserForm
+          existingUsernames={existingUsernames}
           onSubmit={handleCreate}
           onCancel={() => setShowCreate(false)}
           submitting={createUser.isPending}
@@ -213,6 +263,28 @@ export function UsersPage() {
             </Button>
             <Button onClick={handleResetPassword} isLoading={resetPassword.isPending}>
               Save Password
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete User">
+        <div className="space-y-4">
+          <p className="text-sm text-ink-700">
+            This will permanently delete <span className="font-semibold">{deleteTarget?.name}</span>{" "}
+            (@{deleteTarget?.username}) and their login. This can't be undone.
+          </p>
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            If this user has ever submitted production entries, deletion will be blocked to protect
+            the order history — deactivate them instead in that case.
+          </p>
+          {deleteError && <p className="text-sm font-medium text-status-bad">{deleteError}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={handleDelete} isLoading={deleteUser.isPending}>
+              Delete Permanently
             </Button>
           </div>
         </div>

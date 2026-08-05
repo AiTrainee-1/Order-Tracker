@@ -76,6 +76,7 @@ export interface StageEntry {
   unit_name: string | null;
   notes: string | null;
   entered_by: string;
+  forwarded_to_user_id: string | null;
   created_at: string;
 }
 

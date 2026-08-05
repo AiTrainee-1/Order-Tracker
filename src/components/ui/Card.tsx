@@ -1,9 +1,15 @@
 import type { HTMLAttributes, ReactNode } from "react";
 
-export function Card({ className = "", children, ...rest }: HTMLAttributes<HTMLDivElement>) {
+interface CardProps extends HTMLAttributes<HTMLDivElement> {
+  glass?: boolean;
+}
+
+export function Card({ className = "", glass = false, children, ...rest }: CardProps) {
   return (
     <div
-      className={`rounded-xl border border-ink-100 bg-white shadow-card ${className}`}
+      className={`rounded-2xl border shadow-card transition-shadow ${
+        glass ? "glass-card" : "border-ink-100 bg-white"
+      } ${className}`}
       {...rest}
     >
       {children}
@@ -21,12 +27,12 @@ export function CardHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-ink-100 px-5 py-4">
-      <div>
+    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-ink-100 px-5 py-4">
+      <div className="min-w-0">
         <h3 className="text-sm font-semibold text-ink-900">{title}</h3>
-        {subtitle && <p className="mt-0.5 text-xs text-ink-500">{subtitle}</p>}
+        {subtitle && <p className="mt-0.5 truncate text-xs text-ink-500">{subtitle}</p>}
       </div>
-      {action}
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   );
 }

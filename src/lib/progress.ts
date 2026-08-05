@@ -29,6 +29,7 @@ export interface StageProgress {
   externalEntries: StageEntry[];
   unitBreakdown: UnitBreakdown[];
   responsibleUserIds: string[];
+  nextAssignedUserId: string | null;
   estimatedCompletionDate: string | null;
 }
 
@@ -107,6 +108,9 @@ export function buildOrderProgress(
 
     const responsibleUserIds = Array.from(new Set(stageEntries.map((e) => e.entered_by)));
 
+    const lastEntryWithForward = [...stageEntries].reverse().find((e) => e.forwarded_to_user_id);
+    const nextAssignedUserId = lastEntryWithForward?.forwarded_to_user_id ?? null;
+
     const estimatedCompletionDate = lastEntryDate
       ? addDays(lastEntryDate, stage.typical_duration_days)
       : null;
@@ -127,6 +131,7 @@ export function buildOrderProgress(
       externalEntries,
       unitBreakdown,
       responsibleUserIds,
+      nextAssignedUserId,
       estimatedCompletionDate,
     };
   });

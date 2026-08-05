@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import type { OrderBundle } from "../../hooks/useOrders";
+import { publicImageUrl } from "../../lib/supabaseClient";
 import { deliveryUrgency, formatDisplayDate, urgencyColorClasses } from "../../lib/workflow";
+import { GarmentPlaceholder } from "../ui/GarmentPlaceholder";
 
 export function DeliveryReminderList({ bundles }: { bundles: OrderBundle[] }) {
   const sorted = [...bundles]
@@ -17,34 +19,39 @@ export function DeliveryReminderList({ bundles }: { bundles: OrderBundle[] }) {
   }
 
   return (
-    <ul className="divide-y divide-ink-100">
+    <div className="scrollbar-thin -mx-1 flex gap-3 overflow-x-auto px-1 pb-1">
       {sorted.map(({ order, progress }) => {
         const urgency = deliveryUrgency(order.delivery_date);
+        const imageUrl = publicImageUrl(order.image_path);
         return (
-          <li key={order.id}>
-            <Link
-              to={`/admin/orders/${order.id}`}
-              className="flex items-center justify-between gap-3 px-1 py-3 hover:bg-ink-50/60"
+          <Link
+            key={order.id}
+            to={`/admin/orders/${order.id}`}
+            className="flex w-64 shrink-0 items-center gap-3 rounded-xl border border-ink-100 p-3 transition-colors hover:border-indigo-200 hover:bg-indigo-50/40"
+          >
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-ink-50">
+              {imageUrl ? (
+                <img src={imageUrl} alt={order.style} className="h-full w-full object-cover" />
+              ) : (
+                <GarmentPlaceholder className="h-5 w-5 text-ink-300" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-ink-900">{order.style}</p>
+              <p className="truncate text-xs text-ink-500">{formatDisplayDate(order.delivery_date)}</p>
+            </div>
+            <span
+              className={`shrink-0 rounded-full border px-2 py-1 text-xs font-semibold ${urgencyColorClasses[urgency]}`}
             >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-ink-900">{order.style}</p>
-                <p className="truncate text-xs text-ink-500">
-                  IO {order.io_no} · {order.color} · {formatDisplayDate(order.delivery_date)}
-                </p>
-              </div>
-              <span
-                className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${urgencyColorClasses[urgency]}`}
-              >
-                {progress.daysRemaining !== null
-                  ? progress.daysRemaining >= 0
-                    ? `${progress.daysRemaining}d`
-                    : `${Math.abs(progress.daysRemaining)}d late`
-                  : "—"}
-              </span>
-            </Link>
-          </li>
+              {progress.daysRemaining !== null
+                ? progress.daysRemaining >= 0
+                  ? `${progress.daysRemaining}d`
+                  : `${Math.abs(progress.daysRemaining)}d late`
+                : "—"}
+            </span>
+          </Link>
         );
       })}
-    </ul>
+    </div>
   );
 }

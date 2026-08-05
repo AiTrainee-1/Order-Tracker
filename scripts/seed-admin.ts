@@ -30,6 +30,7 @@ async function main() {
   const email = `${username.toLowerCase()}@${emailDomain}`;
 
   console.log(`Creating Supabase Auth user for "${username}" (${email})…`);
+  let userId: string;
   const { data: authUser, error: createError } = await admin.auth.admin.createUser({
     email,
     password,
@@ -37,12 +38,27 @@ async function main() {
   });
 
   if (createError) {
-    throw new Error(`Failed to create auth user: ${createError.message}`);
+    if (!/already been registered|already exists/i.test(createError.message)) {
+      throw new Error(`Failed to create auth user: ${createError.message}`);
+    }
+    // Re-running the script after a prior partial run (e.g. schema.sql wasn't
+    // applied yet) — the auth user already exists, so reuse it and just make
+    // sure its password matches what's configured.
+    console.log("Auth user already exists — reusing it and syncing the password…");
+    const { data: list, error: listError } = await admin.auth.admin.listUsers();
+    if (listError) throw new Error(`Failed to look up existing user: ${listError.message}`);
+    const existing = list.users.find((u) => u.email === email);
+    if (!existing) throw new Error(`Could not find existing auth user for ${email}.`);
+    userId = existing.id;
+    const { error: updateError } = await admin.auth.admin.updateUserById(userId, { password });
+    if (updateError) throw new Error(`Failed to sync password: ${updateError.message}`);
+  } else {
+    userId = authUser.user!.id;
   }
 
   console.log("Inserting app_users profile row…");
   const { error: profileError } = await admin.from("app_users").upsert({
-    id: authUser.user!.id,
+    id: userId,
     name: "Host Admin",
     username,
     password_plain: password,

@@ -113,9 +113,34 @@ export function OrderDetailPage() {
               <Metric label="Returned" value={selectedStage.qtyReturned.toLocaleString()} />
             </div>
 
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <InfoTile
+                label="Responsible Person(s)"
+                value={
+                  selectedStage.responsibleUserIds.length
+                    ? selectedStage.responsibleUserIds
+                        .map((id) => usersById.get(id)?.name ?? "Unknown")
+                        .join(", ")
+                    : "Not yet actioned"
+                }
+              />
+              <InfoTile
+                label="Next Assigned Person"
+                value={
+                  selectedStage.nextAssignedUserId
+                    ? usersById.get(selectedStage.nextAssignedUserId)?.name ?? "Unknown"
+                    : "Not specified"
+                }
+              />
+              <InfoTile
+                label="Next Process"
+                value={progress.stages[selectedIndex + 1]?.stage.label ?? "Final stage"}
+              />
+            </div>
+
             {!selectedStage.isCompleted && (
-              <p className="rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-600">
-                Estimated completion: <span className="font-medium text-ink-900">{formatDisplayDate(selectedStage.estimatedCompletionDate)}</span>
+              <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+                Estimated completion: <span className="font-semibold">{formatDisplayDate(selectedStage.estimatedCompletionDate)}</span>
                 {" "}(based on a typical {selectedStage.stage.typical_duration_days}-day cycle for this stage)
               </p>
             )}
@@ -214,6 +239,15 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: s
     <div>
       <p className="text-[11px] uppercase tracking-wide text-ink-400">{label}</p>
       <p className={`text-sm font-semibold ${tone ?? "text-ink-900"}`}>{value}</p>
+    </div>
+  );
+}
+
+function InfoTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-ink-100 bg-ink-50/60 px-3 py-2">
+      <p className="text-[11px] uppercase tracking-wide text-ink-400">{label}</p>
+      <p className="mt-0.5 truncate text-sm font-medium text-ink-800">{value}</p>
     </div>
   );
 }

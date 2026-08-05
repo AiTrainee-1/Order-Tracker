@@ -13,8 +13,10 @@ import { Button } from "../../components/ui/Button";
 import { Table } from "../../components/ui/Table";
 import { Badge } from "../../components/ui/Badge";
 import { Loader } from "../../components/ui/Loader";
+import { useToast } from "../../context/ToastContext";
 
 export function AssignWorkPage() {
+  const toast = useToast();
   const { data: users, isLoading: usersLoading } = useUsers();
   const { data: ordersData, isLoading: ordersLoading } = useOrdersList();
   const { data: stages, isLoading: stagesLoading } = useWorkflowStages();
@@ -75,17 +77,20 @@ export function AssignWorkPage() {
         ),
       );
       setSuccess(`Assigned ${sectionIds.size} section(s) successfully.`);
+      toast.success(`Assigned ${sectionIds.size} section(s) successfully.`);
       setSectionIds(new Set());
       setUnitName("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save assignment.");
+      const message = err instanceof Error ? err.message : "Could not save assignment.";
+      setError(message);
+      toast.error(message);
     }
   }
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-ink-900">Assign Work</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-ink-900">Assign Work</h1>
         <p className="text-sm text-ink-500">
           Scope exactly which order, PO, and section a user is responsible for.
         </p>
