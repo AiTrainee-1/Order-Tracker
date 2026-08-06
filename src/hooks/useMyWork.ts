@@ -4,13 +4,18 @@ import { supabase } from "../lib/supabaseClient";
 import type { StageEntry } from "../lib/types";
 import { useAssignments } from "./useAssignments";
 import { useWorkflowStages } from "./useWorkflowStages";
-import { buildOrderProgress, type StageProgress } from "../lib/progress";
+import { buildOrderProgress, type OrderProgress, type StageProgress } from "../lib/progress";
 import type { AssignmentWithDetails } from "../lib/types";
+
+export type GateStatus = "active" | "locked" | "completed";
 
 export interface WorkItem {
   assignment: AssignmentWithDetails;
   stageProgress: StageProgress | undefined;
+  orderProgress: OrderProgress;
   overallProgressPct: number;
+  /** Whether the order has actually reached this assignment's stage yet. */
+  gateStatus: GateStatus;
 }
 
 export function useMyWork(userId: string | undefined) {
@@ -43,12 +48,26 @@ export function useMyWork(userId: string | undefined) {
       .filter((a) => !!a.order)
       .map((a) => {
         const orderEntries = entries.filter((e) => e.order_id === a.order_id);
-        const progress = buildOrderProgress(a.order!, stagesQuery.data!, orderEntries);
-        const stageProgress = progress.stages.find((s) => s.stage.id === a.section_id);
+        const orderProgress = buildOrderProgress(a.order!, stagesQuery.data!, orderEntries);
+        const stageProgress = orderProgress.stages.find((s) => s.stage.id === a.section_id);
+        const sectionSequence = a.section?.sequence_no ?? -1;
+        const currentSequence = orderProgress.stages[orderProgress.currentStageIndex]?.stage.sequence_no ?? 0;
+
+        let gateStatus: GateStatus;
+        if (stageProgress?.isCompleted) {
+          gateStatus = "completed";
+        } else if (sectionSequence <= currentSequence) {
+          gateStatus = "active";
+        } else {
+          gateStatus = "locked";
+        }
+
         return {
           assignment: a,
           stageProgress,
-          overallProgressPct: progress.overallProgressPct,
+          orderProgress,
+          overallProgressPct: orderProgress.overallProgressPct,
+          gateStatus,
         };
       });
   }, [assignmentsQuery.data, stagesQuery.data, entriesQuery.data]);

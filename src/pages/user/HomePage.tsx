@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { useMyWork, type WorkItem } from "../../hooks/useMyWork";
+import { useMyWork, type GateStatus, type WorkItem } from "../../hooks/useMyWork";
 import { publicImageUrl } from "../../lib/supabaseClient";
 import { formatDisplayDate } from "../../lib/workflow";
 import { Card, CardBody } from "../../components/ui/Card";
@@ -14,7 +14,13 @@ import { Button } from "../../components/ui/Button";
 
 const PAGE_SIZE = 9;
 
-type StatusFilter = "all" | "pending" | "completed" | "monitor";
+type StatusFilter = "all" | "active" | "locked" | "completed" | "monitor";
+
+const GATE_BADGE: Record<GateStatus, { tone: "good" | "warn" | "neutral"; label: string }> = {
+  active: { tone: "warn", label: "Your Turn" },
+  completed: { tone: "good", label: "Completed" },
+  locked: { tone: "neutral", label: "Waiting" },
+};
 
 function matchesQuery(item: WorkItem, query: string): boolean {
   if (!query) return true;
@@ -36,8 +42,7 @@ function matchesQuery(item: WorkItem, query: string): boolean {
 function matchesStatus(item: WorkItem, status: StatusFilter): boolean {
   if (status === "all") return true;
   if (status === "monitor") return !item.assignment.can_enter_data;
-  if (status === "completed") return !!item.stageProgress?.isCompleted;
-  return item.assignment.can_enter_data && !item.stageProgress?.isCompleted;
+  return item.gateStatus === status;
 }
 
 export function HomePage() {
@@ -104,7 +109,8 @@ export function HomePage() {
                   onChange={(e) => updateStatus(e.target.value as StatusFilter)}
                 >
                   <option value="all">All</option>
-                  <option value="pending">Pending entry</option>
+                  <option value="active">Your turn now</option>
+                  <option value="locked">Waiting on earlier stage</option>
                   <option value="completed">Completed</option>
                   <option value="monitor">Monitor only</option>
                 </Select>
@@ -164,14 +170,19 @@ export function HomePage() {
 }
 
 function WorkItemCard({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
-  const { assignment, stageProgress, overallProgressPct } = item;
+  const { assignment, orderProgress, gateStatus } = item;
   const order = assignment.order!;
   const imageUrl = publicImageUrl(order.image_path);
-  const requiredAction = assignment.can_enter_data
-    ? stageProgress?.isCompleted
-      ? "Stage completed — awaiting next process"
-      : "Tap to enter today's production data"
-    : "Monitor only — tap to view status";
+  const gate = GATE_BADGE[gateStatus];
+  const currentStageLabel = orderProgress.stages[orderProgress.currentStageIndex]?.stage.label;
+
+  const requiredAction = !assignment.can_enter_data
+    ? "Monitor only — tap to view status"
+    : gateStatus === "completed"
+      ? "Your part is done — awaiting later stages"
+      : gateStatus === "locked"
+        ? `Waiting — order is at "${currentStageLabel}"`
+        : "Your turn — tap to enter today's production data";
 
   return (
     <button
@@ -179,22 +190,20 @@ function WorkItemCard({ item, onOpen }: { item: WorkItem; onOpen: () => void }) 
       onClick={onOpen}
       className="w-full appearance-none border-0 bg-transparent p-0 text-left"
     >
-      <Card className="h-full transition-all hover:-translate-y-0.5 hover:shadow-popover hover:ring-1 hover:ring-indigo-200">
+      <Card className="h-full hover:shadow-card-hover">
         <CardBody className="flex h-full flex-col gap-3">
           <div className="flex gap-3">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-ink-50">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-ink-100 bg-ink-50">
               {imageUrl ? (
                 <img src={imageUrl} alt={order.style} className="h-full w-full object-cover" />
               ) : (
-                <GarmentPlaceholder className="h-7 w-7 text-ink-300" />
+                <GarmentPlaceholder className="h-7 w-7 text-ink-500" />
               )}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
                 <p className="truncate text-sm font-semibold text-ink-900">{order.style}</p>
-                <Badge tone={assignment.can_enter_data ? "neutral" : "info"}>
-                  {assignment.can_enter_data ? "Entry" : "Monitor"}
-                </Badge>
+                {!assignment.can_enter_data && <Badge tone="info">Monitor</Badge>}
               </div>
               <p className="truncate text-xs text-ink-500">
                 IO {order.io_no} · {order.color} {assignment.po ? `· PO ${assignment.po.po_number}` : ""}
@@ -206,16 +215,14 @@ function WorkItemCard({ item, onOpen }: { item: WorkItem; onOpen: () => void }) 
             </div>
           </div>
 
-          <ProgressBar value={overallProgressPct} showLabel />
+          <ProgressBar value={orderProgress.overallProgressPct} showLabel />
 
           <div className="flex items-center justify-between text-xs">
             <span className="text-ink-500">Delivery {formatDisplayDate(order.delivery_date)}</span>
-            <Badge tone={stageProgress?.isCompleted ? "good" : "warn"}>
-              {stageProgress?.isCompleted ? "Completed" : "Pending"}
-            </Badge>
+            <Badge tone={gate.tone}>{gate.label}</Badge>
           </div>
 
-          <p className="mt-auto rounded-md bg-indigo-50 px-2 py-1.5 text-xs font-medium text-indigo-700">
+          <p className="mt-auto rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5 text-xs font-medium text-blue-700">
             {requiredAction}
           </p>
         </CardBody>

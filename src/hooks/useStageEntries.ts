@@ -35,6 +35,9 @@ export function useCreateStageEntry() {
       });
       queryClient.invalidateQueries({ queryKey: ["order_detail", variables.order_id] });
       queryClient.invalidateQueries({ queryKey: ["orders_bundle"] });
+      // Broad match (no exact id list) so every my_work_entries query, whatever
+      // order-set it was fetched with, re-checks the order's current stage.
+      queryClient.invalidateQueries({ queryKey: ["my_work_entries"] });
     },
   });
 }

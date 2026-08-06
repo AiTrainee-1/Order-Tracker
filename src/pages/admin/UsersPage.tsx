@@ -46,6 +46,11 @@ export function UsersPage() {
   const [resetError, setResetError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AppUser | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [editTarget, setEditTarget] = useState<AppUser | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editRole, setEditRole] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
 
   const sectionsByUser = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -106,6 +111,33 @@ export function UsersPage() {
     }
   }
 
+  function openEdit(u: AppUser) {
+    setEditTarget(u);
+    setEditName(u.name);
+    setEditRole(u.role);
+    setEditPhone(u.phone ?? "");
+    setEditError(null);
+  }
+
+  async function handleSaveEdit() {
+    if (!editTarget) return;
+    setEditError(null);
+    try {
+      await updateUser.mutateAsync({
+        id: editTarget.id,
+        name: editName.trim(),
+        role: editRole.trim(),
+        phone: editPhone.trim() || null,
+      });
+      toast.success("User details updated.");
+      setEditTarget(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not save changes.";
+      setEditError(message);
+      toast.error(message);
+    }
+  }
+
   async function handleDelete() {
     if (!deleteTarget) return;
     setDeleteError(null);
@@ -153,6 +185,7 @@ export function UsersPage() {
                 ),
               },
               { header: "Role", render: (u) => u.role },
+              { header: "Phone", render: (u) => u.phone || <span className="text-ink-300">—</span> },
               {
                 header: "Sections",
                 render: (u) => (
@@ -180,7 +213,7 @@ export function UsersPage() {
                     <span className="min-w-[80px]">{revealedIds.has(u.id) ? u.password_plain : "••••••••"}</span>
                     <button
                       onClick={() => toggleReveal(u.id)}
-                      className="rounded-md px-1.5 py-0.5 text-[11px] font-sans font-semibold text-brand hover:bg-indigo-50"
+                      className="rounded-md px-1.5 py-0.5 text-[11px] font-sans font-semibold text-brand hover:bg-blue-50"
                       title="Toggle visibility"
                     >
                       {revealedIds.has(u.id) ? "Hide" : "View"}
@@ -215,6 +248,9 @@ export function UsersPage() {
                 className: "text-right",
                 render: (u) => (
                   <div className="flex justify-end gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => openEdit(u)}>
+                      Edit
+                    </Button>
                     <Button variant="ghost" size="sm" onClick={() => setResetTarget(u)}>
                       Reset Password
                     </Button>
@@ -247,6 +283,29 @@ export function UsersPage() {
           submitting={createUser.isPending}
           error={createError}
         />
+      </Modal>
+
+      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title={`Edit ${editTarget?.name ?? ""}`}>
+        <div className="space-y-4">
+          <Input label="Full Name" value={editName} onChange={(e) => setEditName(e.target.value)} />
+          <Input label="Role / Designation" value={editRole} onChange={(e) => setEditRole(e.target.value)} />
+          <Input
+            label="Phone Number"
+            type="tel"
+            value={editPhone}
+            onChange={(e) => setEditPhone(e.target.value)}
+            placeholder="e.g. +91 98765 43210"
+          />
+          {editError && <p className="text-sm text-status-bad">{editError}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setEditTarget(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit} isLoading={updateUser.isPending}>
+              Save Changes
+            </Button>
+          </div>
+        </div>
       </Modal>
 
       <Modal open={!!resetTarget} onClose={() => setResetTarget(null)} title={`Reset password for ${resetTarget?.name ?? ""}`}>

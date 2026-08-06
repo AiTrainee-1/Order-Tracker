@@ -3,6 +3,20 @@ import { supabase } from "../lib/supabaseClient";
 import { uploadOrderImage } from "../lib/upload";
 import type { Order } from "../lib/types";
 
+export function useSetCutQuantity() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ orderId, cutQuantity }: { orderId: string; cutQuantity: number }) => {
+      const { error } = await supabase
+        .from("orders")
+        .update({ cut_quantity: cutQuantity })
+        .eq("id", orderId);
+      if (error) throw error;
+    },
+    onSuccess: (_data, variables) => invalidateOrderQueries(queryClient, variables.orderId),
+  });
+}
+
 export interface OrderPoInput {
   po_number: string;
   quantity: number;
@@ -23,6 +37,10 @@ export interface OrderFormInput {
 function invalidateOrderQueries(queryClient: ReturnType<typeof useQueryClient>, orderId?: string) {
   queryClient.invalidateQueries({ queryKey: ["orders_list"] });
   queryClient.invalidateQueries({ queryKey: ["orders_bundle"] });
+  // Assignments embed a joined `order:orders(*)` snapshot, so it needs
+  // invalidating too whenever an order field (like cut_quantity) changes.
+  queryClient.invalidateQueries({ queryKey: ["user_assignments"] });
+  queryClient.invalidateQueries({ queryKey: ["my_work_entries"] });
   if (orderId) queryClient.invalidateQueries({ queryKey: ["order_detail", orderId] });
 }
 

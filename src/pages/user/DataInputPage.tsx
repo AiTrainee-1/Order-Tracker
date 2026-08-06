@@ -1,49 +1,66 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { useAssignments } from "../../hooks/useAssignments";
-import { useOrdersList } from "../../hooks/useOrdersList";
-import { useCreateStageEntry, useRecentStageEntries } from "../../hooks/useStageEntries";
-import { useWorkflowStages } from "../../hooks/useWorkflowStages";
-import { useUsers } from "../../hooks/useUsers";
-import { useToast } from "../../context/ToastContext";
+import { useMyWork, type GateStatus, type WorkItem } from "../../hooks/useMyWork";
+import { useOrderAssignments } from "../../hooks/useAssignments";
+import { useUserContacts } from "../../hooks/useUserContacts";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardBody, CardHeader } from "../../components/ui/Card";
 import { Input } from "../../components/ui/FormControls";
 import { Button } from "../../components/ui/Button";
 import { Loader } from "../../components/ui/Loader";
-import { Table } from "../../components/ui/Table";
 import { Badge } from "../../components/ui/Badge";
+import { ProgressBar } from "../../components/ui/ProgressBar";
 import { GarmentPlaceholder } from "../../components/ui/GarmentPlaceholder";
 import { publicImageUrl } from "../../lib/supabaseClient";
-import { StageEntryForm, type StageEntryFormValues } from "../../components/forms/StageEntryForm";
 import { formatDisplayDate } from "../../lib/workflow";
-import type { AssignmentWithDetails } from "../../lib/types";
+import { GameLevelPath } from "../../components/dashboard/GameLevelPath";
+import { BackButton } from "../../components/ui/BackButton";
+import { StageFormRouter } from "../../components/forms/stage/StageFormRouter";
+import type { UserContact } from "../../lib/types";
 
-const PAGE_SIZE = 8;
+const GATE_BADGE: Record<GateStatus, { tone: "good" | "warn" | "neutral"; label: string }> = {
+  active: { tone: "warn", label: "Your Turn" },
+  completed: { tone: "good", label: "Completed" },
+  locked: { tone: "neutral", label: "Waiting" },
+};
 
-function matchesQuery(a: AssignmentWithDetails, query: string): boolean {
+type StatusFilter = "all" | "active" | "locked" | "completed";
+
+const STATUS_TABS: { key: StatusFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "active", label: "Your Turn" },
+  { key: "locked", label: "Waiting" },
+  { key: "completed", label: "Completed" },
+];
+
+function matchesQuery(item: WorkItem, query: string): boolean {
   if (!query) return true;
-  const haystack = [a.order?.style, a.order?.io_no, a.order?.color, a.section?.label, a.po?.po_number]
+  const { assignment } = item;
+  const haystack = [assignment.order?.style, assignment.order?.io_no, assignment.order?.color, assignment.section?.label, assignment.po?.po_number]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
   return haystack.includes(query.toLowerCase());
 }
 
+function matchesStatus(item: WorkItem, status: StatusFilter): boolean {
+  if (status === "all") return true;
+  return item.gateStatus === status;
+}
+
+const PAGE_SIZE = 8;
+
 export function DataInputPage() {
   const { appUser } = useAuth();
-  const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { data: assignments, isLoading: assignmentsLoading } = useAssignments(appUser?.id);
-  const { data: ordersData } = useOrdersList();
-  const { data: stages } = useWorkflowStages();
-  const { data: users } = useUsers();
-  const createEntry = useCreateStageEntry();
+  const { workItems, isLoading, isError } = useMyWork(appUser?.id);
+  const queryClient = useQueryClient();
 
   const [selectedAssignmentId, setSelectedAssignmentId] = useState(searchParams.get("assignment") ?? "");
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [page, setPage] = useState(1);
-  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     const fromUrl = searchParams.get("assignment");
@@ -51,20 +68,24 @@ export function DataInputPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  const allAssignments = useMemo(() => assignments ?? [], [assignments]);
-  const selected = allAssignments.find((a) => a.id === selectedAssignmentId);
+  const selected = workItems.find((w) => w.assignment.id === selectedAssignmentId);
 
+  const searched = useMemo(() => workItems.filter((w) => matchesQuery(w, query)), [workItems, query]);
   const filtered = useMemo(
-    () => allAssignments.filter((a) => matchesQuery(a, query)),
-    [allAssignments, query],
+    () => searched.filter((w) => matchesStatus(w, statusFilter)),
+    [searched, statusFilter],
   );
+  const tabCounts = useMemo(() => {
+    const counts: Record<StatusFilter, number> = { all: searched.length, active: 0, locked: 0, completed: 0 };
+    for (const w of searched) counts[w.gateStatus]++;
+    return counts;
+  }, [searched]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   function selectAssignment(id: string) {
     setSelectedAssignmentId(id);
-    setSubmitError(null);
     setSearchParams(id ? { assignment: id } : {});
   }
 
@@ -73,105 +94,33 @@ export function DataInputPage() {
     setPage(1);
   }
 
-  const purchaseOrdersForOrder = useMemo(
-    () => (ordersData?.purchaseOrders ?? []).filter((p) => p.order_id === selected?.order_id),
-    [ordersData, selected],
-  );
-
-  const nextStage = useMemo(() => {
-    if (!selected?.section || !stages) return undefined;
-    return stages.find((s) => s.sequence_no === selected.section!.sequence_no + 1);
-  }, [selected, stages]);
-
-  const possibleRecipients = useMemo(
-    () => (users ?? []).filter((u) => u.is_active && u.id !== appUser?.id),
-    [users, appUser],
-  );
-
-  const recentEntries = useRecentStageEntries(selected?.order_id, selected?.section_id);
-
-  if (assignmentsLoading) return <Loader full label="Loading your assignments…" />;
-
-  async function handleSubmit(values: StageEntryFormValues) {
-    if (!selected || !appUser) return;
-    setSubmitError(null);
-    try {
-      await createEntry.mutateAsync({
-        order_id: selected.order_id,
-        po_id: values.po_id,
-        section_id: selected.section_id,
-        entry_date: values.entry_date,
-        unit_type: selected.section?.unit_type ?? "PCS",
-        qty_received: values.qty_received,
-        qty_completed_today: values.qty_completed_today,
-        qty_forwarded: values.qty_forwarded,
-        qty_shortage: values.qty_shortage,
-        qty_rejected: values.qty_rejected,
-        qty_returned: values.qty_returned,
-        is_external: values.is_external,
-        external_unit_name: values.external_unit_name || null,
-        is_sent_outside: values.is_sent_outside,
-        is_returned: values.is_returned,
-        is_completed: values.is_completed,
-        branch: values.branch || null,
-        unit_name: values.unit_name || selected.unit_name || null,
-        notes: values.notes || null,
-        entered_by: appUser.id,
-        forwarded_to_user_id: values.forwarded_to_user_id,
-      });
-      toast.success("Entry saved — the Admin dashboard has been updated.");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not save entry.";
-      setSubmitError(message);
-      toast.error(message);
-    }
+  function updateStatusFilter(value: StatusFilter) {
+    setStatusFilter(value);
+    setPage(1);
   }
 
+  if (isLoading) return <Loader full label="Loading your assignments…" />;
+  if (isError) return <p className="text-sm text-status-bad">Couldn't load your assignments.</p>;
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div>
         <h1 className="text-xl font-bold tracking-tight text-ink-900">Data Input</h1>
-        <p className="text-sm text-ink-500">Find an order to log today's production movement.</p>
+        <p className="text-sm text-ink-500">Find an order to view its workflow and log production movement.</p>
       </div>
 
-      {allAssignments.length === 0 ? (
+      {workItems.length === 0 ? (
         <Card>
           <CardBody>
-            <p className="text-sm text-ink-500">
-              You have no assignments yet. Contact your Admin.
-            </p>
+            <p className="text-sm text-ink-500">You have no assignments yet. Contact your Admin.</p>
           </CardBody>
         </Card>
       ) : selected ? (
-        <Card glass className="border-indigo-100/60 bg-gradient-to-br from-indigo-50/60 to-white">
-          <CardBody className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">
-                {publicImageUrl(selected.order?.image_path) ? (
-                  <img
-                    src={publicImageUrl(selected.order?.image_path)!}
-                    alt={selected.order?.style}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <GarmentPlaceholder className="h-5 w-5 text-ink-300" />
-                )}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-ink-900">
-                  {selected.order?.style} — {selected.section?.label}
-                </p>
-                <p className="truncate text-xs text-ink-500">
-                  IO {selected.order?.io_no} · {selected.order?.color}
-                  {selected.po ? ` · PO ${selected.po.po_number}` : ""}
-                </p>
-              </div>
-            </div>
-            <Button variant="secondary" size="sm" onClick={() => selectAssignment("")}>
-              Change Order
-            </Button>
-          </CardBody>
-        </Card>
+        <SelectedAssignmentView
+          item={selected}
+          onChangeOrder={() => selectAssignment("")}
+          onForwarded={() => queryClient.invalidateQueries({ queryKey: ["my_work_entries"] })}
+        />
       ) : (
         <>
           <Card>
@@ -186,32 +135,82 @@ export function DataInputPage() {
             </CardBody>
           </Card>
 
+          <div className="flex flex-wrap gap-2">
+            {STATUS_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => updateStatusFilter(tab.key)}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                  statusFilter === tab.key
+                    ? "bg-brand-dark text-white shadow-card"
+                    : "bg-white text-ink-600 border border-ink-200 hover:bg-ink-50 hover:text-ink-900"
+                }`}
+              >
+                {tab.label}
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
+                    statusFilter === tab.key ? "bg-white/20 text-white" : "bg-ink-100 text-ink-600"
+                  }`}
+                >
+                  {tabCounts[tab.key]}
+                </span>
+              </button>
+            ))}
+          </div>
+
           <p className="text-xs text-ink-500">
             {filtered.length} matching assignment{filtered.length === 1 ? "" : "s"}
           </p>
 
-          <div className="space-y-2">
-            {pageItems.map((a) => (
-              <button
-                key={a.id}
-                type="button"
-                onClick={() => selectAssignment(a.id)}
-                className="flex w-full items-center justify-between gap-3 rounded-xl border border-ink-100 bg-white px-4 py-3 text-left shadow-card transition-colors hover:border-indigo-200 hover:bg-indigo-50/40"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-ink-900">
-                    {a.order?.style} — {a.section?.label}
-                  </p>
-                  <p className="truncate text-xs text-ink-500">
-                    IO {a.order?.io_no} · {a.order?.color}
-                    {a.po ? ` · PO ${a.po.po_number}` : ""}
-                  </p>
-                </div>
-                <Badge tone={a.can_enter_data ? "neutral" : "info"}>
-                  {a.can_enter_data ? "Entry" : "Monitor"}
-                </Badge>
-              </button>
-            ))}
+          <div className="space-y-3">
+            {pageItems.map((item) => {
+              const gate = GATE_BADGE[item.gateStatus];
+              const { assignment, orderProgress } = item;
+              const order = assignment.order;
+              const imageUrl = publicImageUrl(order?.image_path);
+              const currentStageLabel = orderProgress.stages[orderProgress.currentStageIndex]?.stage.label;
+              const nextAction = !assignment.can_enter_data
+                ? "Monitor only — tap to view status"
+                : item.gateStatus === "completed"
+                  ? "Your part is done — awaiting later stages"
+                  : item.gateStatus === "locked"
+                    ? `Waiting — order is currently at "${currentStageLabel}"`
+                    : "Your turn — tap to enter today's production data";
+
+              return (
+                <button
+                  key={item.assignment.id}
+                  type="button"
+                  onClick={() => selectAssignment(item.assignment.id)}
+                  className="flex w-full items-center gap-4 rounded-2xl border border-ink-100 bg-white p-4 text-left shadow-card transition-shadow hover:shadow-card-hover"
+                >
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-ink-100 bg-ink-50">
+                    {imageUrl ? (
+                      <img src={imageUrl} alt={order?.style} className="h-full w-full object-cover" />
+                    ) : (
+                      <GarmentPlaceholder className="h-6 w-6 text-ink-500" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="truncate text-sm font-semibold text-ink-900">
+                        {order?.style} — {assignment.section?.label}
+                      </p>
+                      <Badge tone={gate.tone}>{gate.label}</Badge>
+                    </div>
+                    <p className="truncate text-xs text-ink-500">
+                      IO {order?.io_no} · {order?.color}
+                      {assignment.po ? ` · PO ${assignment.po.po_number}` : ""}
+                    </p>
+                    <div className="mt-2">
+                      <ProgressBar value={orderProgress.overallProgressPct} showLabel size="sm" />
+                    </div>
+                    <p className="mt-1.5 text-xs font-medium text-blue-700">{nextAction}</p>
+                  </div>
+                </button>
+              );
+            })}
             {filtered.length === 0 && (
               <Card>
                 <CardBody>
@@ -223,94 +222,253 @@ export function DataInputPage() {
 
           {totalPages > 1 && (
             <div className="flex items-center justify-between pt-1">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage <= 1}
-              >
+              <Button variant="secondary" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage <= 1}>
                 ← Previous
               </Button>
               <span className="text-xs text-ink-500">
                 Page {currentPage} of {totalPages}
               </span>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage >= totalPages}
-              >
+              <Button variant="secondary" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}>
                 Next →
               </Button>
             </div>
           )}
         </>
       )}
+    </div>
+  );
+}
 
-      {selected && selected.can_enter_data && (
+function SelectedAssignmentView({
+  item,
+  onChangeOrder,
+  onForwarded,
+}: {
+  item: WorkItem;
+  onChangeOrder: () => void;
+  onForwarded: () => void;
+}) {
+  const { assignment, orderProgress, gateStatus } = item;
+  const order = assignment.order!;
+  const imageUrl = publicImageUrl(order.image_path);
+  const gate = GATE_BADGE[gateStatus];
+  const currentStage = orderProgress.stages[orderProgress.currentStageIndex]?.stage;
+
+  return (
+    <div className="space-y-6">
+      <BackButton onClick={onChangeOrder} label="Change Order" />
+
+      <Card>
+        <CardBody className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-ink-100 bg-ink-50">
+                {imageUrl ? (
+                  <img src={imageUrl} alt={order.style} className="h-full w-full object-cover" />
+                ) : (
+                  <GarmentPlaceholder className="h-7 w-7 text-ink-500" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-base font-semibold text-ink-900">{order.style}</p>
+                <p className="truncate text-xs text-ink-500">
+                  IO {order.io_no} · {order.color}
+                  {assignment.po ? ` · PO ${assignment.po.po_number}` : ""} · Delivery{" "}
+                  {formatDisplayDate(order.delivery_date)}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge tone="brand">Your stage: {assignment.section?.label}</Badge>
+              <Badge tone={gate.tone}>{gate.label}</Badge>
+            </div>
+          </div>
+          <ProgressBar value={orderProgress.overallProgressPct} showLabel />
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Complete Order Workflow"
+          subtitle={`Currently at: ${currentStage?.label ?? "—"} · ${orderProgress.completedStagesCount}/${orderProgress.stages.length} stages completed`}
+        />
+        <CardBody>
+          <GameLevelPath
+            stages={orderProgress.stages}
+            currentStageIndex={orderProgress.currentStageIndex}
+            selectedIndex={orderProgress.stages.findIndex((s) => s.stage.id === assignment.section_id)}
+            onSelect={() => {}}
+          />
+        </CardBody>
+      </Card>
+
+      <StageHistoryAndContacts item={item} />
+
+      {gateStatus === "active" && (
         <Card>
           <CardHeader
-            title="Log Production Movement"
-            subtitle="All fields save directly to the Admin dashboard"
-            action={<Badge tone="brand">{selected.section?.unit_type}</Badge>}
+            title={assignment.section?.label ?? "Data Entry"}
+            subtitle="This is the order's current stage — you can enter data now."
+            action={<Badge tone="brand">{assignment.section?.unit_type}</Badge>}
           />
           <CardBody>
-            <StageEntryForm
-              unitType={selected.section?.unit_type ?? "PCS"}
-              purchaseOrders={purchaseOrdersForOrder}
-              lockedPoId={selected.po_id}
-              possibleRecipients={possibleRecipients}
-              nextStageLabel={nextStage?.label}
-              onSubmit={handleSubmit}
-              submitting={createEntry.isPending}
-              error={submitError}
-            />
+            <StageFormRouter order={order} assignment={assignment} onForwarded={onForwarded} />
           </CardBody>
         </Card>
       )}
 
-      {selected && !selected.can_enter_data && (
+      {gateStatus === "locked" && (
         <Card>
           <CardBody>
-            <p className="rounded-lg bg-indigo-50 px-3 py-2.5 text-sm text-indigo-700">
-              You have monitor-only access to this section — you can review its status and history
-              below, but only an assigned data-entry user can submit updates.
-            </p>
+            <div className="flex flex-col items-center gap-2 rounded-xl bg-ink-50 py-10 text-center">
+              <span className="text-3xl">⏳</span>
+              <p className="text-sm font-semibold text-ink-800">Not your turn yet</p>
+              <p className="max-w-sm text-sm text-ink-500">
+                This order is currently at <span className="font-medium text-ink-700">{currentStage?.label}</span>.
+                Your assigned stage, <span className="font-medium text-ink-700">{assignment.section?.label}</span>,
+                hasn't been reached yet — it'll unlock automatically once every earlier stage is completed.
+              </p>
+            </div>
           </CardBody>
         </Card>
       )}
 
-      {selected && (
+      {gateStatus === "completed" && (
         <Card>
-          <CardHeader title="Recent Entries" subtitle="Last 20 submissions for this section" />
-          <CardBody>
-            {recentEntries.isLoading ? (
-              <Loader label="Loading recent entries…" />
-            ) : (
-              <Table
-                keyFor={(e) => e.id}
-                rows={recentEntries.data ?? []}
-                emptyMessage="No entries submitted yet."
-                columns={[
-                  { header: "Date", render: (e) => formatDisplayDate(e.entry_date) },
-                  { header: "Completed", render: (e) => e.qty_completed_today.toLocaleString() },
-                  { header: "Forwarded", render: (e) => e.qty_forwarded.toLocaleString() },
-                  { header: "Shortage", render: (e) => e.qty_shortage.toLocaleString() },
-                  { header: "Rejected", render: (e) => e.qty_rejected.toLocaleString() },
-                  {
-                    header: "Status",
-                    render: (e) => (
-                      <Badge tone={e.is_completed ? "good" : "warn"}>
-                        {e.is_completed ? "Completed" : "In progress"}
-                      </Badge>
-                    ),
-                  },
-                ]}
-              />
+          <CardHeader title={`${assignment.section?.label} — Completed`} subtitle="Read-only summary of what was entered" />
+          <CardBody className="space-y-4">
+            {item.stageProgress && (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Stat label={`Qty (${item.stageProgress.stage.unit_type})`} value={item.stageProgress.qtyReceived} />
+                <Stat label="Forwarded" value={item.stageProgress.qtyForwarded} />
+                <Stat label="Shortage" value={item.stageProgress.qtyShortage} tone={item.stageProgress.qtyShortage > 0 ? "bad" : undefined} />
+                <Stat label="Last Update" value={formatDisplayDate(item.stageProgress.lastEntryDate)} />
+              </div>
             )}
           </CardBody>
         </Card>
       )}
+    </div>
+  );
+}
+
+function StageHistoryAndContacts({ item }: { item: WorkItem }) {
+  const { assignment, orderProgress } = item;
+  const order = assignment.order!;
+  const mySequence = assignment.section?.sequence_no ?? 0;
+
+  const previousStages = orderProgress.stages.filter((s) => s.stage.sequence_no < mySequence);
+  const nextStageProgress = orderProgress.stages.find((s) => s.stage.sequence_no === mySequence + 1);
+
+  const orderAssignmentsQuery = useOrderAssignments(order.id);
+  const nextStageAssignees = useMemo(
+    () => (orderAssignmentsQuery.data ?? []).filter((a) => a.section_id === nextStageProgress?.stage.id),
+    [orderAssignmentsQuery.data, nextStageProgress],
+  );
+
+  const contactIds = useMemo(() => {
+    const ids = previousStages.flatMap((s) => s.responsibleUserIds);
+    ids.push(...nextStageAssignees.map((a) => a.user_id));
+    return ids;
+  }, [previousStages, nextStageAssignees]);
+
+  const { contactsById, isLoading: contactsLoading } = useUserContacts(contactIds);
+
+  return (
+    <Card>
+      <CardHeader
+        title="Stage History & Contacts"
+        subtitle="Who handled earlier stages, and who's next in line — with phone numbers for handoff"
+      />
+      <CardBody className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div>
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
+            Previous Stages
+          </h4>
+          {previousStages.length === 0 ? (
+            <p className="text-sm text-ink-400">This is the first stage — nothing precedes it.</p>
+          ) : (
+            <ul className="space-y-2">
+              {previousStages.map((s) => (
+                <li key={s.stage.id} className="rounded-lg border border-ink-100 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-ink-900">{s.stage.label}</p>
+                    <Badge tone={s.isCompleted ? "good" : "warn"}>
+                      {s.isCompleted ? "Completed" : "In Progress"}
+                    </Badge>
+                  </div>
+                  <p className="mt-0.5 text-xs text-ink-500">
+                    {s.lastEntryDate ? formatDisplayDate(s.lastEntryDate) : "Not started yet"}
+                  </p>
+                  <ContactList
+                    userIds={s.responsibleUserIds}
+                    contactsById={contactsById}
+                    isLoading={contactsLoading}
+                    emptyLabel="Not yet actioned"
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div>
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
+            Next Stage Contact
+          </h4>
+          {!nextStageProgress ? (
+            <p className="text-sm text-ink-400">This is the final stage — nothing follows.</p>
+          ) : (
+            <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-3">
+              <p className="text-sm font-medium text-ink-900">{nextStageProgress.stage.label}</p>
+              <ContactList
+                userIds={nextStageAssignees.map((a) => a.user_id)}
+                contactsById={contactsById}
+                isLoading={contactsLoading}
+                emptyLabel="No one assigned to this stage yet"
+              />
+            </div>
+          )}
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+function ContactList({
+  userIds,
+  contactsById,
+  isLoading,
+  emptyLabel,
+}: {
+  userIds: string[];
+  contactsById: Map<string, UserContact>;
+  isLoading: boolean;
+  emptyLabel: string;
+}) {
+  const uniqueIds = Array.from(new Set(userIds));
+  if (isLoading) return <p className="mt-1.5 text-xs text-ink-400">Loading contact…</p>;
+  if (uniqueIds.length === 0) return <p className="mt-1.5 text-xs text-ink-400">{emptyLabel}</p>;
+  return (
+    <div className="mt-1.5 space-y-1">
+      {uniqueIds.map((id) => {
+        const contact = contactsById.get(id);
+        return (
+          <p key={id} className="text-xs text-ink-700">
+            <span className="font-medium">{contact?.name ?? "Unknown"}</span>
+            {contact?.phone && <span className="text-ink-500"> · {contact.phone}</span>}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+function Stat({ label, value, tone }: { label: string; value: string | number; tone?: "bad" }) {
+  return (
+    <div className="rounded-lg bg-ink-50 px-3 py-2 text-center">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-400">{label}</p>
+      <p className={`mt-0.5 text-base font-bold ${tone === "bad" ? "text-status-bad" : "text-ink-900"}`}>{value}</p>
     </div>
   );
 }

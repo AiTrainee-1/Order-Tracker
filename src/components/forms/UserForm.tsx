@@ -23,6 +23,7 @@ export function UserForm({
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState("");
+  const [phone, setPhone] = useState("");
   const [isMonitorOnly, setIsMonitorOnly] = useState(false);
   const [touched, setTouched] = useState(false);
 
@@ -62,6 +63,7 @@ export function UserForm({
       username: normalizedUsername,
       password,
       role: role.trim(),
+      phone: phone.trim(),
       isMonitorOnly,
     });
   }
@@ -108,6 +110,16 @@ export function UserForm({
       </div>
       <p className="-mt-2 text-xs text-ink-400">
         Minimum 6 characters. The username becomes their login — it can't be changed later.
+      </p>
+      <Input
+        label="Phone Number"
+        type="tel"
+        value={phone}
+        onChange={(e) => setPhone(e.target.value)}
+        placeholder="e.g. +91 98765 43210"
+      />
+      <p className="-mt-2 text-xs text-ink-400">
+        Shown to teammates handing off work to or from this person.
       </p>
       <Toggle
         checked={isMonitorOnly}

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-type Tone = "neutral" | "good" | "warn" | "bad" | "info" | "brand";
+type Tone = "neutral" | "good" | "warn" | "bad" | "info" | "brand" | "external" | "shortage";
 
 const toneClasses: Record<Tone, string> = {
   neutral: "bg-ink-100 text-ink-600 ring-1 ring-inset ring-ink-200/60",
@@ -9,6 +9,8 @@ const toneClasses: Record<Tone, string> = {
   bad: "bg-red-50 text-red-700 ring-1 ring-inset ring-red-200",
   info: "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200",
   brand: "bg-brand-gradient text-white shadow-sm",
+  external: "bg-cyan-50 text-cyan-700 ring-1 ring-inset ring-cyan-200",
+  shortage: "bg-purple-50 text-purple-700 ring-1 ring-inset ring-purple-200",
 };
 
 export function Badge({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {

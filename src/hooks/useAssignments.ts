@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabaseClient";
-import type { AssignmentWithDetails } from "../lib/types";
+import type { AssignmentWithDetails, UserAssignment, WorkflowStage } from "../lib/types";
 
 const SELECT_WITH_DETAILS =
   "*, order:orders(*), po:purchase_orders(*), section:workflow_stages(*), user:app_users(*)";
@@ -14,6 +14,24 @@ export function useAssignments(userId?: string) {
       const { data, error } = await query.order("created_at", { ascending: false });
       if (error) throw error;
       return data as unknown as AssignmentWithDetails[];
+    },
+  });
+}
+
+/** Who else (across all users) is assigned to this order's stages — deliberately
+ * doesn't embed app_users (RLS would null it out for anyone but admin/self);
+ * resolve names/phones separately via useUserContacts. */
+export function useOrderAssignments(orderId: string | undefined) {
+  return useQuery({
+    queryKey: ["order_assignments", orderId],
+    enabled: !!orderId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("user_assignments")
+        .select("*, section:workflow_stages(*)")
+        .eq("order_id", orderId);
+      if (error) throw error;
+      return data as unknown as (UserAssignment & { section?: WorkflowStage })[];
     },
   });
 }

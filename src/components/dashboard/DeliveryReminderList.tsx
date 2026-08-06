@@ -27,13 +27,13 @@ export function DeliveryReminderList({ bundles }: { bundles: OrderBundle[] }) {
           <Link
             key={order.id}
             to={`/admin/orders/${order.id}`}
-            className="flex w-64 shrink-0 items-center gap-3 rounded-xl border border-ink-100 p-3 transition-colors hover:border-indigo-200 hover:bg-indigo-50/40"
+            className="flex w-64 shrink-0 items-center gap-3 rounded-xl border border-ink-100 bg-white p-3 shadow-card transition-shadow hover:shadow-card-hover"
           >
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-ink-50">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-ink-100 bg-ink-50">
               {imageUrl ? (
                 <img src={imageUrl} alt={order.style} className="h-full w-full object-cover" />
               ) : (
-                <GarmentPlaceholder className="h-5 w-5 text-ink-300" />
+                <GarmentPlaceholder className="h-5 w-5 text-ink-500" />
               )}
             </div>
             <div className="min-w-0 flex-1">

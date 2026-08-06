@@ -11,11 +11,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const { admin } = await requireAdminCaller(req);
-    const { name, username: rawUsername, password, role, isMonitorOnly } = req.body ?? {};
+    const { name, username: rawUsername, password, role, isMonitorOnly, phone } = req.body ?? {};
 
     const name_ = typeof name === "string" ? name.trim() : "";
     const username = typeof rawUsername === "string" ? rawUsername.trim().toLowerCase() : "";
     const role_ = typeof role === "string" ? role.trim() : "";
+    const phone_ = typeof phone === "string" && phone.trim() ? phone.trim() : null;
 
     if (!name_ || !username || !password || !role_) {
       res.status(400).json({ error: "Name, username, password and role are all required." });
@@ -63,6 +64,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       username,
       password_plain: password,
       role: role_,
+      phone: phone_,
       is_monitor_only: !!isMonitorOnly,
       is_active: true,
     });

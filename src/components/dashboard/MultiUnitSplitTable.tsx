@@ -15,7 +15,7 @@ export function MultiUnitSplitTable({ units }: { units: UnitBreakdown[] }) {
           render: (u) => (
             <div className="flex items-center gap-2">
               <span className="font-medium text-ink-900">{u.unitName}</span>
-              {u.isExternal && <Badge tone="info">External</Badge>}
+              {u.isExternal && <Badge tone="external">External</Badge>}
             </div>
           ),
         },
@@ -25,7 +25,7 @@ export function MultiUnitSplitTable({ units }: { units: UnitBreakdown[] }) {
           header: "Shortage",
           render: (u) =>
             u.qtyShortage > 0 ? (
-              <span className="font-medium text-status-bad">{u.qtyShortage.toLocaleString()}</span>
+              <span className="font-medium text-status-shortage">{u.qtyShortage.toLocaleString()}</span>
             ) : (
               "—"
             ),
@@ -34,7 +34,7 @@ export function MultiUnitSplitTable({ units }: { units: UnitBreakdown[] }) {
           header: "Rejected",
           render: (u) =>
             u.qtyRejected > 0 ? (
-              <span className="font-medium text-status-bad">{u.qtyRejected.toLocaleString()}</span>
+              <span className="font-medium text-status-rejected">{u.qtyRejected.toLocaleString()}</span>
             ) : (
               "—"
             ),

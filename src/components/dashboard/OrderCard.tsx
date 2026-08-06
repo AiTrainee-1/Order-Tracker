@@ -47,16 +47,16 @@ export function OrderCard({ bundle }: { bundle: OrderBundle }) {
   return (
     <Link
       to={`/admin/orders/${order.id}`}
-      className="group relative flex flex-col overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-card transition-all hover:-translate-y-1 hover:shadow-popover"
+      className="group relative flex flex-col overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-card transition-shadow hover:shadow-card-hover"
     >
       <span className={`absolute inset-x-0 top-0 h-1 ${statusRibbon[progress.status]}`} />
 
       <div className="flex items-center gap-3 border-b border-ink-100 p-4">
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-ink-50 ring-1 ring-ink-100">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-ink-100 bg-ink-50">
           {imageUrl ? (
             <img src={imageUrl} alt={order.style} className="h-full w-full object-cover" />
           ) : (
-            <GarmentPlaceholder className="h-8 w-8 text-ink-300" />
+            <GarmentPlaceholder className="h-8 w-8 text-ink-500" />
           )}
         </div>
         <div className="min-w-0 flex-1">

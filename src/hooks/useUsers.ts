@@ -77,6 +77,7 @@ export interface CreateUserInput {
   username: string;
   password: string;
   role: string;
+  phone: string;
   isMonitorOnly: boolean;
 }
 
@@ -107,6 +108,7 @@ export interface UpdateUserInput {
   id: string;
   name?: string;
   role?: string;
+  phone?: string | null;
   is_monitor_only?: boolean;
   is_active?: boolean;
 }

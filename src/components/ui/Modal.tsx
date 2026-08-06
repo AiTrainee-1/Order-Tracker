@@ -21,7 +21,7 @@ export function Modal({
       onClick={onClose}
     >
       <div
-        className={`w-full ${widthClass} animate-fadeInUp rounded-2xl border border-white/60 bg-white shadow-popover`}
+        className={`w-full ${widthClass} animate-fadeInUp rounded-2xl border border-ink-100 bg-white shadow-popover`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">

@@ -1,15 +1,34 @@
 export type UnitType = "KG" | "PCS";
 
+export type StageFormType =
+  | "confirmation"
+  | "material_planning"
+  | "simple_confirm"
+  | "material_inward"
+  | "fabric_processing"
+  | "store_check"
+  | "cutting"
+  | "dispatch_return"
+  | "sub_steps";
+
 export interface AppUser {
   id: string;
   name: string;
   username: string;
   password_plain: string;
   role: string;
+  phone: string | null;
   is_monitor_only: boolean;
   is_active: boolean;
   last_activity_at: string | null;
   created_at: string;
+}
+
+/** Safe, narrow view of another user — never includes username/password/role. */
+export interface UserContact {
+  id: string;
+  name: string;
+  phone: string | null;
 }
 
 export interface WorkflowStage {
@@ -19,6 +38,7 @@ export interface WorkflowStage {
   sequence_no: number;
   unit_type: UnitType;
   typical_duration_days: number;
+  form_type: StageFormType;
 }
 
 export interface Order {
@@ -30,6 +50,8 @@ export interface Order {
   fabric: string | null;
   image_path: string | null;
   total_qty: number;
+  /** Fixed PCS baseline set when Cutting completes; every later stage compares against this. */
+  cut_quantity: number | null;
   delivery_date: string | null;
   created_at: string;
 }
@@ -86,4 +108,21 @@ export interface AssignmentWithDetails extends UserAssignment {
   po?: PurchaseOrder | null;
   section?: WorkflowStage;
   user?: AppUser;
+}
+
+/** A named material/sub-step row within a stage (Yarn/Fabric/Trims/Accessories
+ * under Raw Material Planning, Line Feeding/Inline QC/... under Sewing, etc). */
+export interface StageSubItem {
+  id: string;
+  order_id: string;
+  section_id: string;
+  item_key: string;
+  item_label: string;
+  planned_qty: number;
+  completed_qty: number;
+  unit_type: UnitType;
+  is_completed: boolean;
+  notes: string | null;
+  updated_by: string | null;
+  updated_at: string;
 }

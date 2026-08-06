@@ -5,32 +5,34 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Cool slate-based neutral scale (kept the "ink" name used across the
-        // app; values match Tailwind's slate scale for a premium cool-gray tone).
+        // Corporate Blue neutral scale — cool navy-gray, matches the
+        // Dark Navy Text / Secondary Text / Muted Text / app background spec.
         ink: {
-          950: "#020617",
-          900: "#0f172a",
-          800: "#1e293b",
-          700: "#334155",
-          600: "#475569",
-          500: "#64748b",
-          400: "#94a3b8",
-          300: "#cbd5e1",
-          200: "#e2e8f0",
-          100: "#f1f5f9",
-          50: "#f8fafc",
+          950: "#0B1526",
+          900: "#101828",
+          800: "#1D2939",
+          700: "#344054",
+          600: "#475467",
+          500: "#667085",
+          400: "#98A2B3",
+          300: "#CBD5E1",
+          200: "#E4EAF2",
+          100: "#EEF2F8",
+          50: "#F4F7FC",
         },
         brand: {
-          DEFAULT: "#4f46e5",
-          light: "#6366f1",
-          dark: "#3730a3",
+          DEFAULT: "#155EEF",
+          light: "#2563EB",
+          dark: "#0B3FAE",
         },
         status: {
-          good: "#16a34a",
-          warn: "#d97706",
-          bad: "#dc2626",
-          info: "#2563eb",
-          idle: "#94a3b8",
+          good: "#16A34A",
+          warn: "#F59E0B",
+          bad: "#EF4444",
+          info: "#06B6D4",
+          shortage: "#9333EA",
+          rejected: "#DC2626",
+          idle: "#98A2B3",
         },
       },
       fontFamily: {
@@ -46,17 +48,17 @@ export default {
         ],
       },
       boxShadow: {
-        card: "0 1px 2px 0 rgba(15,23,42,0.04), 0 1px 3px 0 rgba(15,23,42,0.06)",
-        popover: "0 20px 40px -10px rgba(15,23,42,0.2)",
-        glow: "0 0 0 4px rgba(79,70,229,0.12)",
+        card: "0 1px 2px 0 rgba(16,24,40,0.04), 0 1px 3px 0 rgba(16,24,40,0.06)",
+        "card-hover": "0 4px 10px -2px rgba(16,24,40,0.08), 0 2px 6px -2px rgba(16,24,40,0.06)",
+        popover: "0 20px 40px -10px rgba(16,24,40,0.2)",
+        glow: "0 0 0 4px rgba(21,94,239,0.12)",
       },
       backgroundImage: {
-        "brand-gradient": "linear-gradient(135deg, #4338ca 0%, #4f46e5 45%, #2563eb 100%)",
+        "brand-gradient": "linear-gradient(135deg, #155EEF 0%, #2563EB 100%)",
         "good-gradient": "linear-gradient(135deg, #15803d 0%, #22c55e 100%)",
         "warn-gradient": "linear-gradient(135deg, #b45309 0%, #f59e0b 100%)",
         "bad-gradient": "linear-gradient(135deg, #b91c1c 0%, #ef4444 100%)",
-        "mesh-dark":
-          "radial-gradient(at 20% 20%, rgba(99,102,241,0.35) 0px, transparent 50%), radial-gradient(at 80% 0%, rgba(37,99,235,0.3) 0px, transparent 50%), radial-gradient(at 0% 100%, rgba(129,140,248,0.25) 0px, transparent 50%)",
+        "dot-grid": "radial-gradient(circle, rgba(16,24,40,0.07) 1px, transparent 1px)",
       },
       keyframes: {
         pulseSoft: {

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-type Tone = "neutral" | "good" | "warn" | "bad" | "brand";
+type Tone = "neutral" | "good" | "warn" | "bad" | "brand" | "shortage" | "rejected";
 
 const toneAccent: Record<Tone, string> = {
   neutral: "before:bg-ink-300",
@@ -8,14 +8,18 @@ const toneAccent: Record<Tone, string> = {
   warn: "before:bg-warn-gradient",
   bad: "before:bg-bad-gradient",
   brand: "before:bg-brand-gradient",
+  shortage: "before:bg-status-shortage",
+  rejected: "before:bg-status-rejected",
 };
 
 const toneValueColor: Record<Tone, string> = {
   neutral: "text-ink-900",
-  good: "text-green-700",
-  warn: "text-amber-700",
+  good: "text-ink-900",
+  warn: "text-ink-900",
   bad: "text-red-700",
   brand: "text-ink-900",
+  shortage: "text-purple-700",
+  rejected: "text-red-700",
 };
 
 const toneIconBg: Record<Tone, string> = {
@@ -23,7 +27,9 @@ const toneIconBg: Record<Tone, string> = {
   good: "bg-green-50 text-green-600",
   warn: "bg-amber-50 text-amber-600",
   bad: "bg-red-50 text-red-600",
-  brand: "bg-indigo-50 text-brand",
+  brand: "bg-blue-50 text-brand",
+  shortage: "bg-purple-50 text-purple-600",
+  rejected: "bg-red-50 text-red-700",
 };
 
 export function StatCard({
@@ -41,7 +47,7 @@ export function StatCard({
 }) {
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl border border-ink-100 bg-white p-4 shadow-card transition-transform hover:-translate-y-0.5 hover:shadow-popover before:absolute before:inset-y-0 before:left-0 before:w-1 ${toneAccent[tone]}`}
+      className={`relative overflow-hidden rounded-2xl border border-ink-100 bg-white p-4 shadow-card transition-shadow hover:shadow-card-hover before:absolute before:inset-y-0 before:left-0 before:w-1 ${toneAccent[tone]}`}
     >
       <div className="flex items-center justify-between pl-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">{label}</p>

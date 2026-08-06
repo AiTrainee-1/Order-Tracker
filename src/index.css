@@ -32,6 +32,16 @@
   .gradient-text {
     @apply bg-brand-gradient bg-clip-text text-transparent;
   }
+
+  /* Soft-raised neumorphic surface — cards, KPI tiles, filter bars. */
+  .neu-card {
+    @apply rounded-2xl border border-ink-200/60 bg-ink-50 shadow-neu;
+  }
+
+  /* Inset neumorphic surface — inputs, selects, search bars. */
+  .neu-inset {
+    @apply rounded-xl border border-ink-200/70 bg-ink-50 shadow-neu-inset;
+  }
 }
 
 @layer utilities {

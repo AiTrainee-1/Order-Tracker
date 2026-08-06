@@ -27,7 +27,7 @@ export function Table<T>({
   }
 
   return (
-    <div className="scrollbar-thin overflow-x-auto rounded-xl">
+    <div className="scrollbar-thin overflow-x-auto rounded-xl border border-ink-100">
       <table className="w-full min-w-[640px] text-left text-sm">
         <thead>
           <tr className="border-b border-ink-100 bg-ink-50/60 text-xs uppercase tracking-wide text-ink-500">
@@ -40,9 +40,9 @@ export function Table<T>({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={keyFor(row)} className="border-b border-ink-50 transition-colors last:border-0 hover:bg-indigo-50/40">
+            <tr key={keyFor(row)} className="border-b border-ink-100 transition-colors last:border-0 hover:bg-blue-50/60">
               {columns.map((col) => (
-                <td key={col.header} className={`px-3 py-3 align-middle text-ink-800 ${col.className ?? ""}`}>
+                <td key={col.header} className={`px-3 py-3.5 align-middle text-ink-800 ${col.className ?? ""}`}>
                   {col.render(row)}
                 </td>
               ))}

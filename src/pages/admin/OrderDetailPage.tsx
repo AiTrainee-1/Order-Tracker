@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useOrderDetail } from "../../hooks/useOrderDetail";
+import { useStageSubItems } from "../../hooks/useStageSubItems";
 import { publicImageUrl } from "../../lib/supabaseClient";
 import { deliveryUrgency, formatDisplayDate, urgencyTextClasses } from "../../lib/workflow";
 import { Card, CardBody, CardHeader } from "../../components/ui/Card";
@@ -8,15 +9,18 @@ import { Badge } from "../../components/ui/Badge";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import { Loader } from "../../components/ui/Loader";
 import { Table } from "../../components/ui/Table";
-import { StageTracker } from "../../components/dashboard/StageTracker";
+import { GameLevelPath } from "../../components/dashboard/GameLevelPath";
 import { MultiUnitSplitTable } from "../../components/dashboard/MultiUnitSplitTable";
 import { GarmentPlaceholder } from "../../components/ui/GarmentPlaceholder";
+import { BackButton } from "../../components/ui/BackButton";
 
 export function OrderDetailPage() {
   const { orderId } = useParams<{ orderId: string }>();
   const { order, purchaseOrders, entries, usersById, progress, isLoading, isError } =
     useOrderDetail(orderId);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const selectedSectionId = progress?.stages[selectedIndex]?.stage.id;
+  const subItemsQuery = useStageSubItems(order?.id, selectedSectionId);
 
   if (isLoading) return <Loader full label="Loading order…" />;
   if (isError || !order || !progress) {
@@ -29,17 +33,15 @@ export function OrderDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link to="/admin/dashboard" className="text-xs font-medium text-ink-500 hover:text-ink-900">
-        ← Back to Dashboard
-      </Link>
+      <BackButton to="/admin/dashboard" label="Back to Dashboard" />
 
       <Card>
         <CardBody className="flex flex-col gap-5 md:flex-row md:items-start">
-          <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-ink-50">
+          <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-ink-100 bg-ink-50">
             {imageUrl ? (
               <img src={imageUrl} alt={order.style} className="h-full w-full object-cover" />
             ) : (
-              <GarmentPlaceholder className="h-10 w-10 text-ink-300" />
+              <GarmentPlaceholder className="h-10 w-10 text-ink-500" />
             )}
           </div>
 
@@ -53,7 +55,11 @@ export function OrderDetailPage() {
             <p className="mt-1 text-xs text-ink-400">{order.fabric}</p>
 
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <Metric label="Total Qty" value={order.total_qty.toLocaleString() + " PCS"} />
+              <Metric label="Planned Qty" value={order.total_qty.toLocaleString() + " PCS"} />
+              <Metric
+                label="Fixed Qty (Post-Cutting)"
+                value={order.cut_quantity != null ? order.cut_quantity.toLocaleString() + " PCS" : "Not cut yet"}
+              />
               <Metric label="Delivery" value={formatDisplayDate(order.delivery_date)} />
               <Metric
                 label="Days Remaining"
@@ -77,7 +83,7 @@ export function OrderDetailPage() {
           subtitle={`${progress.completedStagesCount} completed · ${progress.pendingStagesCount} pending`}
         />
         <CardBody>
-          <StageTracker
+          <GameLevelPath
             stages={progress.stages}
             currentStageIndex={progress.currentStageIndex}
             selectedIndex={selectedIndex}
@@ -108,8 +114,8 @@ export function OrderDetailPage() {
               <Metric label={`Qty Allotted (${selectedStage.stage.unit_type})`} value={selectedStage.qtyReceived.toLocaleString()} />
               <Metric label="Forwarded" value={selectedStage.qtyForwarded.toLocaleString()} />
               <Metric label="Pending" value={selectedStage.qtyPending.toLocaleString()} />
-              <Metric label="Shortage" value={selectedStage.qtyShortage.toLocaleString()} tone="text-status-bad" />
-              <Metric label="Rejected" value={selectedStage.qtyRejected.toLocaleString()} tone="text-status-bad" />
+              <Metric label="Shortage" value={selectedStage.qtyShortage.toLocaleString()} tone="text-status-shortage" />
+              <Metric label="Rejected" value={selectedStage.qtyRejected.toLocaleString()} tone="text-status-rejected" />
               <Metric label="Returned" value={selectedStage.qtyReturned.toLocaleString()} />
             </div>
 
@@ -139,10 +145,43 @@ export function OrderDetailPage() {
             </div>
 
             {!selectedStage.isCompleted && (
-              <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+              <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">
                 Estimated completion: <span className="font-semibold">{formatDisplayDate(selectedStage.estimatedCompletionDate)}</span>
                 {" "}(based on a typical {selectedStage.stage.typical_duration_days}-day cycle for this stage)
               </p>
+            )}
+
+            {(subItemsQuery.data?.length ?? 0) > 0 && (
+              <div>
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
+                  Material / Step Breakdown
+                </h4>
+                <Table
+                  keyFor={(s) => s.id}
+                  rows={subItemsQuery.data!}
+                  columns={[
+                    { header: "Item", render: (s) => s.item_label },
+                    {
+                      header: `Planned (${subItemsQuery.data![0].unit_type})`,
+                      render: (s) => s.planned_qty.toLocaleString(),
+                    },
+                    { header: "Completed", render: (s) => s.completed_qty.toLocaleString() },
+                    {
+                      header: "Balance",
+                      render: (s) => Math.max(s.planned_qty - s.completed_qty, 0).toLocaleString(),
+                    },
+                    {
+                      header: "Status",
+                      render: (s) => (
+                        <Badge tone={s.is_completed ? "good" : "warn"}>
+                          {s.is_completed ? "Complete" : "In Progress"}
+                        </Badge>
+                      ),
+                    },
+                    { header: "Updated", render: (s) => formatDisplayDate(s.updated_at) },
+                  ]}
+                />
+              </div>
             )}
 
             <div>
@@ -172,7 +211,7 @@ export function OrderDetailPage() {
                     header: "External",
                     render: (e) =>
                       e.is_external ? (
-                        <Badge tone="info">{e.external_unit_name || "External"}</Badge>
+                        <Badge tone="external">{e.external_unit_name || "External"}</Badge>
                       ) : (
                         "—"
                       ),

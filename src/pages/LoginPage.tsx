@@ -1,28 +1,10 @@
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/FormControls";
 import { Loader } from "../components/ui/Loader";
 import { BrandMark } from "../components/ui/BrandMark";
-
-const highlights = [
-  {
-    icon: "🧵",
-    title: "End-to-End Tracking",
-    body: "Follow every order from raw material planning through carton packing, in one place.",
-  },
-  {
-    icon: "📊",
-    title: "Live Dashboard",
-    body: "Quantities, shortages, and delivery countdowns update the moment the floor logs them.",
-  },
-  {
-    icon: "🏭",
-    title: "Multi-Unit Visibility",
-    body: "See exactly what's in-house, what's with an external unit, and what's still pending.",
-  },
-];
 
 export function LoginPage() {
   const { appUser, loading, login } = useAuth();
@@ -53,60 +35,39 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-ink-950 md:grid md:grid-cols-[1.15fr_1fr]">
-      {/* Branding / company introduction panel */}
-      <div className="relative hidden flex-col justify-between overflow-hidden bg-ink-950 p-12 text-white md:flex">
-        <div className="absolute inset-0 bg-mesh-dark" />
-        <div className="absolute -left-24 top-1/3 h-72 w-72 animate-floatSlow rounded-full bg-indigo-600/20 blur-3xl" />
-        <div className="absolute -right-16 bottom-10 h-64 w-64 animate-floatSlow rounded-full bg-blue-500/20 blur-3xl [animation-delay:1.5s]" />
-
-        <div className="relative flex items-center gap-3">
+    <div className="flex min-h-screen flex-col md:flex-row">
+      <div className="flex flex-col justify-between border-b border-ink-100 bg-ink-50 px-6 py-8 md:w-1/2 md:border-b-0 md:border-r md:px-14 md:py-14">
+        <div className="flex items-center gap-3">
           <BrandMark size={40} />
           <div>
-            <p className="text-lg font-semibold tracking-tight">UK TEXTILES</p>
-            <p className="text-xs text-indigo-200/80">Garment Order Tracking System</p>
+            <p className="text-base font-bold tracking-tight text-ink-900">UK TEXTILES</p>
+            <p className="text-xs text-ink-500">Excellence in Every Thread</p>
           </div>
         </div>
 
-        <div className="relative max-w-md">
-          <h1 className="text-3xl font-bold leading-tight tracking-tight">
-            Complete visibility, from PO to carton.
+        <div className="my-10 md:my-0">
+          <h1 className="text-3xl font-bold leading-tight tracking-tight text-ink-900 md:text-4xl">
+            Garment order tracking, <span className="text-brand">simplified.</span>
           </h1>
-          <p className="mt-4 text-sm leading-relaxed text-indigo-100/80">
-            UK Textiles runs its production floor on this platform — every order, every stage,
-            every quantity tracked in real time so nothing gets lost between departments and
-            external units.
+          <p className="mt-3 max-w-sm text-sm text-ink-600">
+            Track every order from PO to packing across the full 13-stage production workflow — in
+            real time.
           </p>
 
-          <div className="mt-8 space-y-4">
-            {highlights.map((h) => (
-              <div key={h.title} className="flex items-start gap-3 rounded-xl glass-panel p-3">
-                <span className="text-xl">{h.icon}</span>
-                <div>
-                  <p className="text-sm font-semibold text-white">{h.title}</p>
-                  <p className="text-xs text-indigo-100/70">{h.body}</p>
-                </div>
-              </div>
-            ))}
+          <div className="mt-8 space-y-3">
+            <FeatureRow icon="📦" tone="brand" text="13-stage production workflow tracking" />
+            <FeatureRow icon="⏱" tone="warn" text="Live delivery countdowns & urgency alerts" />
+            <FeatureRow icon="👥" tone="good" text="Role-based assignments, monitor-only access" />
           </div>
         </div>
 
-        <p className="relative text-xs text-indigo-200/50">
-          © {new Date().getFullYear()} UK Textiles. Internal production tracking platform.
+        <p className="hidden text-xs text-ink-400 md:block">
+          © {new Date().getFullYear()} UK Textiles. All rights reserved.
         </p>
       </div>
 
-      {/* Login form panel */}
-      <div className="flex min-h-screen items-center justify-center bg-ink-50 px-4 py-12 md:bg-white">
+      <div className="flex flex-1 items-center justify-center bg-white px-4 py-10 md:px-8">
         <div className="w-full max-w-sm">
-          <div className="mb-8 flex items-center gap-3 md:hidden">
-            <BrandMark size={36} />
-            <div>
-              <p className="text-base font-semibold tracking-tight text-ink-900">UK TEXTILES</p>
-              <p className="text-xs text-ink-500">Garment Order Tracking</p>
-            </div>
-          </div>
-
           <div className="rounded-2xl border border-ink-100 bg-white p-8 shadow-popover">
             <h2 className="text-lg font-bold tracking-tight text-ink-900">Welcome back</h2>
             <p className="mt-1 text-sm text-ink-500">Sign in to continue to your workspace.</p>
@@ -142,7 +103,7 @@ export function LoginPage() {
               </div>
 
               {error && (
-                <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-status-bad">
+                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-status-bad">
                   {error}
                 </p>
               )}
@@ -158,6 +119,25 @@ export function LoginPage() {
           </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+const featureIconTone: Record<"brand" | "warn" | "good", string> = {
+  brand: "bg-blue-50 text-brand",
+  warn: "bg-amber-50 text-amber-600",
+  good: "bg-green-50 text-green-600",
+};
+
+function FeatureRow({ icon, tone, text }: { icon: ReactNode; tone: "brand" | "warn" | "good"; text: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-base ${featureIconTone[tone]}`}
+      >
+        {icon}
+      </span>
+      <p className="text-sm font-medium text-ink-700">{text}</p>
     </div>
   );
 }

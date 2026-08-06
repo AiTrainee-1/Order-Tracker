@@ -19,23 +19,28 @@ create table public.app_users (
   username text not null unique,
   password_plain text not null,
   role text not null default 'user',
+  phone text,
   is_monitor_only boolean not null default false,
   is_active boolean not null default true,
   last_activity_at timestamptz,
   created_at timestamptz not null default now()
 );
 
--- The 13 main workflow headings, in pipeline order.
+-- The 13 main workflow stages, in pipeline order. form_type selects which
+-- specialized data-entry form the User Panel renders for that stage.
 create table public.workflow_stages (
   id uuid primary key default gen_random_uuid(),
   key text not null unique,
   label text not null,
   sequence_no int not null unique,
   unit_type text not null check (unit_type in ('KG', 'PCS')),
-  typical_duration_days int not null default 3
+  typical_duration_days int not null default 3,
+  form_type text not null
 );
 
--- One row per IO/No + Style + Color.
+-- One row per IO/No + Style + Color. cut_quantity is the fixed PCS baseline
+-- established when Cutting is completed — every stage after Cutting compares
+-- its own completed quantity against this fixed number (shortage/surplus).
 create table public.orders (
   id uuid primary key default gen_random_uuid(),
   io_no text not null,
@@ -45,6 +50,7 @@ create table public.orders (
   fabric text,
   image_path text,
   total_qty numeric not null default 0,
+  cut_quantity numeric,
   delivery_date date,
   created_at timestamptz not null default now()
 );
@@ -111,6 +117,28 @@ create index idx_stage_entries_order_id on public.stage_entries (order_id);
 create index idx_stage_entries_section_id on public.stage_entries (section_id);
 create index idx_stage_entries_entered_by on public.stage_entries (entered_by);
 
+-- Per-material / per-sub-step rows within a stage (e.g. Yarn/Fabric/Trims/
+-- Accessories under Raw Material Planning, or Line Feeding/Inline QC/... under
+-- Sewing). Distinct from stage_entries: this is the planning/checklist layer,
+-- stage_entries remains the movement/forwarding log.
+create table public.stage_sub_items (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid not null references public.orders(id) on delete cascade,
+  section_id uuid not null references public.workflow_stages(id) on delete restrict,
+  item_key text not null,
+  item_label text not null,
+  planned_qty numeric not null default 0,
+  completed_qty numeric not null default 0,
+  unit_type text not null check (unit_type in ('KG', 'PCS')),
+  is_completed boolean not null default false,
+  notes text,
+  updated_by uuid references public.app_users(id),
+  updated_at timestamptz not null default now(),
+  unique (order_id, section_id, item_key)
+);
+
+create index idx_stage_sub_items_order_section on public.stage_sub_items (order_id, section_id);
+
 -- ----------------------------------------------------------------------------
 -- Helper function + activity trigger
 -- ----------------------------------------------------------------------------
@@ -142,6 +170,18 @@ create trigger trg_touch_user_activity
 after insert on public.stage_entries
 for each row execute function public.touch_user_activity();
 
+-- Safe, narrow lookup: any authenticated user can resolve a set of user ids to
+-- just their name + phone (never username/password_plain/role) — used to show
+-- who handled an earlier/later stage of an order for handoff purposes.
+create or replace function public.get_user_contacts(p_user_ids uuid[])
+returns table (id uuid, name text, phone text)
+language sql
+security definer
+stable
+as $$
+  select id, name, phone from public.app_users where id = any(p_user_ids);
+$$;
+
 -- ----------------------------------------------------------------------------
 -- Row Level Security
 -- ----------------------------------------------------------------------------
@@ -152,6 +192,7 @@ alter table public.orders enable row level security;
 alter table public.purchase_orders enable row level security;
 alter table public.user_assignments enable row level security;
 alter table public.stage_entries enable row level security;
+alter table public.stage_sub_items enable row level security;
 
 -- app_users
 create policy "app_users_select" on public.app_users
@@ -181,22 +222,45 @@ create policy "purchase_orders_select" on public.purchase_orders
 create policy "purchase_orders_write_admin" on public.purchase_orders
   for all using (public.is_admin()) with check (public.is_admin());
 
--- user_assignments
+-- has_order_assignment must go through a SECURITY DEFINER function rather
+-- than a plain subquery on user_assignments — a policy that queries its own
+-- table directly makes Postgres re-evaluate that same policy for the
+-- subquery's rows, forever ("infinite recursion detected in policy for
+-- relation user_assignments"). The function body runs as its owner and so
+-- bypasses RLS instead of re-triggering it (same trick as public.is_admin()).
+create or replace function public.has_order_assignment(p_order_id uuid)
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1 from public.user_assignments
+    where user_id = auth.uid() and order_id = p_order_id
+  );
+$$;
+
+-- user_assignments: visible if it's your own row, or you have any assignment
+-- on the same order (so you can see who else is handling other stages of it).
 create policy "user_assignments_select" on public.user_assignments
-  for select using (public.is_admin() or user_id = auth.uid());
+  for select using (
+    public.is_admin()
+    or user_id = auth.uid()
+    or public.has_order_assignment(order_id)
+  );
 create policy "user_assignments_write_admin" on public.user_assignments
   for all using (public.is_admin()) with check (public.is_admin());
 
--- stage_entries
+-- stage_entries: readable by anyone with ANY assignment on the order (not just
+-- their own section) — the order-progress/current-stage calculation needs to
+-- see every stage's history, and users need to see who ran earlier stages.
+-- Writing remains restricted to your own assigned, enterable section below.
 create policy "stage_entries_select" on public.stage_entries
   for select using (
     public.is_admin()
     or exists (
       select 1 from public.user_assignments ua
-      where ua.user_id = auth.uid()
-        and ua.order_id = stage_entries.order_id
-        and ua.section_id = stage_entries.section_id
-        and (ua.po_id is null or ua.po_id = stage_entries.po_id)
+      where ua.user_id = auth.uid() and ua.order_id = stage_entries.order_id
     )
   );
 create policy "stage_entries_insert" on public.stage_entries
@@ -219,6 +283,40 @@ create policy "stage_entries_update_admin" on public.stage_entries
 create policy "stage_entries_delete_admin" on public.stage_entries
   for delete using (public.is_admin());
 
+-- stage_sub_items
+create policy "stage_sub_items_select" on public.stage_sub_items
+  for select using (
+    public.is_admin()
+    or exists (
+      select 1 from public.user_assignments ua
+      where ua.user_id = auth.uid()
+        and ua.order_id = stage_sub_items.order_id
+        and ua.section_id = stage_sub_items.section_id
+    )
+  );
+create policy "stage_sub_items_upsert" on public.stage_sub_items
+  for insert with check (
+    public.is_admin()
+    or exists (
+      select 1 from public.user_assignments ua
+      where ua.user_id = auth.uid()
+        and ua.order_id = stage_sub_items.order_id
+        and ua.section_id = stage_sub_items.section_id
+        and ua.can_enter_data = true
+    )
+  );
+create policy "stage_sub_items_update" on public.stage_sub_items
+  for update using (
+    public.is_admin()
+    or exists (
+      select 1 from public.user_assignments ua
+      where ua.user_id = auth.uid()
+        and ua.order_id = stage_sub_items.order_id
+        and ua.section_id = stage_sub_items.section_id
+        and ua.can_enter_data = true
+    )
+  );
+
 -- ----------------------------------------------------------------------------
 -- Storage: garment images
 -- ----------------------------------------------------------------------------
@@ -240,20 +338,20 @@ create policy "order_images_admin_delete" on storage.objects
 -- Seed data: workflow stages
 -- ----------------------------------------------------------------------------
 
-insert into public.workflow_stages (key, label, sequence_no, unit_type, typical_duration_days) values
-  ('po',                  'Purchase Order (PO)',              1,  'KG',  1),
-  ('mrp',                 'Material Requirement Planning',    2,  'KG',  2),
-  ('purchase_orders',     'Purchase Orders',                  3,  'KG',  3),
-  ('material_inward',     'Material Inward (GRN)',            4,  'KG',  3),
-  ('fabric_inspection',   'Fabric Inspection',                5,  'KG',  2),
-  ('cutting_order',       'Cutting Order',                    6,  'PCS', 3),
-  ('printing_embroidery', 'Printing / Embroidery',            7,  'PCS', 4),
-  ('production_order',    'Production Order',                 8,  'PCS', 2),
-  ('sewing_output',       'Sewing Output Entry',               9,  'PCS', 7),
-  ('quality_inspection',  'Quality Inspection',               10, 'PCS', 2),
-  ('finishing',           'Finishing',                        11, 'PCS', 3),
-  ('packing',             'Packing',                          12, 'PCS', 2),
-  ('carton_management',   'Carton Management',                13, 'PCS', 1);
+insert into public.workflow_stages (key, label, sequence_no, unit_type, typical_duration_days, form_type) values
+  ('order_confirmation',    'Order Confirmation (PO)',              1,  'KG',  1, 'confirmation'),
+  ('raw_material_planning', 'Raw Material Planning',                2,  'KG',  3, 'material_planning'),
+  ('po_to_suppliers',       'Purchase Order to Suppliers',          3,  'KG',  3, 'simple_confirm'),
+  ('raw_material_inward',   'Raw Material Inward',                  4,  'KG',  4, 'material_inward'),
+  ('fabric_processing',     'Fabric Processing',                    5,  'KG',  6, 'fabric_processing'),
+  ('fabric_store',          'Fabric Store',                         6,  'KG',  1, 'store_check'),
+  ('pattern_marker',        'Pattern Making & Marker Planning',      7,  'KG',  2, 'simple_confirm'),
+  ('cutting',               'Cutting',                              8,  'PCS', 3, 'cutting'),
+  ('printing_embroidery',   'Printing / Embroidery',                9,  'PCS', 4, 'dispatch_return'),
+  ('sewing',                'Sewing (Stitching)',                   10, 'PCS', 7, 'sub_steps'),
+  ('washing',               'Washing',                              11, 'PCS', 3, 'dispatch_return'),
+  ('finishing',             'Finishing',                            12, 'PCS', 3, 'sub_steps'),
+  ('packing',               'Packing',                              13, 'PCS', 2, 'sub_steps');
 
 -- ----------------------------------------------------------------------------
 -- Seed data: 4 orders (MCKENZIE / JD SPORTS sheet, ref MER6) + their POs
