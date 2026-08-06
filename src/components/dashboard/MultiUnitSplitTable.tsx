@@ -20,8 +20,19 @@ export function MultiUnitSplitTable({ units }: { units: UnitBreakdown[] }) {
             </div>
           ),
         },
-        { header: "Allotted", render: (u) => u.qtyReceived.toLocaleString() },
-        { header: "Forwarded", render: (u) => u.qtyForwarded.toLocaleString() },
+        {
+          header: "Records",
+          render: (u) => (
+            <span className="font-medium text-ink-700">
+              {u.entryCount} {u.entryCount === 1 ? "entry" : "entries"}
+            </span>
+          ),
+        },
+        { header: "Allotted", render: (u) => (u.qtyReceived > 0 ? u.qtyReceived.toLocaleString() : "—") },
+        {
+          header: "Forwarded",
+          render: (u) => <span className="font-semibold text-ink-900">{u.qtyForwarded.toLocaleString()}</span>,
+        },
         {
           header: "Shortage",
           render: (u) =>

@@ -6,7 +6,7 @@ import { getAssignmentQty } from "../../../lib/orderQty";
 import { Button } from "../../ui/Button";
 import { Input, Textarea, Toggle } from "../../ui/FormControls";
 import { Loader } from "../../ui/Loader";
-import { QtyStat, useForwardConfirm, useStageEntryBuilder } from "./shared";
+import { QtyStat, StageActions, useStageEntryBuilder } from "./shared";
 import type { TransferType } from "../../../lib/types";
 import type { StageFormProps } from "./types";
 
@@ -20,7 +20,6 @@ export function DispatchReturnForm({ order, assignment, onForwarded }: StageForm
   // outside transfer — it surfaces on the dashboard and counts in the movement.
   const transferType: Exclude<TransferType, "none"> = "outside";
   const qty = getAssignmentQty(order, assignment);
-  const forwardConfirm = useForwardConfirm();
 
   const [isRequired, setIsRequired] = useState(true);
   const [sentQty, setSentQty] = useState("");
@@ -40,7 +39,6 @@ export function DispatchReturnForm({ order, assignment, onForwarded }: StageForm
 
   async function handleSkip() {
     if (!appUser) return;
-    if (!(await forwardConfirm(assignment.section?.label ?? "this stage"))) return;
     setError(null);
     try {
       await createEntry.mutateAsync(
@@ -98,17 +96,10 @@ export function DispatchReturnForm({ order, assignment, onForwarded }: StageForm
     }
   }
 
-  async function handleConfirmReturn() {
+  async function handleConfirmReturn(isFinal: boolean) {
     if (!appUser || !pendingSentEntry) return;
     const sentQtyRef = pendingSentEntry.qty_completed_today || pendingSentEntry.qty_forwarded;
     const returned = Number(returnedQty) || 0;
-    if (
-      !(await forwardConfirm(assignment.section?.label ?? "this stage", {
-        qty: Math.max(sentQtyRef - returned, 0),
-        unit: "PCS",
-      }))
-    )
-      return;
     setError(null);
     try {
       await createEntry.mutateAsync(
@@ -118,7 +109,7 @@ export function DispatchReturnForm({ order, assignment, onForwarded }: StageForm
             qty_received: qty,
             qty_completed_today: returned,
             qty_forwarded: returned,
-            qty_shortage: Math.max(sentQtyRef - returned, 0),
+            qty_shortage: isFinal ? Math.max(sentQtyRef - returned, 0) : 0,
             qty_returned: returned,
             is_external: true,
             external_unit_name: pendingSentEntry.external_unit_name,
@@ -129,10 +120,14 @@ export function DispatchReturnForm({ order, assignment, onForwarded }: StageForm
             transfer_to: pendingSentEntry.transfer_to ?? pendingSentEntry.branch,
             notes: notes || null,
           },
-          true,
+          isFinal,
         ),
       );
-      toast.success("Return confirmed and forwarded to the next stage.");
+      toast.success(
+        isFinal
+          ? "Return confirmed and forwarded to the next stage."
+          : `${returned.toLocaleString()} PCS moved forward — this stage stays open for the rest of the consignment.`,
+      );
       onForwarded();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not confirm return.";
@@ -172,9 +167,16 @@ export function DispatchReturnForm({ order, assignment, onForwarded }: StageForm
 
         {error && <p className="text-sm text-status-bad">{error}</p>}
 
-        <Button onClick={handleConfirmReturn} isLoading={createEntry.isPending} className="w-full" size="lg">
-          Confirm Return & Move Forward →
-        </Button>
+        <StageActions
+          sectionLabel={assignment.section?.label ?? "this stage"}
+          unitType="PCS"
+          balance={Math.max(sentQtyRef - returned, 0)}
+          isLoading={createEntry.isPending}
+          onMoveForward={() => handleConfirmReturn(false)}
+          moveForwardLabel="Part Returned — Move to Next Stage"
+          onComplete={() => handleConfirmReturn(true)}
+          completeLabel="Confirm Return & Move Forward →"
+        />
       </div>
     );
   }

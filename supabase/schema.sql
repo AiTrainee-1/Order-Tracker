@@ -143,6 +143,21 @@ create table public.stage_sub_items (
 
 create index idx_stage_sub_items_order_section on public.stage_sub_items (order_id, section_id);
 
+-- Global stage-role defaults: one row = "this user is the default assignee for
+-- this stage across every order". The app expands each row into an implicit
+-- assignment on all orders, so admins don't have to scope users order-by-order.
+create table public.stage_assignments (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.app_users(id) on delete cascade,
+  section_id uuid not null references public.workflow_stages(id) on delete cascade,
+  can_enter_data boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (user_id, section_id)
+);
+
+create index idx_stage_assignments_section on public.stage_assignments (section_id);
+create index idx_stage_assignments_user on public.stage_assignments (user_id);
+
 -- ----------------------------------------------------------------------------
 -- Helper function + activity trigger
 -- ----------------------------------------------------------------------------
@@ -197,6 +212,7 @@ alter table public.purchase_orders enable row level security;
 alter table public.user_assignments enable row level security;
 alter table public.stage_entries enable row level security;
 alter table public.stage_sub_items enable row level security;
+alter table public.stage_assignments enable row level security;
 
 -- app_users
 create policy "app_users_select" on public.app_users
@@ -258,6 +274,8 @@ create policy "user_assignments_write_admin" on public.user_assignments
 -- stage_entries: readable by anyone with ANY assignment on the order (not just
 -- their own section) — the order-progress/current-stage calculation needs to
 -- see every stage's history, and users need to see who ran earlier stages.
+-- A global stage-role default (stage_assignments) counts as an assignment on
+-- every order for that section, same as an explicit user_assignments row.
 -- Writing remains restricted to your own assigned, enterable section below.
 create policy "stage_entries_select" on public.stage_entries
   for select using (
@@ -265,6 +283,10 @@ create policy "stage_entries_select" on public.stage_entries
     or exists (
       select 1 from public.user_assignments ua
       where ua.user_id = auth.uid() and ua.order_id = stage_entries.order_id
+    )
+    or exists (
+      select 1 from public.stage_assignments sa
+      where sa.user_id = auth.uid() and sa.section_id = stage_entries.section_id
     )
   );
 create policy "stage_entries_insert" on public.stage_entries
@@ -280,6 +302,12 @@ create policy "stage_entries_insert" on public.stage_entries
           and ua.can_enter_data = true
           and (ua.po_id is null or ua.po_id = stage_entries.po_id)
       )
+      or exists (
+        select 1 from public.stage_assignments sa
+        where sa.user_id = auth.uid()
+          and sa.section_id = stage_entries.section_id
+          and sa.can_enter_data = true
+      )
     )
   );
 create policy "stage_entries_update_admin" on public.stage_entries
@@ -287,7 +315,7 @@ create policy "stage_entries_update_admin" on public.stage_entries
 create policy "stage_entries_delete_admin" on public.stage_entries
   for delete using (public.is_admin());
 
--- stage_sub_items
+-- stage_sub_items — same global stage-role default fallback as stage_entries.
 create policy "stage_sub_items_select" on public.stage_sub_items
   for select using (
     public.is_admin()
@@ -296,6 +324,10 @@ create policy "stage_sub_items_select" on public.stage_sub_items
       where ua.user_id = auth.uid()
         and ua.order_id = stage_sub_items.order_id
         and ua.section_id = stage_sub_items.section_id
+    )
+    or exists (
+      select 1 from public.stage_assignments sa
+      where sa.user_id = auth.uid() and sa.section_id = stage_sub_items.section_id
     )
   );
 create policy "stage_sub_items_upsert" on public.stage_sub_items
@@ -308,6 +340,10 @@ create policy "stage_sub_items_upsert" on public.stage_sub_items
         and ua.section_id = stage_sub_items.section_id
         and ua.can_enter_data = true
     )
+    or exists (
+      select 1 from public.stage_assignments sa
+      where sa.user_id = auth.uid() and sa.section_id = stage_sub_items.section_id and sa.can_enter_data = true
+    )
   );
 create policy "stage_sub_items_update" on public.stage_sub_items
   for update using (
@@ -319,7 +355,18 @@ create policy "stage_sub_items_update" on public.stage_sub_items
         and ua.section_id = stage_sub_items.section_id
         and ua.can_enter_data = true
     )
+    or exists (
+      select 1 from public.stage_assignments sa
+      where sa.user_id = auth.uid() and sa.section_id = stage_sub_items.section_id and sa.can_enter_data = true
+    )
   );
+
+-- stage_assignments: global stage-role defaults. Readable by any signed-in user
+-- (needed to build work lists + show handoff contacts); admin-managed writes.
+create policy "stage_assignments_select" on public.stage_assignments
+  for select using (auth.role() = 'authenticated');
+create policy "stage_assignments_write_admin" on public.stage_assignments
+  for all using (public.is_admin()) with check (public.is_admin());
 
 -- ----------------------------------------------------------------------------
 -- Storage: garment images

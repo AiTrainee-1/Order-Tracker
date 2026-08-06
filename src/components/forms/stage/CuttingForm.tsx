@@ -1,60 +1,64 @@
 import { useState } from "react";
 import { useToast } from "../../../context/ToastContext";
 import { useSetCutQuantity } from "../../../hooks/useOrderMutations";
-import { getAssignmentQty } from "../../../lib/orderQty";
-import { Button } from "../../ui/Button";
 import { Input, Textarea } from "../../ui/FormControls";
-import { QtyStat, TransferFields, useForwardConfirm, useStageEntryBuilder, useTransferFields } from "./shared";
+import {
+  InheritedQtyNote,
+  QtyStat,
+  SplitRecordsTable,
+  StageActions,
+  useSplitRecords,
+  useStageEntryBuilder,
+  useStageQty,
+} from "./shared";
 import type { StageFormProps } from "./types";
 
-export function CuttingForm({ order, assignment, onForwarded }: StageFormProps) {
+export function CuttingForm({ order, assignment, stageProgress, onForwarded }: StageFormProps) {
   const toast = useToast();
-  const { createEntry, buildEntry, appUser } = useStageEntryBuilder(order, assignment);
+  const { submitMovement, isPending: entryPending, appUser } = useStageEntryBuilder(order, assignment);
   const setCutQuantity = useSetCutQuantity();
-  const transfer = useTransferFields();
-  const forwardConfirm = useForwardConfirm();
-  const plannedQty = getAssignmentQty(order, assignment);
+  const qty = useStageQty(order, assignment, stageProgress);
+  const splits = useSplitRecords();
 
-  const [cutQty, setCutQty] = useState(String(plannedQty));
-  const [forwardedQty, setForwardedQty] = useState(String(plannedQty));
+  const [cutQty, setCutQty] = useState(String(qty.allotted || ""));
+  const [forwardedQty, setForwardedQty] = useState(String(qty.balance || ""));
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const isPending = createEntry.isPending || setCutQuantity.isPending;
+  const isPending = entryPending || setCutQuantity.isPending;
+  // Splits, when present, are the source of truth for what moved on.
+  const forwarded = splits.records.length > 0 ? splits.totalQty : Number(forwardedQty) || 0;
+  const balanceAfter = Math.max(qty.allotted - qty.alreadyForwarded - forwarded, 0);
 
-  async function handleForward() {
+  async function handleForward(isFinal: boolean) {
     if (!appUser) return;
-    const cut = Number(cutQty) || 0;
-    const forwarded = Number(forwardedQty) || 0;
-    if (
-      !(await forwardConfirm(assignment.section?.label ?? "this stage", {
-        qty: Math.max(plannedQty - forwarded, 0),
-        unit: "PCS",
-      }))
-    )
-      return;
     setError(null);
     try {
-      // Only an order-wide cut sets the order's fixed cut_quantity; a PO-scoped
-      // cut must not overwrite the whole order's baseline with one PO's amount.
-      if (!assignment.po_id) {
-        await setCutQuantity.mutateAsync({ orderId: order.id, cutQuantity: forwarded });
+      // Only an order-wide cut sets the order's fixed cut_quantity, and only on
+      // completion — a partial cut isn't the final baseline yet.
+      if (isFinal && !assignment.po_id) {
+        await setCutQuantity.mutateAsync({
+          orderId: order.id,
+          cutQuantity: qty.alreadyForwarded + forwarded,
+        });
       }
-      await createEntry.mutateAsync(
-        buildEntry(
-          {
-            unit_type: "PCS",
-            qty_received: plannedQty,
-            qty_completed_today: cut,
-            qty_forwarded: forwarded,
-            qty_shortage: Math.max(plannedQty - forwarded, 0),
-            notes: notes || null,
-            ...transfer.values,
-          },
-          true,
-        ),
+      await submitMovement({
+        base: {
+          unit_type: "PCS",
+          qty_received: qty.allotted,
+          qty_completed_today: Number(cutQty) || forwarded,
+          qty_forwarded: forwarded,
+          notes: notes || null,
+        },
+        splits: splits.records,
+        isFinal,
+      });
+      toast.success(
+        isFinal
+          ? `Cutting completed — ${(qty.alreadyForwarded + forwarded).toLocaleString()} PCS is now the fixed order quantity.`
+          : `${forwarded.toLocaleString()} PCS moved forward. Cutting stays open for the balance.`,
       );
-      toast.success(`Cutting completed — ${forwarded.toLocaleString()} PCS is now the fixed order quantity going forward.`);
+      splits.reset();
       onForwarded();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not forward.";
@@ -66,12 +70,15 @@ export function CuttingForm({ order, assignment, onForwarded }: StageFormProps) 
   return (
     <div className="space-y-5">
       <p className="rounded-lg bg-blue-50 px-3 py-2.5 text-sm text-blue-700">
-        This is where quantities convert from KG to PCS. Whatever you enter as "Forwarded" below
-        becomes the fixed order quantity every later stage compares against.
+        This is where quantities convert from KG to PCS. The total forwarded from here becomes the
+        fixed order quantity every later stage compares against — set when you complete the stage.
       </p>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <QtyStat label={assignment.po ? `PO ${assignment.po.po_number} (Planned)` : "Order Qty (Planned)"} value={plannedQty} />
+      <InheritedQtyNote qty={qty} stageProgress={stageProgress} />
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+        <QtyStat label="Allotted (PCS)" value={qty.allotted} />
+        <QtyStat label="Already cut & sent" value={qty.alreadyForwarded} />
         <Input
           label="Pieces Cut"
           type="number"
@@ -85,23 +92,33 @@ export function CuttingForm({ order, assignment, onForwarded }: StageFormProps) 
           min={0}
           value={forwardedQty}
           onChange={(e) => setForwardedQty(e.target.value)}
+          disabled={splits.records.length > 0}
         />
       </div>
 
-      <TransferFields
-        type={transfer.transferType}
-        to={transfer.transferTo}
-        onTypeChange={transfer.setTransferType}
-        onToChange={transfer.setTransferTo}
+      <SplitRecordsTable
+        records={splits.records}
+        unitType="PCS"
+        allotted={qty.allotted}
+        alreadyForwarded={qty.alreadyForwarded}
+        onAdd={splits.addRecord}
+        onUpdate={splits.updateRecord}
+        onRemove={splits.removeRecord}
       />
 
       <Textarea label="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} />
 
       {error && <p className="text-sm text-status-bad">{error}</p>}
 
-      <Button onClick={handleForward} isLoading={isPending} className="w-full" size="lg">
-        Confirm Cutting & Move Forward →
-      </Button>
+      <StageActions
+        sectionLabel={assignment.section?.label ?? "Cutting"}
+        unitType="PCS"
+        balance={balanceAfter}
+        isLoading={isPending}
+        onMoveForward={() => handleForward(false)}
+        onComplete={() => handleForward(true)}
+        completeLabel="Confirm Cutting & Move Forward →"
+      />
     </div>
   );
 }

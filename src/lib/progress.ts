@@ -7,6 +7,8 @@ export interface StageTransfer {
   to: string | null;
   qty: number;
   date: string;
+  enteredBy: string;
+  isCompleted: boolean;
 }
 
 export interface UnitBreakdown {
@@ -19,6 +21,8 @@ export interface UnitBreakdown {
   qtyReturned: number;
   isCompleted: boolean;
   lastEntryDate: string | null;
+  /** How many split records were logged against this unit. */
+  entryCount: number;
   /** Short label of any transfer(s) recorded for this unit, e.g. "Branch → X". */
   transferLabel: string | null;
 }
@@ -26,7 +30,21 @@ export interface UnitBreakdown {
 export interface StageProgress {
   stage: WorkflowStage;
   entries: StageEntry[];
+  /** What the PREVIOUS stage forwarded into this one — the automatic carry-over.
+   * 0 when there is no comparable predecessor (first stage, or a unit-type
+   * switch at Cutting where KG no longer converts 1:1 into PCS). */
+  qtyInherited: number;
+  /** What was explicitly recorded as received AT this stage (max across entries,
+   * since qty_received is restated rather than accumulated). */
   qtyReceived: number;
+  /** The effective quantity this stage works against: what was actually counted
+   * in if recorded, otherwise what the previous stage forwarded, otherwise the
+   * order's baseline. This is what makes a blank middle stage stop breaking the
+   * chain — downstream stages still know the real number. */
+  qtyAllotted: number;
+  /** True when this stage counted in a different quantity than the previous
+   * stage forwarded — a discrepancy worth surfacing for verification. */
+  hasQtyMismatch: boolean;
   qtyCompletedToday: number;
   qtyForwarded: number;
   qtyShortage: number;
@@ -34,8 +52,18 @@ export interface StageProgress {
   qtyReturned: number;
   qtyPending: number;
   isCompleted: boolean;
+  /** Moved forward without being finished — the "orange" state. Goods were sent
+   * on so the next stage isn't blocked, but a balance is still owed here. */
+  isPartial: boolean;
+  /** Every earlier stage has at least forwarded something, so work can start. */
+  isUnlocked: boolean;
   lastEntryDate: string | null;
   firstEntryDate: string | null;
+  /** Who/when marked this stage complete (null while still open). */
+  completedBy: string | null;
+  completedOn: string | null;
+  /** Who made the most recent entry, completed or not. */
+  lastActorId: string | null;
   externalEntries: StageEntry[];
   unitBreakdown: UnitBreakdown[];
   transfers: StageTransfer[];
@@ -52,9 +80,13 @@ export interface OrderProgress {
   currentStageIndex: number;
   completedStagesCount: number;
   pendingStagesCount: number;
+  /** Stages moved on without being finished — outstanding balances to chase. */
+  partialStagesCount: number;
   overallProgressPct: number;
   daysRemaining: number | null;
   status: OrderStatus;
+  /** True once any stage has logged an entry. */
+  hasStarted: boolean;
 }
 
 const TRANSFER_PREFIX: Record<Exclude<TransferType, "none">, string> = {
@@ -79,6 +111,13 @@ function summarizeTransfers(entries: StageEntry[]): string | null {
   return labels.size ? Array.from(labels).join(", ") : null;
 }
 
+/** The order-level fallback for a stage measured in this unit. PCS stages can
+ * always fall back to the fixed cut quantity (or the planned total before
+ * Cutting); KG has no order-level figure, so it must come from the chain. */
+function baselineFor(order: Order, stage: WorkflowStage): number {
+  return stage.unit_type === "PCS" ? order.cut_quantity ?? order.total_qty : 0;
+}
+
 /**
  * Aggregates the raw stage_entries log for one order into a per-stage and
  * overall progress model. This is the single source of truth for "how far
@@ -86,16 +125,19 @@ function summarizeTransfers(entries: StageEntry[]): string | null {
  * so the math stays easy to inspect/adjust in one place.
  *
  * Conventions:
- * - qty_received is the quantity allotted to the stage, restated (not additive)
- *   on every entry — so we take the max across entries, not the sum.
+ * - qty_received is the quantity counted in at the stage, restated (not
+ *   additive) on every entry — so we take the max across entries, not the sum.
  * - qty_forwarded/rejected/returned accumulate across entries (a stage can be
- *   forwarded in several balance batches), so we sum them.
- * - A stage completes ONLY when an entry explicitly marks is_completed (the
- *   "Forward & Complete" action) — there is no auto-complete heuristic.
- * - Balance is derived from the running totals (received − forwarded − rejected),
- *   never summed from per-entry qty_shortage (which would double-count across
- *   balance entries). While in progress that balance is "pending"; once the
- *   stage is completed, whatever was never forwarded becomes the final shortage.
+ *   forwarded in several split batches), so we sum them.
+ * - Quantity CARRIES OVER: a stage that recorded nothing still inherits what
+ *   the previous stage forwarded, so leaving one form blank never blanks out
+ *   the stages after it.
+ * - A stage completes ONLY when an entry explicitly marks is_completed. An
+ *   entry that forwards without completing leaves the stage "partial" — the
+ *   next stage unlocks, but a balance is still owed here.
+ * - Balance is derived from the running totals (allotted − forwarded −
+ *   rejected), never summed from per-entry qty_shortage (which would
+ *   double-count across balance entries).
  */
 export function buildOrderProgress(
   order: Order,
@@ -104,7 +146,9 @@ export function buildOrderProgress(
 ): OrderProgress {
   const sortedStages = [...stages].sort((a, b) => a.sequence_no - b.sequence_no);
 
-  const stageProgressList: StageProgress[] = sortedStages.map((stage) => {
+  const stageProgressList: StageProgress[] = [];
+
+  sortedStages.forEach((stage, index) => {
     const stageEntries = entries
       .filter((e) => e.section_id === stage.id)
       .sort((a, b) => a.entry_date.localeCompare(b.entry_date));
@@ -117,23 +161,39 @@ export function buildOrderProgress(
 
     // Complete only when an entry explicitly forwards it — no auto-complete.
     const isCompleted = stageEntries.some((e) => e.is_completed);
+    const isPartial = !isCompleted && qtyForwarded > 0;
+
+    // --- Carry-over -------------------------------------------------------
+    // Only inherit across stages measured in the same unit; Cutting switches
+    // KG → PCS, where the previous stage's number means something different.
+    const prev = stageProgressList[index - 1];
+    const prevStage = sortedStages[index - 1];
+    const sameUnit = prevStage ? prevStage.unit_type === stage.unit_type : false;
+    const qtyInherited = prev && sameUnit ? prev.qtyForwarded : 0;
+
+    const qtyAllotted = qtyReceived > 0 ? qtyReceived : qtyInherited > 0 ? qtyInherited : baselineFor(order, stage);
+    const hasQtyMismatch = qtyReceived > 0 && qtyInherited > 0 && qtyReceived !== qtyInherited;
 
     // Derived balance (never the sum of per-entry shortage). Pending while the
     // stage is open; once completed, the un-forwarded remainder is the shortage.
-    const outstanding = Math.max(qtyReceived - qtyForwarded - qtyRejected, 0);
+    const outstanding = Math.max(qtyAllotted - qtyForwarded - qtyRejected, 0);
     const qtyPending = isCompleted ? 0 : outstanding;
     const qtyShortage = isCompleted ? outstanding : 0;
 
-    const lastEntryDate = stageEntries.length
-      ? stageEntries[stageEntries.length - 1].entry_date
-      : null;
+    const lastEntry = stageEntries.length ? stageEntries[stageEntries.length - 1] : null;
+    const lastEntryDate = lastEntry?.entry_date ?? null;
     const firstEntryDate = stageEntries.length ? stageEntries[0].entry_date : null;
+
+    const completingEntry = stageEntries.find((e) => e.is_completed) ?? null;
+    const completedBy = completingEntry?.entered_by ?? null;
+    const completedOn = completingEntry?.entry_date ?? null;
+    const lastActorId = lastEntry?.entered_by ?? null;
 
     const externalEntries = stageEntries.filter((e) => e.is_external || e.is_sent_outside);
 
     const unitGroups = new Map<string, StageEntry[]>();
     for (const e of stageEntries) {
-      const key = e.unit_name || e.external_unit_name || "Main";
+      const key = e.transfer_to || e.unit_name || e.external_unit_name || "In-house";
       unitGroups.set(key, [...(unitGroups.get(key) ?? []), e]);
     }
     const unitBreakdown: UnitBreakdown[] = Array.from(unitGroups.entries()).map(
@@ -145,7 +205,7 @@ export function buildOrderProgress(
         const groupOutstanding = Math.max(groupReceived - groupForwarded - groupRejected, 0);
         return {
           unitName,
-          isExternal: group.some((e) => e.is_external),
+          isExternal: group.some((e) => e.is_external || e.transfer_type === "outside"),
           qtyReceived: groupReceived,
           qtyForwarded: groupForwarded,
           qtyShortage: groupCompleted ? groupOutstanding : 0,
@@ -153,6 +213,7 @@ export function buildOrderProgress(
           qtyReturned: group.reduce((sum, e) => sum + e.qty_returned, 0),
           isCompleted: groupCompleted,
           lastEntryDate: group.length ? group[group.length - 1].entry_date : null,
+          entryCount: group.length,
           transferLabel: summarizeTransfers(group),
         };
       },
@@ -165,6 +226,8 @@ export function buildOrderProgress(
         to: e.transfer_to,
         qty: e.qty_forwarded,
         date: e.entry_date,
+        enteredBy: e.entered_by,
+        isCompleted: e.is_completed,
       }));
 
     const responsibleUserIds = Array.from(new Set(stageEntries.map((e) => e.entered_by)));
@@ -176,10 +239,18 @@ export function buildOrderProgress(
       ? addDays(lastEntryDate, stage.typical_duration_days)
       : null;
 
-    return {
+    // Work can start here once every earlier stage has at least moved goods on
+    // (completed OR partially forwarded). The first stage is always open.
+    const isUnlocked =
+      index === 0 || stageProgressList.every((s) => s.isCompleted || s.isPartial);
+
+    stageProgressList.push({
       stage,
       entries: stageEntries,
+      qtyInherited,
       qtyReceived,
+      qtyAllotted,
+      hasQtyMismatch,
       qtyCompletedToday,
       qtyForwarded,
       qtyShortage,
@@ -187,19 +258,25 @@ export function buildOrderProgress(
       qtyReturned,
       qtyPending,
       isCompleted,
+      isPartial,
+      isUnlocked,
       lastEntryDate,
       firstEntryDate,
+      completedBy,
+      completedOn,
+      lastActorId,
       externalEntries,
       unitBreakdown,
       transfers,
       responsibleUserIds,
       nextAssignedUserId,
       estimatedCompletionDate,
-    };
+    });
   });
 
   const completedStagesCount = stageProgressList.filter((s) => s.isCompleted).length;
   const pendingStagesCount = stageProgressList.length - completedStagesCount;
+  const partialStagesCount = stageProgressList.filter((s) => s.isPartial).length;
 
   let currentStageIndex = stageProgressList.findIndex((s) => !s.isCompleted);
   if (currentStageIndex === -1) currentStageIndex = stageProgressList.length - 1;
@@ -209,11 +286,12 @@ export function buildOrderProgress(
   );
 
   const remaining = daysRemaining(order.delivery_date);
+  const hasStarted = stageProgressList.some((s) => s.entries.length > 0);
 
   let status: OrderStatus;
   if (completedStagesCount === stageProgressList.length) {
     status = "completed";
-  } else if (completedStagesCount === 0 && stageProgressList.every((s) => s.entries.length === 0)) {
+  } else if (!hasStarted) {
     status = "not_started";
   } else if (remaining !== null && remaining < 0) {
     status = "delayed";
@@ -229,9 +307,11 @@ export function buildOrderProgress(
     currentStageIndex,
     completedStagesCount,
     pendingStagesCount,
+    partialStagesCount,
     overallProgressPct,
     daysRemaining: remaining,
     status,
+    hasStarted,
   };
 }
 

@@ -3,11 +3,11 @@ import { useToast } from "../../../context/ToastContext";
 import { useAllStageSubItemsForOrder, useStageSubItems, useUpsertStageSubItem } from "../../../hooks/useStageSubItems";
 import { useWorkflowStages } from "../../../hooks/useWorkflowStages";
 import { STAGE_SUB_ITEMS } from "../../../lib/stageConfig";
-import { Button } from "../../ui/Button";
+
 import { Input, Textarea } from "../../ui/FormControls";
 import { Loader } from "../../ui/Loader";
 import { Badge } from "../../ui/Badge";
-import { TransferFields, useForwardConfirm, useStageEntryBuilder, useTransferFields } from "./shared";
+import { StageActions, TransferFields, useStageEntryBuilder, useTransferFields } from "./shared";
 import type { StageFormProps } from "./types";
 
 export function MaterialInwardForm({ order, assignment, onForwarded }: StageFormProps) {
@@ -19,7 +19,6 @@ export function MaterialInwardForm({ order, assignment, onForwarded }: StageForm
   const upsertItem = useUpsertStageSubItem();
   const { createEntry, buildEntry, appUser } = useStageEntryBuilder(order, assignment);
   const transfer = useTransferFields();
-  const forwardConfirm = useForwardConfirm();
 
   const [received, setReceived] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
@@ -91,10 +90,8 @@ export function MaterialInwardForm({ order, assignment, onForwarded }: StageForm
     }
   }
 
-  async function handleForward() {
+  async function handleForward(isFinal: boolean) {
     if (!appUser) return;
-    if (!(await forwardConfirm(assignment.section?.label ?? "this stage", { qty: totalPending, unit: "KG" })))
-      return;
     setError(null);
     try {
       await persistItems();
@@ -109,14 +106,18 @@ export function MaterialInwardForm({ order, assignment, onForwarded }: StageForm
             qty_received: totalPlanned,
             qty_completed_today: totalReceived,
             qty_forwarded: totalReceived,
-            qty_shortage: totalPending,
+            qty_shortage: isFinal ? totalPending : 0,
             notes: notes || null,
             ...transfer.values,
           },
-          true,
+          isFinal,
         ),
       );
-      toast.success("Materials confirmed and forwarded to Fabric Processing.");
+      toast.success(
+        isFinal
+          ? "Materials confirmed and forwarded to Fabric Processing."
+          : `${totalReceived.toLocaleString()} KG moved forward — this stage stays open for the balance still to arrive.`,
+      );
       onForwarded();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not forward.";
@@ -177,16 +178,22 @@ export function MaterialInwardForm({ order, assignment, onForwarded }: StageForm
 
       {error && <p className="text-sm text-status-bad">{error}</p>}
 
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Button variant="secondary" onClick={handleSaveProgress} isLoading={upsertItem.isPending} className="flex-1">
-          Save Progress (stay open)
-        </Button>
-        <Button onClick={handleForward} isLoading={createEntry.isPending} className="flex-1">
-          {totalPending > 0
+      <StageActions
+        sectionLabel={assignment.section?.label ?? "this stage"}
+        unitType="KG"
+        balance={totalPending}
+        isLoading={upsertItem.isPending || createEntry.isPending}
+        onSavePlan={handleSaveProgress}
+        savePlanLabel="Save Plan (stay open)"
+        onMoveForward={() => handleForward(false)}
+        moveForwardLabel="Part Received — Move to Next Stage"
+        onComplete={() => handleForward(true)}
+        completeLabel={
+          totalPending > 0
             ? `Forward & Complete (${totalPending.toLocaleString()} KG short) →`
-            : "Forward & Complete →"}
-        </Button>
-      </div>
+            : "Forward to Next Stage →"
+        }
+      />
     </div>
   );
 }

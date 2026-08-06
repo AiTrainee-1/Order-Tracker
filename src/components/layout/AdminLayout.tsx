@@ -2,12 +2,14 @@ import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { BrandMark } from "../ui/BrandMark";
+import { appBackground, brandGradient, sidebarBackground, SHADOW_BRAND } from "../../lib/theme";
 
 const navItems = [
   { to: "/admin/dashboard", label: "Dashboard", icon: "📊" },
   { to: "/admin/orders", label: "Orders", icon: "📦" },
   { to: "/admin/users", label: "Users", icon: "👥" },
   { to: "/admin/assign", label: "Assign Work", icon: "📝" },
+  { to: "/admin/stage-roles", label: "Stage Roles", icon: "🎯" },
 ];
 
 export function AdminLayout() {
@@ -21,10 +23,10 @@ export function AdminLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-ink-50">
+    <div className="min-h-screen" style={appBackground}>
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-20 bg-ink-950/40 md:hidden"
+          className="fixed inset-0 z-20 bg-ink-950/40 backdrop-blur-sm md:hidden"
           onClick={() => setMobileOpen(false)}
         />
       )}
@@ -32,21 +34,26 @@ export function AdminLayout() {
       <button
         onClick={() => setMobileOpen((v) => !v)}
         aria-label="Toggle navigation"
-        className="fixed left-3 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-lg border border-ink-200 bg-white text-ink-700 shadow-card md:hidden"
+        className="fixed left-3 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-xl border border-white/70 bg-white/80 text-ink-800 shadow-[0_8px_20px_-10px_rgba(30,41,90,0.5)] backdrop-blur-xl md:hidden"
       >
         {mobileOpen ? "✕" : "☰"}
       </button>
 
       <aside
-        className={`fixed inset-y-0 left-0 z-30 flex w-64 shrink-0 flex-col border-r border-ink-100 bg-white transition-transform duration-200 ${
+        style={sidebarBackground}
+        className={`fixed inset-y-0 left-0 z-30 flex w-64 shrink-0 flex-col border-r border-white/70 backdrop-blur-2xl transition-transform duration-200 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         } md:translate-x-0`}
       >
-        <div className="flex shrink-0 items-center gap-2.5 border-b border-ink-100 px-5 py-5">
-          <BrandMark size={32} />
+        <div className="flex shrink-0 items-center gap-2.5 border-b border-white/70 px-5 py-5">
+          <span className="flex items-center justify-center rounded-xl border border-white/80 bg-white px-2 py-1.5 shadow-[0_8px_20px_-12px_rgba(30,41,90,0.5)]">
+            <BrandMark size={26} />
+          </span>
           <div>
             <p className="text-sm font-bold tracking-tight text-ink-900">UK TEXTILES</p>
-            <p className="text-[11px] font-medium uppercase tracking-wide text-ink-400">Admin Portal</p>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-ink-400">
+              Admin Portal
+            </p>
           </div>
         </div>
 
@@ -57,12 +64,13 @@ export function AdminLayout() {
               to={item.to}
               onClick={() => setMobileOpen(false)}
               className={({ isActive }) =>
-                `flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+                `flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all ${
                   isActive
-                    ? "bg-brand-dark text-white shadow-card"
-                    : "text-ink-600 hover:bg-ink-50 hover:text-ink-900"
+                    ? `text-white ${SHADOW_BRAND}`
+                    : "text-ink-600 hover:bg-white/70 hover:text-ink-900"
                 }`
               }
+              style={({ isActive }) => (isActive ? brandGradient : undefined)}
             >
               <span className="text-base">{item.icon}</span>
               {item.label}
@@ -70,19 +78,22 @@ export function AdminLayout() {
           ))}
         </nav>
 
-        <div className="shrink-0 border-t border-ink-100 px-4 py-4">
-          <div className="flex items-center gap-2.5 rounded-xl bg-ink-50 px-3 py-2.5">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-dark text-xs font-bold text-white">
+        <div className="shrink-0 border-t border-white/70 px-4 py-4">
+          <div className="flex items-center gap-2.5 rounded-xl border border-white/70 bg-white/70 px-3 py-2.5 shadow-[0_8px_20px_-14px_rgba(30,41,90,0.4)]">
+            <span
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-md"
+              style={brandGradient}
+            >
               {appUser?.name?.charAt(0).toUpperCase()}
             </span>
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-ink-900">{appUser?.name}</p>
+              <p className="truncate text-sm font-semibold text-ink-900">{appUser?.name}</p>
               <p className="truncate text-xs text-ink-500">@{appUser?.username}</p>
             </div>
           </div>
           <button
             onClick={handleLogout}
-            className="mt-3 w-full rounded-lg border border-ink-200 px-3 py-1.5 text-xs font-medium text-ink-600 transition-colors hover:bg-ink-50 hover:text-ink-900"
+            className="mt-3 w-full rounded-xl border border-white/70 bg-white/60 px-3 py-2 text-xs font-semibold text-ink-600 transition-colors hover:bg-white hover:text-ink-900"
           >
             Logout
           </button>

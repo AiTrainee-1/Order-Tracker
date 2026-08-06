@@ -1,39 +1,38 @@
 import { useState } from "react";
 import { useToast } from "../../../context/ToastContext";
-import { Button } from "../../ui/Button";
 import { Textarea } from "../../ui/FormControls";
 import { formatDisplayDate } from "../../../lib/workflow";
 import { getAssignmentQty } from "../../../lib/orderQty";
-import { TransferFields, useForwardConfirm, useStageEntryBuilder, useTransferFields } from "./shared";
+import { StageActions, TransferFields, useStageEntryBuilder, useTransferFields } from "./shared";
 import type { StageFormProps } from "./types";
 
 export function ConfirmationForm({ order, assignment, onForwarded }: StageFormProps) {
   const toast = useToast();
-  const { createEntry, buildEntry, appUser } = useStageEntryBuilder(order, assignment);
+  const { submitMovement, isPending, appUser } = useStageEntryBuilder(order, assignment);
   const transfer = useTransferFields();
-  const forwardConfirm = useForwardConfirm();
   const qty = getAssignmentQty(order, assignment);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  async function handleForward() {
+  async function handleForward(isFinal: boolean) {
     if (!appUser) return;
-    if (!(await forwardConfirm(assignment.section?.label ?? "this stage"))) return;
     setError(null);
     try {
-      await createEntry.mutateAsync(
-        buildEntry(
-          {
-            qty_received: qty,
-            qty_completed_today: qty,
-            qty_forwarded: qty,
-            notes: notes || "Order confirmed.",
-            ...transfer.values,
-          },
-          true,
-        ),
+      await submitMovement({
+        base: {
+          qty_received: qty,
+          qty_completed_today: qty,
+          qty_forwarded: qty,
+          notes: notes || (isFinal ? "Order confirmed." : "Order confirmed — awaiting paperwork."),
+          ...transfer.values,
+        },
+        isFinal,
+      });
+      toast.success(
+        isFinal
+          ? "Order confirmed and forwarded to Raw Material Planning."
+          : "Moved forward — this stage stays open until you confirm it.",
       );
-      toast.success("Order confirmed and forwarded to Raw Material Planning.");
       onForwarded();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not confirm order.";
@@ -92,9 +91,15 @@ export function ConfirmationForm({ order, assignment, onForwarded }: StageFormPr
 
       {error && <p className="text-sm text-status-bad">{error}</p>}
 
-      <Button onClick={handleForward} isLoading={createEntry.isPending} className="w-full" size="lg">
-        Confirm Order & Move Forward →
-      </Button>
+      <StageActions
+        sectionLabel={assignment.section?.label ?? "this stage"}
+        unitType="PCS"
+        balance={0}
+        isLoading={isPending}
+        onMoveForward={() => handleForward(false)}
+        onComplete={() => handleForward(true)}
+        completeLabel="Confirm Order & Move Forward →"
+      />
     </div>
   );
 }

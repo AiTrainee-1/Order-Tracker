@@ -9,7 +9,8 @@ import { Badge } from "../../components/ui/Badge";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import { Loader } from "../../components/ui/Loader";
 import { GarmentPlaceholder } from "../../components/ui/GarmentPlaceholder";
-import { Input, Select } from "../../components/ui/FormControls";
+import { Input } from "../../components/ui/FormControls";
+import { FilterTabs } from "../../components/ui/FilterTabs";
 import { Button } from "../../components/ui/Button";
 import { NextStagesStrip } from "../../components/dashboard/NextStagesStrip";
 
@@ -58,12 +59,32 @@ export function HomePage() {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [page, setPage] = useState(1);
 
+  const searched = useMemo(
+    () => workItems.filter((item) => matchesQuery(item, query)),
+    [workItems, query],
+  );
+
   const filtered = useMemo(() => {
-    return workItems
-      .filter((item) => matchesQuery(item, query) && matchesStatus(item, status))
+    return searched
+      .filter((item) => matchesStatus(item, status))
       // Your Turn → Waiting → Completed, so the work needing action is on top.
       .sort((a, b) => GATE_PRIORITY[a.gateStatus] - GATE_PRIORITY[b.gateStatus]);
-  }, [workItems, query, status]);
+  }, [searched, status]);
+
+  const counts = useMemo(() => {
+    const next: Record<StatusFilter, number> = {
+      all: searched.length,
+      active: 0,
+      locked: 0,
+      completed: 0,
+      monitor: 0,
+    };
+    for (const item of searched) {
+      next[item.gateStatus]++;
+      if (!item.assignment.can_enter_data) next.monitor++;
+    }
+    return next;
+  }, [searched]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -100,30 +121,27 @@ export function HomePage() {
       ) : (
         <>
           <Card>
-            <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-end">
-              <div className="flex-1">
-                <Input
-                  label="Find an order"
-                  placeholder="Type a style, IO number, color, PO, or section…"
-                  value={query}
-                  onChange={(e) => updateQuery(e.target.value)}
-                />
-              </div>
-              <div className="sm:w-52">
-                <Select
-                  label="Status"
-                  value={status}
-                  onChange={(e) => updateStatus(e.target.value as StatusFilter)}
-                >
-                  <option value="all">All</option>
-                  <option value="active">Your turn now</option>
-                  <option value="locked">Waiting on earlier stage</option>
-                  <option value="completed">Completed</option>
-                  <option value="monitor">Monitor only</option>
-                </Select>
-              </div>
+            <CardBody>
+              <Input
+                label="Find an order"
+                placeholder="Type a style, IO number, color, PO, or section…"
+                value={query}
+                onChange={(e) => updateQuery(e.target.value)}
+              />
             </CardBody>
           </Card>
+
+          <FilterTabs
+            value={status}
+            onChange={updateStatus}
+            tabs={[
+              { key: "all", label: "All", count: counts.all },
+              { key: "active", label: "Your Turn", count: counts.active },
+              { key: "locked", label: "Waiting", count: counts.locked },
+              { key: "completed", label: "Completed", count: counts.completed },
+              { key: "monitor", label: "Monitor Only", count: counts.monitor },
+            ]}
+          />
 
           <p className="text-xs text-ink-500">
             {filtered.length} matching assignment{filtered.length === 1 ? "" : "s"}
@@ -197,10 +215,10 @@ function WorkItemCard({ item, onOpen }: { item: WorkItem; onOpen: () => void }) 
       onClick={onOpen}
       className="w-full appearance-none border-0 bg-transparent p-0 text-left"
     >
-      <Card className="h-full hover:shadow-card-hover">
+      <Card className="h-full transition-shadow hover:shadow-[0_18px_44px_-16px_rgba(30,41,90,0.45)]">
         <CardBody className="flex h-full flex-col gap-3">
           <div className="flex gap-3">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-ink-100 bg-ink-50">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/80 bg-white/70">
               {imageUrl ? (
                 <img src={imageUrl} alt={order.style} className="h-full w-full object-cover" />
               ) : (

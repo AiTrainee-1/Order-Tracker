@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { useMyWork, type GateStatus, type WorkItem } from "../../hooks/useMyWork";
 import { useOrderAssignments } from "../../hooks/useAssignments";
+import { useStageAssignments } from "../../hooks/useStageAssignments";
 import { useUserContacts } from "../../hooks/useUserContacts";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardBody, CardHeader } from "../../components/ui/Card";
@@ -17,6 +18,7 @@ import { formatDisplayDate } from "../../lib/workflow";
 import { GameLevelPath } from "../../components/dashboard/GameLevelPath";
 import { NextStagesStrip } from "../../components/dashboard/NextStagesStrip";
 import { BackButton } from "../../components/ui/BackButton";
+import { FilterTabs } from "../../components/ui/FilterTabs";
 import { StageFormRouter } from "../../components/forms/stage/StageFormRouter";
 import type { UserContact } from "../../lib/types";
 
@@ -143,29 +145,11 @@ export function DataInputPage() {
             </CardBody>
           </Card>
 
-          <div className="flex flex-wrap gap-2">
-            {STATUS_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => updateStatusFilter(tab.key)}
-                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                  statusFilter === tab.key
-                    ? "bg-brand-dark text-white shadow-card"
-                    : "bg-white text-ink-600 border border-ink-200 hover:bg-ink-50 hover:text-ink-900"
-                }`}
-              >
-                {tab.label}
-                <span
-                  className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
-                    statusFilter === tab.key ? "bg-white/20 text-white" : "bg-ink-100 text-ink-600"
-                  }`}
-                >
-                  {tabCounts[tab.key]}
-                </span>
-              </button>
-            ))}
-          </div>
+          <FilterTabs
+            value={statusFilter}
+            onChange={updateStatusFilter}
+            tabs={STATUS_TABS.map((t) => ({ ...t, count: tabCounts[t.key] }))}
+          />
 
           <p className="text-xs text-ink-500">
             {filtered.length} matching assignment{filtered.length === 1 ? "" : "s"}
@@ -191,9 +175,9 @@ export function DataInputPage() {
                   key={item.assignment.id}
                   type="button"
                   onClick={() => selectAssignment(item.assignment.id)}
-                  className="flex w-full items-center gap-4 rounded-2xl border border-ink-100 bg-white p-4 text-left shadow-card transition-shadow hover:shadow-card-hover"
+                  className="flex w-full items-center gap-4 rounded-2xl border border-white/70 bg-white/80 p-4 text-left backdrop-blur-xl shadow-[0_10px_30px_-14px_rgba(30,41,90,0.35)] transition-shadow hover:shadow-[0_18px_44px_-16px_rgba(30,41,90,0.45)]"
                 >
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-ink-100 bg-ink-50">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/80 bg-white/70">
                     {imageUrl ? (
                       <img src={imageUrl} alt={order?.style} className="h-full w-full object-cover" />
                     ) : (
@@ -276,7 +260,7 @@ function SelectedAssignmentView({
         <CardBody className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-ink-100 bg-ink-50">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/80 bg-white/70">
                 {imageUrl ? (
                   <img src={imageUrl} alt={order.style} className="h-full w-full object-cover" />
                 ) : (
@@ -309,7 +293,12 @@ function SelectedAssignmentView({
             action={<Badge tone="brand">{assignment.section?.unit_type}</Badge>}
           />
           <CardBody>
-            <StageFormRouter order={order} assignment={assignment} onForwarded={onForwarded} />
+            <StageFormRouter
+              order={order}
+              assignment={assignment}
+              stageProgress={item.stageProgress}
+              onForwarded={onForwarded}
+            />
           </CardBody>
         </Card>
       )}
@@ -419,16 +408,26 @@ function StageHistoryAndContacts({ item }: { item: WorkItem }) {
   const nextStageProgress = orderProgress.stages.find((s) => s.stage.sequence_no === mySequence + 1);
 
   const orderAssignmentsQuery = useOrderAssignments(order.id);
+  const stageDefaultsQuery = useStageAssignments();
   const nextStageAssignees = useMemo(
     () => (orderAssignmentsQuery.data ?? []).filter((a) => a.section_id === nextStageProgress?.stage.id),
     [orderAssignmentsQuery.data, nextStageProgress],
   );
 
+  // Whoever's next in line includes both explicit per-order assignees and the
+  // stage's global default users, so handoff contacts are always populated.
+  const nextStageUserIds = useMemo(() => {
+    const defaults = (stageDefaultsQuery.data ?? [])
+      .filter((sa) => sa.section_id === nextStageProgress?.stage.id)
+      .map((sa) => sa.user_id);
+    return Array.from(new Set([...nextStageAssignees.map((a) => a.user_id), ...defaults]));
+  }, [stageDefaultsQuery.data, nextStageAssignees, nextStageProgress]);
+
   const contactIds = useMemo(() => {
     const ids = previousStages.flatMap((s) => s.responsibleUserIds);
-    ids.push(...nextStageAssignees.map((a) => a.user_id));
+    ids.push(...nextStageUserIds);
     return ids;
-  }, [previousStages, nextStageAssignees]);
+  }, [previousStages, nextStageUserIds]);
 
   const { contactsById, isLoading: contactsLoading } = useUserContacts(contactIds);
 
@@ -480,7 +479,7 @@ function StageHistoryAndContacts({ item }: { item: WorkItem }) {
             <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-3">
               <p className="text-sm font-medium text-ink-900">{nextStageProgress.stage.label}</p>
               <ContactList
-                userIds={nextStageAssignees.map((a) => a.user_id)}
+                userIds={nextStageUserIds}
                 contactsById={contactsById}
                 isLoading={contactsLoading}
                 emptyLabel="No one assigned to this stage yet"

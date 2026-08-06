@@ -49,7 +49,6 @@ export default {
       },
       boxShadow: {
         card: "0 1px 2px 0 rgba(16,24,40,0.04), 0 1px 3px 0 rgba(16,24,40,0.06)",
-        "card-hover": "0 4px 10px -2px rgba(16,24,40,0.08), 0 2px 6px -2px rgba(16,24,40,0.06)",
         popover: "0 20px 40px -10px rgba(16,24,40,0.2)",
         glow: "0 0 0 4px rgba(21,94,239,0.12)",
       },

@@ -7,6 +7,7 @@ import {
   useCreateAssignment,
   useDeleteAssignment,
 } from "../../hooks/useAssignments";
+import { useStageAssignments } from "../../hooks/useStageAssignments";
 import { Card, CardBody, CardHeader } from "../../components/ui/Card";
 import { Select, Input, Toggle, Checkbox } from "../../components/ui/FormControls";
 import { Button } from "../../components/ui/Button";
@@ -14,7 +15,8 @@ import { Table } from "../../components/ui/Table";
 import { Badge } from "../../components/ui/Badge";
 import { Loader } from "../../components/ui/Loader";
 import { useToast } from "../../context/ToastContext";
-import type { AssignmentWithDetails, WorkflowStage } from "../../lib/types";
+import { Link } from "react-router-dom";
+import type { AppUser, AssignmentWithDetails, StageAssignment, WorkflowStage } from "../../lib/types";
 
 export function AssignWorkPage() {
   const toast = useToast();
@@ -22,6 +24,7 @@ export function AssignWorkPage() {
   const { data: ordersData, isLoading: ordersLoading } = useOrdersList();
   const { data: stages, isLoading: stagesLoading } = useWorkflowStages();
   const { data: assignments, isLoading: assignmentsLoading } = useAssignments();
+  const { data: stageDefaults } = useStageAssignments();
   const createAssignment = useCreateAssignment();
   const deleteAssignment = useDeleteAssignment();
 
@@ -67,6 +70,24 @@ export function AssignWorkPage() {
     }
     return map;
   }, [assignments, orderId]);
+
+  const usersById = useMemo(() => {
+    const map = new Map<string, AppUser>();
+    for (const u of users ?? []) map.set(u.id, u);
+    return map;
+  }, [users]);
+
+  // Global stage-role defaults per section (apply to all orders). Shown in the
+  // section tooltip, and — for the selected user — lock the section as covered.
+  const defaultsBySection = useMemo(() => {
+    const map = new Map<string, StageAssignment[]>();
+    for (const sa of stageDefaults ?? []) map.set(sa.section_id, [...(map.get(sa.section_id) ?? []), sa]);
+    return map;
+  }, [stageDefaults]);
+  const userDefaultSectionIds = useMemo(
+    () => new Set((stageDefaults ?? []).filter((sa) => sa.user_id === userId).map((sa) => sa.section_id)),
+    [stageDefaults, userId],
+  );
 
   // Numeric (not alphabetical) order-by-number, so "9/26" sorts before "10/26".
   const ordersInSequence = useMemo(
@@ -122,20 +143,23 @@ export function AssignWorkPage() {
     const existingKeys = new Set(
       existingForUserOrder.map((a) => `${a.section_id}::${a.po_id ?? "all"}`),
     );
-    const jobs = Array.from(sectionIds).flatMap((sectionId) =>
-      poTargets
-        .filter((poId) => !existingKeys.has(`${sectionId}::${poId ?? "all"}`))
-        .map((poId) =>
-          createAssignment.mutateAsync({
-            user_id: userId,
-            order_id: orderId,
-            po_id: poId,
-            section_id: sectionId,
-            unit_name: unitName || null,
-            can_enter_data: canEnterData,
-          }),
-        ),
-    );
+    const jobs = Array.from(sectionIds)
+      // Skip sections the user already covers via a global stage-role default.
+      .filter((sectionId) => !userDefaultSectionIds.has(sectionId))
+      .flatMap((sectionId) =>
+        poTargets
+          .filter((poId) => !existingKeys.has(`${sectionId}::${poId ?? "all"}`))
+          .map((poId) =>
+            createAssignment.mutateAsync({
+              user_id: userId,
+              order_id: orderId,
+              po_id: poId,
+              section_id: sectionId,
+              unit_name: unitName || null,
+              can_enter_data: canEnterData,
+            }),
+          ),
+      );
     if (jobs.length === 0) {
       setError("Every selected section is already assigned to this user for that PO scope.");
       return;
@@ -268,13 +292,29 @@ export function AssignWorkPage() {
                   <SectionRow
                     key={s.id}
                     stage={s}
-                    checked={alreadyAssignedSectionIds.has(s.id) || sectionIds.has(s.id)}
+                    checked={
+                      alreadyAssignedSectionIds.has(s.id) ||
+                      userDefaultSectionIds.has(s.id) ||
+                      sectionIds.has(s.id)
+                    }
                     alreadyAssigned={alreadyAssignedSectionIds.has(s.id)}
+                    coveredByDefault={userDefaultSectionIds.has(s.id)}
                     onToggle={() => toggleSection(s.id)}
                     assignees={assigneesBySection.get(s.id) ?? []}
+                    defaults={defaultsBySection.get(s.id) ?? []}
+                    usersById={usersById}
                   />
                 ))}
             </div>
+            <p className="mt-2 text-xs text-ink-400">
+              Stages a user covers via a global default are marked{" "}
+              <span className="font-medium text-ink-500">Default</span> and don't need per-order
+              assignment. Manage those on the{" "}
+              <Link to="/admin/stage-roles" className="font-medium text-brand hover:text-brand-dark">
+                Stage Roles
+              </Link>{" "}
+              page.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -355,26 +395,35 @@ function SectionRow({
   stage,
   checked,
   alreadyAssigned,
+  coveredByDefault,
   onToggle,
   assignees,
+  defaults,
+  usersById,
 }: {
   stage: WorkflowStage;
   checked: boolean;
   alreadyAssigned: boolean;
+  coveredByDefault: boolean;
   onToggle: () => void;
   assignees: AssignmentWithDetails[];
+  defaults: StageAssignment[];
+  usersById: Map<string, AppUser>;
 }) {
+  const locked = alreadyAssigned || coveredByDefault;
+  const hasTooltip = assignees.length > 0 || defaults.length > 0;
+
   return (
     <div className="group relative flex items-center justify-between gap-2 rounded-lg border border-ink-100 px-2.5 py-2">
       <label
         className={`flex min-w-0 items-center gap-2 text-sm ${
-          alreadyAssigned ? "text-ink-400" : "cursor-pointer text-ink-700"
+          locked ? "text-ink-400" : "cursor-pointer text-ink-700"
         }`}
       >
         <input
           type="checkbox"
           checked={checked}
-          disabled={alreadyAssigned}
+          disabled={locked}
           onChange={onToggle}
           className="h-4 w-4 shrink-0 rounded border border-ink-300 text-brand focus:ring-brand disabled:opacity-60"
         />
@@ -383,7 +432,8 @@ function SectionRow({
         </span>
       </label>
       <div className="flex shrink-0 items-center gap-1.5">
-        {alreadyAssigned && <Badge tone="info">Assigned</Badge>}
+        {coveredByDefault && <Badge tone="brand">Default</Badge>}
+        {alreadyAssigned && !coveredByDefault && <Badge tone="info">Assigned</Badge>}
         {assignees.length > 0 && (
           <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-ink-100 px-1 text-[10px] font-semibold text-ink-600">
             {assignees.length}
@@ -391,26 +441,50 @@ function SectionRow({
         )}
       </div>
 
-      {assignees.length > 0 && (
+      {hasTooltip && (
         <div className="pointer-events-none absolute bottom-full right-0 z-30 mb-2 hidden w-64 max-w-[calc(100vw-2rem)] rounded-lg border border-ink-100 bg-white p-3 text-left opacity-0 shadow-popover transition-opacity group-hover:block group-hover:opacity-100">
-          <p className="mb-1.5 text-xs font-semibold text-ink-900">Assigned to {stage.label}</p>
-          <ul className="space-y-1.5">
-            {assignees.map((a) => (
-              <li key={a.id} className="text-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-ink-800">{a.user?.name ?? "Unknown"}</span>
-                  <Badge tone={a.can_enter_data ? "neutral" : "info"}>
-                    {a.can_enter_data ? "Can Enter" : "Monitor"}
-                  </Badge>
-                </div>
-                <p className="text-ink-500">
-                  {a.user?.phone ? `${a.user.phone} · ` : ""}
-                  {a.po?.po_number ? `PO ${a.po.po_number}` : "All POs"}
-                  {a.unit_name ? ` · ${a.unit_name}` : ""}
-                </p>
-              </li>
-            ))}
-          </ul>
+          {defaults.length > 0 && (
+            <div className="mb-2">
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-brand">
+                Default — all orders
+              </p>
+              <ul className="space-y-1">
+                {defaults.map((d) => {
+                  const u = usersById.get(d.user_id);
+                  return (
+                    <li key={d.id} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="font-medium text-ink-800">{u?.name ?? "Unknown"}</span>
+                      <Badge tone={d.can_enter_data ? "neutral" : "info"}>
+                        {d.can_enter_data ? "Can Enter" : "Monitor"}
+                      </Badge>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+          {assignees.length > 0 && (
+            <>
+              <p className="mb-1.5 text-xs font-semibold text-ink-900">This order</p>
+              <ul className="space-y-1.5">
+                {assignees.map((a) => (
+                  <li key={a.id} className="text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-ink-800">{a.user?.name ?? "Unknown"}</span>
+                      <Badge tone={a.can_enter_data ? "neutral" : "info"}>
+                        {a.can_enter_data ? "Can Enter" : "Monitor"}
+                      </Badge>
+                    </div>
+                    <p className="text-ink-500">
+                      {a.user?.phone ? `${a.user.phone} · ` : ""}
+                      {a.po?.po_number ? `PO ${a.po.po_number}` : "All POs"}
+                      {a.unit_name ? ` · ${a.unit_name}` : ""}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       )}
     </div>

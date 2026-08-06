@@ -27,10 +27,10 @@ export function Table<T>({
   }
 
   return (
-    <div className="scrollbar-thin overflow-x-auto rounded-xl border border-ink-100">
+    <div className="scrollbar-thin overflow-x-auto rounded-xl border border-white/80 bg-white/60">
       <table className="w-full min-w-[640px] text-left text-sm">
         <thead>
-          <tr className="border-b border-ink-100 bg-ink-50/60 text-xs uppercase tracking-wide text-ink-500">
+          <tr className="border-b border-white/80 bg-white/70 text-xs uppercase tracking-wide text-ink-500">
             {columns.map((col) => (
               <th key={col.header} className={`whitespace-nowrap px-3 py-2.5 font-semibold ${col.className ?? ""}`}>
                 {col.header}
@@ -40,7 +40,7 @@ export function Table<T>({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={keyFor(row)} className="border-b border-ink-100 transition-colors last:border-0 hover:bg-blue-50/60">
+            <tr key={keyFor(row)} className="border-b border-white/70 transition-colors last:border-0 hover:bg-white/80">
               {columns.map((col) => (
                 <td key={col.header} className={`px-3 py-3.5 align-middle text-ink-800 ${col.className ?? ""}`}>
                   {col.render(row)}

@@ -3,10 +3,10 @@ import { useToast } from "../../../context/ToastContext";
 import { useStageSubItems, useUpsertStageSubItem } from "../../../hooks/useStageSubItems";
 import { STAGE_SUB_ITEMS } from "../../../lib/stageConfig";
 import { getAssignmentQty } from "../../../lib/orderQty";
-import { Button } from "../../ui/Button";
+
 import { Input, Textarea } from "../../ui/FormControls";
 import { Loader } from "../../ui/Loader";
-import { TransferFields, useForwardConfirm, useStageEntryBuilder, useTransferFields } from "./shared";
+import { StageActions, TransferFields, useStageEntryBuilder, useTransferFields } from "./shared";
 import type { StageFormProps } from "./types";
 
 export function MaterialPlanningForm({ order, assignment, onForwarded }: StageFormProps) {
@@ -16,7 +16,6 @@ export function MaterialPlanningForm({ order, assignment, onForwarded }: StageFo
   const upsertItem = useUpsertStageSubItem();
   const { createEntry, buildEntry, appUser } = useStageEntryBuilder(order, assignment);
   const transfer = useTransferFields();
-  const forwardConfirm = useForwardConfirm();
 
   const [planned, setPlanned] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
@@ -63,9 +62,8 @@ export function MaterialPlanningForm({ order, assignment, onForwarded }: StageFo
     }
   }
 
-  async function handleForward() {
+  async function handleForward(isFinal: boolean) {
     if (!appUser) return;
-    if (!(await forwardConfirm(assignment.section?.label ?? "this stage"))) return;
     setError(null);
     try {
       await handleSavePlan();
@@ -79,10 +77,14 @@ export function MaterialPlanningForm({ order, assignment, onForwarded }: StageFo
             notes: notes || null,
             ...transfer.values,
           },
-          true,
+          isFinal,
         ),
       );
-      toast.success("Material plan forwarded to Purchase Order to Suppliers.");
+      toast.success(
+        isFinal
+          ? "Material plan forwarded to Purchase Order to Suppliers."
+          : "Moved forward — this stage stays open until the plan is finalised.",
+      );
       onForwarded();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not forward.";
@@ -123,14 +125,15 @@ export function MaterialPlanningForm({ order, assignment, onForwarded }: StageFo
 
       {error && <p className="text-sm text-status-bad">{error}</p>}
 
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Button variant="secondary" onClick={handleSavePlan} isLoading={upsertItem.isPending} className="flex-1">
-          Save Plan
-        </Button>
-        <Button onClick={handleForward} isLoading={createEntry.isPending} className="flex-1">
-          Forward to Next Stage →
-        </Button>
-      </div>
+      <StageActions
+        sectionLabel={assignment.section?.label ?? "this stage"}
+        unitType="KG"
+        balance={0}
+        isLoading={upsertItem.isPending || createEntry.isPending}
+        onSavePlan={handleSavePlan}
+        onMoveForward={() => handleForward(false)}
+        onComplete={() => handleForward(true)}
+      />
     </div>
   );
 }

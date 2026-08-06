@@ -3,11 +3,11 @@ import { useToast } from "../../../context/ToastContext";
 import { useStageSubItems, useUpsertStageSubItem } from "../../../hooks/useStageSubItems";
 import { STAGE_SUB_ITEMS } from "../../../lib/stageConfig";
 import { getAssignmentFixedQty } from "../../../lib/orderQty";
-import { Button } from "../../ui/Button";
+
 import { Input, Textarea, Toggle } from "../../ui/FormControls";
 import { Loader } from "../../ui/Loader";
 import { Badge } from "../../ui/Badge";
-import { QtyStat, TransferFields, useForwardConfirm, useStageEntryBuilder, useTransferFields } from "./shared";
+import { QtyStat, StageActions, TransferFields, useStageEntryBuilder, useTransferFields } from "./shared";
 import type { StageFormProps } from "./types";
 
 export function SubStepsForm({ order, assignment, onForwarded }: StageFormProps) {
@@ -20,7 +20,6 @@ export function SubStepsForm({ order, assignment, onForwarded }: StageFormProps)
   const upsertItem = useUpsertStageSubItem();
   const { createEntry, buildEntry, appUser } = useStageEntryBuilder(order, assignment);
   const transfer = useTransferFields();
-  const forwardConfirm = useForwardConfirm();
 
   const [completed, setCompleted] = useState<Record<string, string>>({});
   const [done, setDone] = useState<Record<string, boolean>>({});
@@ -77,11 +76,8 @@ export function SubStepsForm({ order, assignment, onForwarded }: StageFormProps)
     }
   }
 
-  async function handleForward() {
+  async function handleForward(isFinal: boolean) {
     if (!appUser) return;
-    const minNow = items.length ? Math.min(...items.map((item) => Number(completed[item.key]) || 0)) : 0;
-    const balance = Math.max(fixedQty - minNow, 0);
-    if (!(await forwardConfirm(assignment.section?.label ?? "this stage", { qty: balance, unit: "PCS" }))) return;
     setError(null);
     try {
       await persistItems();
@@ -93,14 +89,18 @@ export function SubStepsForm({ order, assignment, onForwarded }: StageFormProps)
             qty_received: fixedQty,
             qty_completed_today: minCompleted,
             qty_forwarded: minCompleted,
-            qty_shortage: Math.max(fixedQty - minCompleted, 0),
+            qty_shortage: isFinal ? Math.max(fixedQty - minCompleted, 0) : 0,
             notes: notes || null,
             ...transfer.values,
           },
-          true,
+          isFinal,
         ),
       );
-      toast.success(`${assignment.section?.label} completed and forwarded.`);
+      toast.success(
+        isFinal
+          ? `${assignment.section?.label} completed and forwarded.`
+          : `${minCompleted.toLocaleString()} PCS moved forward — this stage stays open for the balance.`,
+      );
       onForwarded();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not forward.";
@@ -165,14 +165,19 @@ export function SubStepsForm({ order, assignment, onForwarded }: StageFormProps)
         </p>
       )}
 
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Button variant="secondary" onClick={handleSaveProgress} isLoading={upsertItem.isPending} className="flex-1">
-          Save Progress (stay open)
-        </Button>
-        <Button onClick={handleForward} isLoading={createEntry.isPending} className="flex-1">
-          Forward &amp; Complete →
-        </Button>
-      </div>
+      <StageActions
+        sectionLabel={assignment.section?.label ?? "this stage"}
+        unitType="PCS"
+        balance={Math.max(
+          fixedQty - (items.length ? Math.min(...items.map((i) => Number(completed[i.key]) || 0)) : 0),
+          0,
+        )}
+        isLoading={upsertItem.isPending || createEntry.isPending}
+        onSavePlan={handleSaveProgress}
+        savePlanLabel="Save Plan (stay open)"
+        onMoveForward={() => handleForward(false)}
+        onComplete={() => handleForward(true)}
+      />
     </div>
   );
 }

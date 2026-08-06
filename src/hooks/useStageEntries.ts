@@ -22,6 +22,19 @@ export function useRecentStageEntries(orderId?: string, sectionId?: string) {
 
 export type CreateStageEntryInput = Omit<StageEntry, "id" | "created_at">;
 
+function invalidateAfterEntry(
+  queryClient: ReturnType<typeof useQueryClient>,
+  orderId: string,
+  sectionId: string,
+) {
+  queryClient.invalidateQueries({ queryKey: ["stage_entries", orderId, sectionId] });
+  queryClient.invalidateQueries({ queryKey: ["order_detail", orderId] });
+  queryClient.invalidateQueries({ queryKey: ["orders_bundle"] });
+  // Broad match (no exact id list) so every my_work_entries query, whatever
+  // order-set it was fetched with, re-checks the order's current stage.
+  queryClient.invalidateQueries({ queryKey: ["my_work_entries"] });
+}
+
 export function useCreateStageEntry() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -29,15 +42,25 @@ export function useCreateStageEntry() {
       const { error } = await supabase.from("stage_entries").insert(input);
       if (error) throw error;
     },
+    onSuccess: (_data, variables) =>
+      invalidateAfterEntry(queryClient, variables.order_id, variables.section_id),
+  });
+}
+
+/** Inserts a batch of entries in one round-trip — used when a stage's quantity
+ * is split across several units/branches/outside parties and each split needs
+ * its own auditable record. */
+export function useCreateStageEntries() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (inputs: CreateStageEntryInput[]) => {
+      if (inputs.length === 0) return;
+      const { error } = await supabase.from("stage_entries").insert(inputs);
+      if (error) throw error;
+    },
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: ["stage_entries", variables.order_id, variables.section_id],
-      });
-      queryClient.invalidateQueries({ queryKey: ["order_detail", variables.order_id] });
-      queryClient.invalidateQueries({ queryKey: ["orders_bundle"] });
-      // Broad match (no exact id list) so every my_work_entries query, whatever
-      // order-set it was fetched with, re-checks the order's current stage.
-      queryClient.invalidateQueries({ queryKey: ["my_work_entries"] });
+      if (variables.length === 0) return;
+      invalidateAfterEntry(queryClient, variables[0].order_id, variables[0].section_id);
     },
   });
 }

@@ -1,3 +1,24 @@
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Parses a value from the database into a Date anchored to the LOCAL day.
+ *
+ * `delivery_date` / `entry_date` are Postgres `date` columns, so they arrive as
+ * plain "YYYY-MM-DD". Passing those straight to `new Date()` parses them as
+ * UTC midnight per the ES spec — which, read back with local getters, lands on
+ * the PREVIOUS day for anyone west of UTC and shifts every countdown by one.
+ * Splitting the parts and building a local date keeps the calendar day intact.
+ * Full timestamps (created_at/updated_at) already carry a zone, so they're left
+ * to the normal parser.
+ */
+export function parseDbDate(value: string): Date {
+  if (DATE_ONLY.test(value)) {
+    const [y, m, d] = value.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+  return new Date(value);
+}
+
 export function diffInDays(from: Date, to: Date): number {
   const msPerDay = 1000 * 60 * 60 * 24;
   const a = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
@@ -5,20 +26,24 @@ export function diffInDays(from: Date, to: Date): number {
   return Math.round((b - a) / msPerDay);
 }
 
+/** Whole days from today until the delivery date. Negative = overdue, 0 = due today. */
 export function daysRemaining(deliveryDate: string | null): number | null {
   if (!deliveryDate) return null;
-  return diffInDays(new Date(), new Date(deliveryDate));
+  return diffInDays(new Date(), parseDbDate(deliveryDate));
 }
 
 export function addDays(dateStr: string, days: number): string {
-  const d = new Date(dateStr);
+  const d = parseDbDate(dateStr);
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  // Build the string from local parts — toISOString() would re-shift the day.
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${month}-${day}`;
 }
 
 export function formatDisplayDate(dateStr: string | null | undefined): string {
   if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleDateString("en-GB", {
+  return parseDbDate(dateStr).toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",

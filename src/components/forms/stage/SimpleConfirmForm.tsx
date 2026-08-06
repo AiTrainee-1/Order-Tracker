@@ -1,53 +1,63 @@
 import { useState } from "react";
 import { useToast } from "../../../context/ToastContext";
-import { Button } from "../../ui/Button";
 import { Checkbox } from "../../ui/FormControls";
 import { Textarea } from "../../ui/FormControls";
 import { getAssignmentQty } from "../../../lib/orderQty";
-import { TransferFields, useForwardConfirm, useStageEntryBuilder, useTransferFields } from "./shared";
+import { StageActions, TransferFields, useStageEntryBuilder, useTransferFields } from "./shared";
 import type { StageFormProps } from "./types";
 
-const COPY: Record<string, { prompt: string; confirmLabel: string }> = {
+const COPY: Record<
+  string,
+  { prompt: string; confirmLabel: string; partialHint: string; partialLabel: string }
+> = {
   po_to_suppliers: {
-    prompt: "Have Purchase Orders been raised and approved with the suppliers for this order's material plan?",
-    confirmLabel: "Purchase Orders placed with suppliers",
+    prompt:
+      "Have Purchase Orders been raised and approved with the suppliers for this order's material plan?",
+    confirmLabel: "All purchased items have physically arrived",
+    partialHint:
+      "DC / slip raised but the goods haven't landed yet? Move it forward now so the next stage isn't blocked — this stage stays orange until everything arrives and you tick the box below.",
+    partialLabel: "DC Raised — Move to Next Stage",
   },
   pattern_marker: {
-    prompt: "Is the Pattern Card / Marker for this order ready in the Fabric Store, and is the order clear to proceed to Cutting?",
+    prompt:
+      "Is the Pattern Card / Marker for this order ready in the Fabric Store, and is the order clear to proceed to Cutting?",
     confirmLabel: "Pattern / Marker is ready",
+    partialHint:
+      "Part of the pattern set ready? Move it forward so Cutting can start — this stage stays orange until the full set is signed off.",
+    partialLabel: "Not Completed — Move to Next Stage",
   },
 };
 
 export function SimpleConfirmForm({ order, assignment, onForwarded }: StageFormProps) {
   const toast = useToast();
-  const { createEntry, buildEntry, appUser } = useStageEntryBuilder(order, assignment);
+  const { submitMovement, isPending, appUser } = useStageEntryBuilder(order, assignment);
   const transfer = useTransferFields();
   const copy = COPY[assignment.section?.key ?? ""] ?? COPY.po_to_suppliers;
   const qty = getAssignmentQty(order, assignment);
-  const forwardConfirm = useForwardConfirm();
 
   const [confirmed, setConfirmed] = useState(false);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  async function handleForward() {
+  async function handleForward(isFinal: boolean) {
     if (!appUser) return;
-    if (!(await forwardConfirm(assignment.section?.label ?? "this stage"))) return;
     setError(null);
     try {
-      await createEntry.mutateAsync(
-        buildEntry(
-          {
-            qty_received: qty,
-            qty_completed_today: qty,
-            qty_forwarded: qty,
-            notes: notes || copy.confirmLabel,
-            ...transfer.values,
-          },
-          true,
-        ),
+      await submitMovement({
+        base: {
+          qty_received: qty,
+          qty_completed_today: qty,
+          qty_forwarded: qty,
+          notes: notes || (isFinal ? copy.confirmLabel : copy.partialLabel),
+          ...transfer.values,
+        },
+        isFinal,
+      });
+      toast.success(
+        isFinal
+          ? "Completed and forwarded to the next stage."
+          : "Moved forward — this stage stays open until everything arrives.",
       );
-      toast.success("Forwarded to the next stage.");
       onForwarded();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not forward.";
@@ -59,6 +69,10 @@ export function SimpleConfirmForm({ order, assignment, onForwarded }: StageFormP
   return (
     <div className="space-y-5">
       <p className="rounded-lg bg-blue-50 px-3 py-2.5 text-sm text-blue-700">{copy.prompt}</p>
+
+      <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+        {copy.partialHint}
+      </p>
 
       <Checkbox checked={confirmed} onChange={setConfirmed} label={copy.confirmLabel} />
 
@@ -73,15 +87,17 @@ export function SimpleConfirmForm({ order, assignment, onForwarded }: StageFormP
 
       {error && <p className="text-sm text-status-bad">{error}</p>}
 
-      <Button
-        onClick={handleForward}
-        isLoading={createEntry.isPending}
-        disabled={!confirmed}
-        className="w-full"
-        size="lg"
-      >
-        Mark Completed & Move Forward →
-      </Button>
+      <StageActions
+        sectionLabel={assignment.section?.label ?? "this stage"}
+        unitType="PCS"
+        balance={0}
+        isLoading={isPending}
+        onMoveForward={() => handleForward(false)}
+        moveForwardLabel={copy.partialLabel}
+        onComplete={() => handleForward(true)}
+        completeLabel="Mark Completed & Move Forward →"
+        completeDisabled={!confirmed}
+      />
     </div>
   );
 }

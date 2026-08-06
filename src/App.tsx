@@ -8,6 +8,7 @@ import { OrdersPage } from "./pages/admin/OrdersPage";
 import { OrderDetailPage } from "./pages/admin/OrderDetailPage";
 import { UsersPage } from "./pages/admin/UsersPage";
 import { AssignWorkPage } from "./pages/admin/AssignWorkPage";
+import { StageRolesPage } from "./pages/admin/StageRolesPage";
 import { HomePage } from "./pages/user/HomePage";
 import { DataInputPage } from "./pages/user/DataInputPage";
 
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="orders/:orderId" element={<OrderDetailPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="assign" element={<AssignWorkPage />} />
+        <Route path="stage-roles" element={<StageRolesPage />} />
       </Route>
 
       <Route

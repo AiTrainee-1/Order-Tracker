@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { SHADOW_PANEL } from "../../lib/theme";
 
 export function Modal({
   open,
@@ -21,11 +22,11 @@ export function Modal({
       onClick={onClose}
     >
       <div
-        className={`w-full ${widthClass} animate-fadeInUp rounded-2xl border border-ink-100 bg-white shadow-popover`}
+        className={`w-full ${widthClass} animate-fadeInUp rounded-3xl border border-white/70 bg-white/90 backdrop-blur-2xl ${SHADOW_PANEL}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
-          <h2 className="text-sm font-semibold text-ink-900">{title}</h2>
+        <div className="flex items-center justify-between border-b border-white/70 px-5 py-4">
+          <h2 className="text-sm font-bold text-ink-900">{title}</h2>
           <button
             onClick={onClose}
             aria-label="Close"

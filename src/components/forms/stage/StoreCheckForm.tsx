@@ -4,10 +4,9 @@ import { useAllStageSubItemsForOrder } from "../../../hooks/useStageSubItems";
 import { useWorkflowStages } from "../../../hooks/useWorkflowStages";
 import { useRecentStageEntries } from "../../../hooks/useStageEntries";
 import { FABRIC_PLANNING_ITEM_KEY, FABRIC_PLANNING_STAGE_KEY } from "../../../lib/stageConfig";
-import { Button } from "../../ui/Button";
 import { Input, Textarea } from "../../ui/FormControls";
 import { Loader } from "../../ui/Loader";
-import { QtyStat, StageBalanceSummary, TransferFields, useForwardConfirm, useStageEntryBuilder, useTransferFields } from "./shared";
+import { QtyStat, StageActions, StageBalanceSummary, TransferFields, useStageEntryBuilder, useTransferFields } from "./shared";
 import type { StageFormProps } from "./types";
 
 export function StoreCheckForm({ order, assignment, onForwarded }: StageFormProps) {
@@ -17,7 +16,6 @@ export function StoreCheckForm({ order, assignment, onForwarded }: StageFormProp
   const entriesQuery = useRecentStageEntries(order.id, assignment.section_id);
   const { createEntry, buildEntry, appUser } = useStageEntryBuilder(order, assignment);
   const transfer = useTransferFields();
-  const forwardConfirm = useForwardConfirm();
 
   const [receivedQty, setReceivedQty] = useState("");
   const [notes, setNotes] = useState("");
@@ -44,10 +42,11 @@ export function StoreCheckForm({ order, assignment, onForwarded }: StageFormProp
   const received = Number(receivedQty) || 0;
   const balanceAfter = Math.max(plannedFabricQty - forwardedSoFar - received, 0);
 
-  async function handleSubmit(isFinal: boolean) {
+  /** planOnly records what physically arrived without sending anything on; the
+   * other two modes forward it, either leaving the stage open (orange) or
+   * closing it out. */
+  async function handleSubmit(isFinal: boolean, planOnly = false) {
     if (!appUser) return;
-    if (isFinal && !(await forwardConfirm(assignment.section?.label ?? "this stage", { qty: balanceAfter, unit: "KG" })))
-      return;
     setError(null);
     try {
       await createEntry.mutateAsync(
@@ -56,9 +55,9 @@ export function StoreCheckForm({ order, assignment, onForwarded }: StageFormProp
             unit_type: "KG",
             qty_received: plannedFabricQty,
             qty_completed_today: received,
-            qty_forwarded: received,
+            qty_forwarded: planOnly ? 0 : received,
             qty_shortage: isFinal ? balanceAfter : 0,
-            notes: notes || null,
+            notes: notes || (planOnly ? "Stock counted at store." : null),
             ...transfer.values,
           },
           isFinal,
@@ -68,8 +67,13 @@ export function StoreCheckForm({ order, assignment, onForwarded }: StageFormProp
         toast.success("Fabric Store verified and forwarded to Pattern Making & Marker Planning.");
         onForwarded();
       } else {
-        toast.success("Entry saved — this stage stays open for the remaining balance.");
+        toast.success(
+          planOnly
+            ? "Count saved — nothing forwarded yet."
+            : "Moved forward — this stage stays open for the remaining balance.",
+        );
         setReceivedQty("");
+        if (!planOnly) onForwarded();
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not save.";
@@ -114,20 +118,16 @@ export function StoreCheckForm({ order, assignment, onForwarded }: StageFormProp
 
       {error && <p className="text-sm text-status-bad">{error}</p>}
 
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Button
-          variant="secondary"
-          onClick={() => handleSubmit(false)}
-          isLoading={createEntry.isPending}
-          disabled={received <= 0}
-          className="flex-1"
-        >
-          Save Entry (stay open)
-        </Button>
-        <Button onClick={() => handleSubmit(true)} isLoading={createEntry.isPending} className="flex-1">
-          Forward &amp; Complete →
-        </Button>
-      </div>
+      <StageActions
+        sectionLabel={assignment.section?.label ?? "Fabric Store"}
+        unitType="KG"
+        balance={balanceAfter}
+        isLoading={createEntry.isPending}
+        onSavePlan={() => handleSubmit(false, true)}
+        savePlanLabel="Save Plan (stay open)"
+        onMoveForward={() => handleSubmit(false)}
+        onComplete={() => handleSubmit(true)}
+      />
     </div>
   );
 }

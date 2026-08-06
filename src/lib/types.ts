@@ -116,6 +116,16 @@ export interface AssignmentWithDetails extends UserAssignment {
   user?: AppUser;
 }
 
+/** Global stage-role default: a user set as the default assignee for a stage
+ * across every order (expanded into implicit per-order assignments by the app). */
+export interface StageAssignment {
+  id: string;
+  user_id: string;
+  section_id: string;
+  can_enter_data: boolean;
+  created_at: string;
+}
+
 /** A named material/sub-step row within a stage (Yarn/Fabric/Trims/Accessories
  * under Raw Material Planning, Line Feeding/Inline QC/... under Sewing, etc). */
 export interface StageSubItem {

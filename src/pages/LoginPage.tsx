@@ -1,10 +1,18 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Button } from "../components/ui/Button";
-import { Input } from "../components/ui/FormControls";
 import { Loader } from "../components/ui/Loader";
 import { BrandMark } from "../components/ui/BrandMark";
+import {
+  authBackground,
+  brandGradient,
+  dotTexture,
+  glassSheen,
+  headingGradient,
+  iconGradient,
+  SHADOW_PANEL,
+  type IconTone,
+} from "../lib/theme";
 
 export function LoginPage() {
   const { appUser, loading, login } = useAuth();
@@ -35,86 +43,115 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col md:flex-row">
-      <div className="flex flex-col justify-between border-b border-ink-100 bg-ink-50 px-6 py-8 md:w-1/2 md:border-b-0 md:border-r md:px-14 md:py-14">
-        <div className="flex items-center gap-3">
-          <BrandMark size={40} />
-          <div>
-            <p className="text-base font-bold tracking-tight text-ink-900">UK TEXTILES</p>
-            <p className="text-xs text-ink-500">Excellence in Every Thread</p>
-          </div>
-        </div>
+    <div className="relative min-h-screen overflow-hidden" style={authBackground}>
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute inset-0 opacity-[0.5]" style={dotTexture} />
+      </div>
 
-        <div className="my-10 md:my-0">
-          <h1 className="text-3xl font-bold leading-tight tracking-tight text-ink-900 md:text-4xl">
-            Garment order tracking, <span className="text-brand">simplified.</span>
+      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center justify-center gap-10 px-5 py-12 lg:flex-row lg:justify-between lg:gap-16 lg:px-8">
+        {/* Brand side — dark text on the light mesh. */}
+        <div className="w-full max-w-xl">
+          <div className="flex items-center gap-3">
+            <span className="flex items-center justify-center rounded-2xl border border-white/80 bg-white px-2.5 py-2 shadow-lg shadow-blue-900/10">
+              <BrandMark size={30} />
+            </span>
+            <div>
+              <p className="text-base font-bold tracking-tight text-ink-900">UK TEXTILES</p>
+              <p className="text-xs font-medium text-ink-500">Excellence in Every Thread</p>
+            </div>
+          </div>
+
+          <h1 className="mt-10 text-4xl font-bold leading-[1.1] tracking-tight text-ink-900 sm:text-5xl">
+            Garment order tracking,{" "}
+            <span className="bg-clip-text text-transparent" style={headingGradient}>
+              simplified.
+            </span>
           </h1>
-          <p className="mt-3 max-w-sm text-sm text-ink-600">
+          <p className="mt-4 max-w-md text-sm leading-relaxed text-ink-600 sm:text-base">
             Track every order from PO to packing across the full 13-stage production workflow — in
             real time.
           </p>
 
-          <div className="mt-8 space-y-3">
-            <FeatureRow icon="📦" tone="brand" text="13-stage production workflow tracking" />
-            <FeatureRow icon="⏱" tone="warn" text="Live delivery countdowns & urgency alerts" />
-            <FeatureRow icon="👥" tone="good" text="Role-based assignments, monitor-only access" />
+          <div className="mt-9 grid gap-3 sm:max-w-md">
+            <FeaturePill icon="📦" tone="sky" text="13-stage production workflow tracking" />
+            <FeaturePill icon="⏱" tone="amber" text="Live delivery countdowns & urgency alerts" />
+            <FeaturePill icon="👥" tone="emerald" text="Role-based assignments, monitor-only access" />
           </div>
+
+          <p className="mt-10 hidden text-xs text-ink-400 lg:block">
+            © {new Date().getFullYear()} UK Textiles. All rights reserved.
+          </p>
         </div>
 
-        <p className="hidden text-xs text-ink-400 md:block">
-          © {new Date().getFullYear()} UK Textiles. All rights reserved.
-        </p>
-      </div>
+        {/* Frosted sign-in panel */}
+        <div className="w-full max-w-md">
+          <div className={`relative overflow-hidden rounded-3xl border border-white/70 bg-white/60 p-7 backdrop-blur-2xl sm:p-9 ${SHADOW_PANEL}`}>
+            <div className="pointer-events-none absolute inset-0 opacity-70" style={glassSheen} />
+            <span className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-violet-400/25 blur-2xl" />
+            <span className="pointer-events-none absolute -bottom-16 -left-12 h-36 w-36 rounded-full bg-sky-400/25 blur-2xl" />
 
-      <div className="flex flex-1 items-center justify-center bg-white px-4 py-10 md:px-8">
-        <div className="w-full max-w-sm">
-          <div className="rounded-2xl border border-ink-100 bg-white p-8 shadow-popover">
-            <h2 className="text-lg font-bold tracking-tight text-ink-900">Welcome back</h2>
-            <p className="mt-1 text-sm text-ink-500">Sign in to continue to your workspace.</p>
+            <div className="relative">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/80 bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-brand-dark shadow-sm">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                Secure sign in
+              </span>
 
-            <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-              <Input
-                label="Username"
-                autoFocus
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="e.g. admin"
-                required
-              />
-              <div className="relative">
-                <Input
-                  label="Password"
+              <h2 className="mt-4 text-2xl font-bold tracking-tight text-ink-900">Welcome back</h2>
+              <p className="mt-1 text-sm text-ink-600">Sign in to continue to your workspace.</p>
+
+              <form onSubmit={handleSubmit} className="mt-7 space-y-4">
+                <GlassField
+                  icon={<UserIcon />}
+                  placeholder="Username"
+                  autoFocus
+                  value={username}
+                  onChange={setUsername}
+                  autoComplete="username"
+                />
+
+                <GlassField
+                  icon={<LockIcon />}
+                  placeholder="Password"
                   type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  className="pr-11"
+                  onChange={setPassword}
+                  autoComplete="current-password"
+                  trailing={
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="rounded-lg p-1 text-ink-500 transition-colors hover:bg-ink-100 hover:text-ink-900"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      tabIndex={-1}
+                    >
+                      {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                    </button>
+                  }
                 />
+
+                {error && (
+                  <p className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm font-medium text-red-700">
+                    {error}
+                  </p>
+                )}
+
                 <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-[34px] text-ink-400 transition-colors hover:text-ink-700"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                  tabIndex={-1}
+                  type="submit"
+                  disabled={submitting}
+                  style={brandGradient}
+                  className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl px-5 py-3.5 text-base font-semibold text-white shadow-[0_12px_30px_-8px_rgba(21,94,239,0.65)] transition-all hover:brightness-110 hover:shadow-[0_16px_40px_-8px_rgba(21,94,239,0.75)] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                  <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/30 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+                  {submitting && (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" />
+                  )}
+                  <span className="relative">{submitting ? "Signing in…" : "Sign In"}</span>
                 </button>
-              </div>
-
-              {error && (
-                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-status-bad">
-                  {error}
-                </p>
-              )}
-
-              <Button type="submit" className="w-full" size="lg" isLoading={submitting}>
-                Sign In
-              </Button>
-            </form>
+              </form>
+            </div>
           </div>
 
-          <p className="mt-6 text-center text-xs text-ink-400">
+          <p className="mt-6 text-center text-xs font-medium text-ink-500">
             Having trouble signing in? Contact your Host Admin.
           </p>
         </div>
@@ -123,22 +160,80 @@ export function LoginPage() {
   );
 }
 
-const featureIconTone: Record<"brand" | "warn" | "good", string> = {
-  brand: "bg-blue-50 text-brand",
-  warn: "bg-amber-50 text-amber-600",
-  good: "bg-green-50 text-green-600",
-};
-
-function FeatureRow({ icon, tone, text }: { icon: ReactNode; tone: "brand" | "warn" | "good"; text: string }) {
+function FeaturePill({
+  icon,
+  tone,
+  text,
+}: {
+  icon: ReactNode;
+  tone: IconTone;
+  text: string;
+}) {
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-3 rounded-2xl border border-white/80 bg-white/55 px-4 py-3 shadow-[0_8px_20px_-12px_rgba(30,41,90,0.4)] backdrop-blur-md transition-colors hover:bg-white/75">
       <span
-        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-base ${featureIconTone[tone]}`}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-base shadow-md"
+        style={iconGradient[tone]}
       >
         {icon}
       </span>
-      <p className="text-sm font-medium text-ink-700">{text}</p>
+      <p className="text-sm font-semibold text-ink-800">{text}</p>
     </div>
+  );
+}
+
+/** Frosted single-line field: icon inside, placeholder as the label, inset
+ * shadow so it reads as pressed into the glass — not a stacked form row. */
+function GlassField({
+  icon,
+  trailing,
+  value,
+  onChange,
+  ...rest
+}: {
+  icon: ReactNode;
+  trailing?: ReactNode;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  type?: string;
+  autoFocus?: boolean;
+  autoComplete?: string;
+}) {
+  return (
+    <div className="group relative">
+      <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-ink-500 transition-colors group-focus-within:text-brand">
+        {icon}
+      </span>
+      <input
+        {...rest}
+        required
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={`w-full rounded-2xl border border-white/90 bg-white/85 py-3.5 pl-12 text-sm font-semibold text-ink-900 shadow-[inset_0_1px_3px_rgba(16,24,40,0.08)] outline-none transition-all placeholder:font-normal placeholder:text-ink-400 focus:border-brand/50 focus:bg-white focus:shadow-[0_0_0_4px_rgba(21,94,239,0.16),inset_0_1px_3px_rgba(16,24,40,0.05)] ${
+          trailing ? "pr-12" : "pr-4"
+        }`}
+      />
+      {trailing && <span className="absolute right-3 top-1/2 z-10 -translate-y-1/2">{trailing}</span>}
+    </div>
+  );
+}
+
+function UserIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+      <circle cx="12" cy="8" r="3.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4.5 20a7.5 7.5 0 0 1 15 0" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+      <rect x="4" y="10" width="16" height="10" rx="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8 10V7a4 4 0 0 1 8 0v3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 

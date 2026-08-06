@@ -27,9 +27,9 @@ export function DeliveryReminderList({ bundles }: { bundles: OrderBundle[] }) {
           <Link
             key={order.id}
             to={`/admin/orders/${order.id}`}
-            className="flex w-64 shrink-0 items-center gap-3 rounded-xl border border-ink-100 bg-white p-3 shadow-card transition-shadow hover:shadow-card-hover"
+            className="flex w-64 shrink-0 items-center gap-3 rounded-xl border border-white/70 bg-white/80 p-3 backdrop-blur-xl shadow-[0_10px_30px_-14px_rgba(30,41,90,0.35)] transition-shadow hover:shadow-[0_18px_44px_-16px_rgba(30,41,90,0.45)]"
           >
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-ink-100 bg-ink-50">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/80 bg-white/70">
               {imageUrl ? (
                 <img src={imageUrl} alt={order.style} className="h-full w-full object-cover" />
               ) : (

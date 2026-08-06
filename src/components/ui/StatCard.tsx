@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
+import { iconGradient, SHADOW_GLASS, SHADOW_GLASS_HOVER, type IconTone } from "../../lib/theme";
 
 type Tone = "neutral" | "good" | "warn" | "bad" | "brand" | "shortage" | "rejected";
 
-const toneAccent: Record<Tone, string> = {
+/** Left accent rail — the only place raw colour appears on the tile. */
+const toneRail: Record<Tone, string> = {
   neutral: "before:bg-ink-300",
   good: "before:bg-good-gradient",
   warn: "before:bg-warn-gradient",
@@ -12,6 +14,7 @@ const toneAccent: Record<Tone, string> = {
   rejected: "before:bg-status-rejected",
 };
 
+/** Values stay black unless the number itself is a problem. */
 const toneValueColor: Record<Tone, string> = {
   neutral: "text-ink-900",
   good: "text-ink-900",
@@ -22,14 +25,14 @@ const toneValueColor: Record<Tone, string> = {
   rejected: "text-red-700",
 };
 
-const toneIconBg: Record<Tone, string> = {
-  neutral: "bg-ink-100 text-ink-500",
-  good: "bg-green-50 text-green-600",
-  warn: "bg-amber-50 text-amber-600",
-  bad: "bg-red-50 text-red-600",
-  brand: "bg-blue-50 text-brand",
-  shortage: "bg-purple-50 text-purple-600",
-  rejected: "bg-red-50 text-red-700",
+const toneIcon: Record<Tone, IconTone> = {
+  neutral: "slate",
+  good: "emerald",
+  warn: "amber",
+  bad: "rose",
+  brand: "sky",
+  shortage: "violet",
+  rejected: "rose",
 };
 
 export function StatCard({
@@ -47,12 +50,15 @@ export function StatCard({
 }) {
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl border border-ink-100 bg-white p-4 shadow-card transition-shadow hover:shadow-card-hover before:absolute before:inset-y-0 before:left-0 before:w-1 ${toneAccent[tone]}`}
+      className={`relative overflow-hidden rounded-2xl border border-white/70 bg-white/80 p-4 backdrop-blur-xl transition-shadow ${SHADOW_GLASS} ${SHADOW_GLASS_HOVER} before:absolute before:inset-y-0 before:left-0 before:w-1 ${toneRail[tone]}`}
     >
       <div className="flex items-center justify-between pl-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">{label}</p>
         {icon && (
-          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${toneIconBg[tone]}`}>
+          <span
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm shadow-md"
+            style={iconGradient[toneIcon[tone]]}
+          >
             {icon}
           </span>
         )}

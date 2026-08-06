@@ -1,4 +1,5 @@
 import { forwardRef, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { brandGradient } from "../../lib/theme";
 
 function FieldWrapper({ label, error, children }: { label?: string; error?: string; children: ReactNode }) {
   return (
@@ -10,8 +11,10 @@ function FieldWrapper({ label, error, children }: { label?: string; error?: stri
   );
 }
 
+// Frosted field, matching the sign-in inputs: pressed into the glass via an
+// inset shadow, with a soft brand ring on focus rather than a hard border.
 const baseInputClass =
-  "w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-sm text-ink-900 placeholder:text-ink-400 shadow-card transition-all focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/10 disabled:border-ink-100 disabled:bg-ink-50 disabled:text-ink-400";
+  "w-full rounded-xl border border-white/90 bg-white/85 px-3.5 py-2.5 text-sm font-medium text-ink-900 placeholder:font-normal placeholder:text-ink-400 shadow-[inset_0_1px_3px_rgba(16,24,40,0.08)] outline-none transition-all focus:border-brand/50 focus:bg-white focus:shadow-[0_0_0_4px_rgba(21,94,239,0.16),inset_0_1px_3px_rgba(16,24,40,0.05)] disabled:border-ink-100 disabled:bg-ink-50/80 disabled:text-ink-400";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -94,8 +97,9 @@ export function Toggle({
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
+        style={checked ? brandGradient : undefined}
         className={`relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 ${
-          checked ? "bg-brand-gradient" : "bg-ink-200"
+          checked ? "shadow-[0_4px_12px_-4px_rgba(21,94,239,0.6)]" : "bg-ink-200"
         }`}
       >
         <span
