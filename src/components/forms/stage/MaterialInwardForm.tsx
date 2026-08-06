@@ -1,25 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
-import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { useAllStageSubItemsForOrder, useStageSubItems, useUpsertStageSubItem } from "../../../hooks/useStageSubItems";
 import { useWorkflowStages } from "../../../hooks/useWorkflowStages";
-import { useCreateStageEntry } from "../../../hooks/useStageEntries";
 import { STAGE_SUB_ITEMS } from "../../../lib/stageConfig";
 import { Button } from "../../ui/Button";
 import { Input, Textarea } from "../../ui/FormControls";
 import { Loader } from "../../ui/Loader";
 import { Badge } from "../../ui/Badge";
+import { TransferFields, useForwardConfirm, useStageEntryBuilder, useTransferFields } from "./shared";
 import type { StageFormProps } from "./types";
 
 export function MaterialInwardForm({ order, assignment, onForwarded }: StageFormProps) {
-  const { appUser } = useAuth();
   const toast = useToast();
   const items = STAGE_SUB_ITEMS.raw_material_inward;
   const stagesQuery = useWorkflowStages();
   const allSubItemsQuery = useAllStageSubItemsForOrder(order.id);
   const thisStageItemsQuery = useStageSubItems(order.id, assignment.section_id);
   const upsertItem = useUpsertStageSubItem();
-  const createEntry = useCreateStageEntry();
+  const { createEntry, buildEntry, appUser } = useStageEntryBuilder(order, assignment);
+  const transfer = useTransferFields();
+  const forwardConfirm = useForwardConfirm();
 
   const [received, setReceived] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
@@ -93,33 +93,29 @@ export function MaterialInwardForm({ order, assignment, onForwarded }: StageForm
 
   async function handleForward() {
     if (!appUser) return;
+    if (!(await forwardConfirm(assignment.section?.label ?? "this stage", { qty: totalPending, unit: "KG" })))
+      return;
     setError(null);
     try {
       await persistItems();
+      const totalPlanned = items.reduce((sum, item) => sum + (plannedByItem.get(item.key) ?? 0), 0);
       const totalReceived = items.reduce((sum, item) => sum + (Number(received[item.key]) || 0), 0);
-      await createEntry.mutateAsync({
-        order_id: order.id,
-        po_id: assignment.po_id,
-        section_id: assignment.section_id,
-        entry_date: new Date().toISOString().slice(0, 10),
-        unit_type: "KG",
-        qty_received: totalReceived,
-        qty_completed_today: totalReceived,
-        qty_forwarded: totalReceived,
-        qty_shortage: totalPending,
-        qty_rejected: 0,
-        qty_returned: 0,
-        is_external: false,
-        external_unit_name: null,
-        is_sent_outside: false,
-        is_returned: false,
-        is_completed: true,
-        branch: null,
-        unit_name: assignment.unit_name,
-        notes: notes || null,
-        entered_by: appUser.id,
-        forwarded_to_user_id: null,
-      });
+      await createEntry.mutateAsync(
+        buildEntry(
+          {
+            unit_type: "KG",
+            // Baseline is the planned qty; forwarded is what actually arrived, so
+            // any shortfall is derived correctly on the dashboard.
+            qty_received: totalPlanned,
+            qty_completed_today: totalReceived,
+            qty_forwarded: totalReceived,
+            qty_shortage: totalPending,
+            notes: notes || null,
+            ...transfer.values,
+          },
+          true,
+        ),
+      );
       toast.success("Materials confirmed and forwarded to Fabric Processing.");
       onForwarded();
     } catch (err) {
@@ -165,6 +161,13 @@ export function MaterialInwardForm({ order, assignment, onForwarded }: StageForm
         })}
       </div>
 
+      <TransferFields
+        type={transfer.transferType}
+        to={transfer.transferTo}
+        onTypeChange={transfer.setTransferType}
+        onToChange={transfer.setTransferTo}
+      />
+
       <Textarea
         label="What's missing (optional)"
         value={notes}
@@ -176,16 +179,12 @@ export function MaterialInwardForm({ order, assignment, onForwarded }: StageForm
 
       <div className="flex flex-col gap-2 sm:flex-row">
         <Button variant="secondary" onClick={handleSaveProgress} isLoading={upsertItem.isPending} className="flex-1">
-          Save Pending Status
+          Save Progress (stay open)
         </Button>
-        <Button
-          onClick={handleForward}
-          isLoading={createEntry.isPending}
-          disabled={totalPending > 0}
-          className="flex-1"
-          title={totalPending > 0 ? "All materials must be received before forwarding" : undefined}
-        >
-          {totalPending > 0 ? `Forward (${totalPending.toLocaleString()} KG pending)` : "Forward to Fabric Processing →"}
+        <Button onClick={handleForward} isLoading={createEntry.isPending} className="flex-1">
+          {totalPending > 0
+            ? `Forward & Complete (${totalPending.toLocaleString()} KG short) →`
+            : "Forward & Complete →"}
         </Button>
       </div>
     </div>

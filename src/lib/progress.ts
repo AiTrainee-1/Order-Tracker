@@ -1,5 +1,13 @@
-import type { Order, StageEntry, WorkflowStage } from "./types";
+import type { Order, StageEntry, TransferType, WorkflowStage } from "./types";
 import { addDays, daysRemaining } from "./workflow";
+
+/** A single branch/unit transfer recorded on a stage entry. */
+export interface StageTransfer {
+  type: Exclude<TransferType, "none">;
+  to: string | null;
+  qty: number;
+  date: string;
+}
 
 export interface UnitBreakdown {
   unitName: string;
@@ -11,6 +19,8 @@ export interface UnitBreakdown {
   qtyReturned: number;
   isCompleted: boolean;
   lastEntryDate: string | null;
+  /** Short label of any transfer(s) recorded for this unit, e.g. "Branch → X". */
+  transferLabel: string | null;
 }
 
 export interface StageProgress {
@@ -28,6 +38,7 @@ export interface StageProgress {
   firstEntryDate: string | null;
   externalEntries: StageEntry[];
   unitBreakdown: UnitBreakdown[];
+  transfers: StageTransfer[];
   responsibleUserIds: string[];
   nextAssignedUserId: string | null;
   estimatedCompletionDate: string | null;
@@ -46,15 +57,45 @@ export interface OrderProgress {
   status: OrderStatus;
 }
 
+const TRANSFER_PREFIX: Record<Exclude<TransferType, "none">, string> = {
+  branch: "Branch",
+  unit: "Unit",
+  outside: "Outside",
+};
+
+/** Human-readable label for a single transfer, e.g. "Branch → Unit 2". */
+export function formatTransfer(type: TransferType, to: string | null): string | null {
+  if (type === "none") return null;
+  return `${TRANSFER_PREFIX[type]}${to ? ` → ${to}` : ""}`;
+}
+
+/** Joins the distinct transfer labels across a set of entries, or null if none. */
+function summarizeTransfers(entries: StageEntry[]): string | null {
+  const labels = new Set<string>();
+  for (const e of entries) {
+    const label = formatTransfer(e.transfer_type, e.transfer_to);
+    if (label) labels.add(label);
+  }
+  return labels.size ? Array.from(labels).join(", ") : null;
+}
+
 /**
  * Aggregates the raw stage_entries log for one order into a per-stage and
  * overall progress model. This is the single source of truth for "how far
  * has this order progressed" — computed client-side (not cached in the DB)
  * so the math stays easy to inspect/adjust in one place.
  *
- * Convention: qty_received on an entry represents the quantity available/
- * allotted to that stage as of that entry (restated over time, not additive),
- * so we take the max across entries rather than summing it.
+ * Conventions:
+ * - qty_received is the quantity allotted to the stage, restated (not additive)
+ *   on every entry — so we take the max across entries, not the sum.
+ * - qty_forwarded/rejected/returned accumulate across entries (a stage can be
+ *   forwarded in several balance batches), so we sum them.
+ * - A stage completes ONLY when an entry explicitly marks is_completed (the
+ *   "Forward & Complete" action) — there is no auto-complete heuristic.
+ * - Balance is derived from the running totals (received − forwarded − rejected),
+ *   never summed from per-entry qty_shortage (which would double-count across
+ *   balance entries). While in progress that balance is "pending"; once the
+ *   stage is completed, whatever was never forwarded becomes the final shortage.
  */
 export function buildOrderProgress(
   order: Order,
@@ -71,14 +112,17 @@ export function buildOrderProgress(
     const qtyReceived = stageEntries.reduce((max, e) => Math.max(max, e.qty_received), 0);
     const qtyCompletedToday = stageEntries.reduce((sum, e) => sum + e.qty_completed_today, 0);
     const qtyForwarded = stageEntries.reduce((sum, e) => sum + e.qty_forwarded, 0);
-    const qtyShortage = stageEntries.reduce((sum, e) => sum + e.qty_shortage, 0);
     const qtyRejected = stageEntries.reduce((sum, e) => sum + e.qty_rejected, 0);
     const qtyReturned = stageEntries.reduce((sum, e) => sum + e.qty_returned, 0);
-    const qtyPending = Math.max(qtyReceived - qtyForwarded - qtyShortage - qtyRejected, 0);
 
-    const isCompleted =
-      stageEntries.some((e) => e.is_completed) ||
-      (qtyReceived > 0 && qtyForwarded > 0 && qtyPending === 0);
+    // Complete only when an entry explicitly forwards it — no auto-complete.
+    const isCompleted = stageEntries.some((e) => e.is_completed);
+
+    // Derived balance (never the sum of per-entry shortage). Pending while the
+    // stage is open; once completed, the un-forwarded remainder is the shortage.
+    const outstanding = Math.max(qtyReceived - qtyForwarded - qtyRejected, 0);
+    const qtyPending = isCompleted ? 0 : outstanding;
+    const qtyShortage = isCompleted ? outstanding : 0;
 
     const lastEntryDate = stageEntries.length
       ? stageEntries[stageEntries.length - 1].entry_date
@@ -93,18 +137,35 @@ export function buildOrderProgress(
       unitGroups.set(key, [...(unitGroups.get(key) ?? []), e]);
     }
     const unitBreakdown: UnitBreakdown[] = Array.from(unitGroups.entries()).map(
-      ([unitName, group]) => ({
-        unitName,
-        isExternal: group.some((e) => e.is_external),
-        qtyReceived: group.reduce((max, e) => Math.max(max, e.qty_received), 0),
-        qtyForwarded: group.reduce((sum, e) => sum + e.qty_forwarded, 0),
-        qtyShortage: group.reduce((sum, e) => sum + e.qty_shortage, 0),
-        qtyRejected: group.reduce((sum, e) => sum + e.qty_rejected, 0),
-        qtyReturned: group.reduce((sum, e) => sum + e.qty_returned, 0),
-        isCompleted: group.some((e) => e.is_completed),
-        lastEntryDate: group.length ? group[group.length - 1].entry_date : null,
-      }),
+      ([unitName, group]) => {
+        const groupReceived = group.reduce((max, e) => Math.max(max, e.qty_received), 0);
+        const groupForwarded = group.reduce((sum, e) => sum + e.qty_forwarded, 0);
+        const groupRejected = group.reduce((sum, e) => sum + e.qty_rejected, 0);
+        const groupCompleted = group.some((e) => e.is_completed);
+        const groupOutstanding = Math.max(groupReceived - groupForwarded - groupRejected, 0);
+        return {
+          unitName,
+          isExternal: group.some((e) => e.is_external),
+          qtyReceived: groupReceived,
+          qtyForwarded: groupForwarded,
+          qtyShortage: groupCompleted ? groupOutstanding : 0,
+          qtyRejected: groupRejected,
+          qtyReturned: group.reduce((sum, e) => sum + e.qty_returned, 0),
+          isCompleted: groupCompleted,
+          lastEntryDate: group.length ? group[group.length - 1].entry_date : null,
+          transferLabel: summarizeTransfers(group),
+        };
+      },
     );
+
+    const transfers: StageTransfer[] = stageEntries
+      .filter((e) => e.transfer_type !== "none")
+      .map((e) => ({
+        type: e.transfer_type as StageTransfer["type"],
+        to: e.transfer_to,
+        qty: e.qty_forwarded,
+        date: e.entry_date,
+      }));
 
     const responsibleUserIds = Array.from(new Set(stageEntries.map((e) => e.entered_by)));
 
@@ -130,6 +191,7 @@ export function buildOrderProgress(
       firstEntryDate,
       externalEntries,
       unitBreakdown,
+      transfers,
       responsibleUserIds,
       nextAssignedUserId,
       estimatedCompletionDate,

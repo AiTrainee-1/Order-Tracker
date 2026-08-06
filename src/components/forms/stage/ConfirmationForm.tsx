@@ -1,46 +1,38 @@
 import { useState } from "react";
-import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
-import { useCreateStageEntry } from "../../../hooks/useStageEntries";
 import { Button } from "../../ui/Button";
 import { Textarea } from "../../ui/FormControls";
 import { formatDisplayDate } from "../../../lib/workflow";
+import { getAssignmentQty } from "../../../lib/orderQty";
+import { TransferFields, useForwardConfirm, useStageEntryBuilder, useTransferFields } from "./shared";
 import type { StageFormProps } from "./types";
 
 export function ConfirmationForm({ order, assignment, onForwarded }: StageFormProps) {
-  const { appUser } = useAuth();
   const toast = useToast();
-  const createEntry = useCreateStageEntry();
+  const { createEntry, buildEntry, appUser } = useStageEntryBuilder(order, assignment);
+  const transfer = useTransferFields();
+  const forwardConfirm = useForwardConfirm();
+  const qty = getAssignmentQty(order, assignment);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   async function handleForward() {
     if (!appUser) return;
+    if (!(await forwardConfirm(assignment.section?.label ?? "this stage"))) return;
     setError(null);
     try {
-      await createEntry.mutateAsync({
-        order_id: order.id,
-        po_id: assignment.po_id,
-        section_id: assignment.section_id,
-        entry_date: new Date().toISOString().slice(0, 10),
-        unit_type: "KG",
-        qty_received: order.total_qty,
-        qty_completed_today: order.total_qty,
-        qty_forwarded: order.total_qty,
-        qty_shortage: 0,
-        qty_rejected: 0,
-        qty_returned: 0,
-        is_external: false,
-        external_unit_name: null,
-        is_sent_outside: false,
-        is_returned: false,
-        is_completed: true,
-        branch: null,
-        unit_name: assignment.unit_name,
-        notes: notes || "Order confirmed.",
-        entered_by: appUser.id,
-        forwarded_to_user_id: null,
-      });
+      await createEntry.mutateAsync(
+        buildEntry(
+          {
+            qty_received: qty,
+            qty_completed_today: qty,
+            qty_forwarded: qty,
+            notes: notes || "Order confirmed.",
+            ...transfer.values,
+          },
+          true,
+        ),
+      );
       toast.success("Order confirmed and forwarded to Raw Material Planning.");
       onForwarded();
     } catch (err) {
@@ -66,8 +58,10 @@ export function ConfirmationForm({ order, assignment, onForwarded }: StageFormPr
           <p className="text-sm font-semibold text-ink-900">{order.color}</p>
         </div>
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-ink-400">Total Quantity</p>
-          <p className="text-sm font-semibold text-ink-900">{order.total_qty.toLocaleString()} PCS</p>
+          <p className="text-[11px] uppercase tracking-wide text-ink-400">
+            {assignment.po ? `PO ${assignment.po.po_number} Qty` : "Total Quantity"}
+          </p>
+          <p className="text-sm font-semibold text-ink-900">{qty.toLocaleString()} PCS</p>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
@@ -81,6 +75,13 @@ export function ConfirmationForm({ order, assignment, onForwarded }: StageFormPr
         </div>
       </div>
       <p className="text-xs text-ink-500">{order.fabric}</p>
+
+      <TransferFields
+        type={transfer.transferType}
+        to={transfer.transferTo}
+        onTypeChange={transfer.setTransferType}
+        onToChange={transfer.setTransferTo}
+      />
 
       <Textarea
         label="Notes (optional)"

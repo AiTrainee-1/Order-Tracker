@@ -11,6 +11,7 @@ import { Loader } from "../../components/ui/Loader";
 import { GarmentPlaceholder } from "../../components/ui/GarmentPlaceholder";
 import { Input, Select } from "../../components/ui/FormControls";
 import { Button } from "../../components/ui/Button";
+import { NextStagesStrip } from "../../components/dashboard/NextStagesStrip";
 
 const PAGE_SIZE = 9;
 
@@ -21,6 +22,9 @@ const GATE_BADGE: Record<GateStatus, { tone: "good" | "warn" | "neutral"; label:
   completed: { tone: "good", label: "Completed" },
   locked: { tone: "neutral", label: "Waiting" },
 };
+
+/** Ordering priority for the work grid: actionable first, done last. */
+const GATE_PRIORITY: Record<GateStatus, number> = { active: 0, locked: 1, completed: 2 };
 
 function matchesQuery(item: WorkItem, query: string): boolean {
   if (!query) return true;
@@ -55,7 +59,10 @@ export function HomePage() {
   const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
-    return workItems.filter((item) => matchesQuery(item, query) && matchesStatus(item, status));
+    return workItems
+      .filter((item) => matchesQuery(item, query) && matchesStatus(item, status))
+      // Your Turn → Waiting → Completed, so the work needing action is on top.
+      .sort((a, b) => GATE_PRIORITY[a.gateStatus] - GATE_PRIORITY[b.gateStatus]);
   }, [workItems, query, status]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -216,6 +223,11 @@ function WorkItemCard({ item, onOpen }: { item: WorkItem; onOpen: () => void }) 
           </div>
 
           <ProgressBar value={orderProgress.overallProgressPct} showLabel />
+
+          <NextStagesStrip
+            stages={orderProgress.stages}
+            currentStageIndex={orderProgress.currentStageIndex}
+          />
 
           <div className="flex items-center justify-between text-xs">
             <span className="text-ink-500">Delivery {formatDisplayDate(order.delivery_date)}</span>

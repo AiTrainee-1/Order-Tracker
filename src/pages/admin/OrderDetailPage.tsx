@@ -11,6 +11,7 @@ import { Loader } from "../../components/ui/Loader";
 import { Table } from "../../components/ui/Table";
 import { GameLevelPath } from "../../components/dashboard/GameLevelPath";
 import { MultiUnitSplitTable } from "../../components/dashboard/MultiUnitSplitTable";
+import { formatTransfer } from "../../lib/progress";
 import { GarmentPlaceholder } from "../../components/ui/GarmentPlaceholder";
 import { BackButton } from "../../components/ui/BackButton";
 
@@ -144,6 +145,21 @@ export function OrderDetailPage() {
               />
             </div>
 
+            {selectedStage.transfers.length > 0 && (
+              <div className="rounded-lg border border-cyan-100 bg-cyan-50/50 px-3 py-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-cyan-700">
+                  Branch / Unit Transfers
+                </p>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {selectedStage.transfers.map((t, i) => (
+                    <Badge key={i} tone="external">
+                      {formatTransfer(t.type, t.to)} · {t.qty.toLocaleString()} · {formatDisplayDate(t.date)}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {!selectedStage.isCompleted && (
               <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">
                 Estimated completion: <span className="font-semibold">{formatDisplayDate(selectedStage.estimatedCompletionDate)}</span>
@@ -205,6 +221,13 @@ export function OrderDetailPage() {
                   { header: "Branch", render: (e) => e.branch ?? "—" },
                   { header: "Unit", render: (e) => e.unit_name ?? "—" },
                   { header: "Fwd", render: (e) => e.qty_forwarded.toLocaleString() },
+                  {
+                    header: "Transfer",
+                    render: (e) => {
+                      const label = formatTransfer(e.transfer_type, e.transfer_to);
+                      return label ? <Badge tone="external">{label}</Badge> : "—";
+                    },
+                  },
                   { header: "Shortage", render: (e) => e.qty_shortage.toLocaleString() },
                   { header: "Rejected", render: (e) => e.qty_rejected.toLocaleString() },
                   {
@@ -264,6 +287,13 @@ export function OrderDetailPage() {
               },
               { header: "By", render: (e) => usersById.get(e.entered_by)?.name ?? "—" },
               { header: "Qty Fwd", render: (e) => e.qty_forwarded.toLocaleString() },
+              {
+                header: "Transfer",
+                render: (e) => {
+                  const label = formatTransfer(e.transfer_type, e.transfer_to);
+                  return label ? <Badge tone="external">{label}</Badge> : "—";
+                },
+              },
               { header: "Notes", render: (e) => e.notes || "—" },
             ]}
           />

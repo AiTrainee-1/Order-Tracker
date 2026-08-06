@@ -1,21 +1,22 @@
 import { useEffect, useState } from "react";
-import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { useStageSubItems, useUpsertStageSubItem } from "../../../hooks/useStageSubItems";
-import { useCreateStageEntry } from "../../../hooks/useStageEntries";
 import { STAGE_SUB_ITEMS } from "../../../lib/stageConfig";
+import { getAssignmentQty } from "../../../lib/orderQty";
 import { Button } from "../../ui/Button";
 import { Input, Textarea } from "../../ui/FormControls";
 import { Loader } from "../../ui/Loader";
+import { TransferFields, useForwardConfirm, useStageEntryBuilder, useTransferFields } from "./shared";
 import type { StageFormProps } from "./types";
 
 export function MaterialPlanningForm({ order, assignment, onForwarded }: StageFormProps) {
-  const { appUser } = useAuth();
   const toast = useToast();
   const items = STAGE_SUB_ITEMS.raw_material_planning;
   const subItemsQuery = useStageSubItems(order.id, assignment.section_id);
   const upsertItem = useUpsertStageSubItem();
-  const createEntry = useCreateStageEntry();
+  const { createEntry, buildEntry, appUser } = useStageEntryBuilder(order, assignment);
+  const transfer = useTransferFields();
+  const forwardConfirm = useForwardConfirm();
 
   const [planned, setPlanned] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
@@ -64,33 +65,23 @@ export function MaterialPlanningForm({ order, assignment, onForwarded }: StageFo
 
   async function handleForward() {
     if (!appUser) return;
+    if (!(await forwardConfirm(assignment.section?.label ?? "this stage"))) return;
     setError(null);
     try {
       await handleSavePlan();
       const totalPlanned = items.reduce((sum, item) => sum + (Number(planned[item.key]) || 0), 0);
-      await createEntry.mutateAsync({
-        order_id: order.id,
-        po_id: assignment.po_id,
-        section_id: assignment.section_id,
-        entry_date: new Date().toISOString().slice(0, 10),
-        unit_type: "KG",
-        qty_received: totalPlanned,
-        qty_completed_today: totalPlanned,
-        qty_forwarded: totalPlanned,
-        qty_shortage: 0,
-        qty_rejected: 0,
-        qty_returned: 0,
-        is_external: false,
-        external_unit_name: null,
-        is_sent_outside: false,
-        is_returned: false,
-        is_completed: true,
-        branch: null,
-        unit_name: assignment.unit_name,
-        notes: notes || null,
-        entered_by: appUser.id,
-        forwarded_to_user_id: null,
-      });
+      await createEntry.mutateAsync(
+        buildEntry(
+          {
+            qty_received: totalPlanned,
+            qty_completed_today: totalPlanned,
+            qty_forwarded: totalPlanned,
+            notes: notes || null,
+            ...transfer.values,
+          },
+          true,
+        ),
+      );
       toast.success("Material plan forwarded to Purchase Order to Suppliers.");
       onForwarded();
     } catch (err) {
@@ -103,8 +94,9 @@ export function MaterialPlanningForm({ order, assignment, onForwarded }: StageFo
   return (
     <div className="space-y-5">
       <p className="text-sm text-ink-600">
-        Plan how much of each material is required for {order.total_qty.toLocaleString()} PCS of{" "}
-        {order.style}.
+        Plan how much of each material is required for {getAssignmentQty(order, assignment).toLocaleString()} PCS of{" "}
+        {order.style}
+        {assignment.po ? ` (PO ${assignment.po.po_number})` : ""}.
       </p>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -119,6 +111,13 @@ export function MaterialPlanningForm({ order, assignment, onForwarded }: StageFo
           />
         ))}
       </div>
+
+      <TransferFields
+        type={transfer.transferType}
+        to={transfer.transferTo}
+        onTypeChange={transfer.setTransferType}
+        onToChange={transfer.setTransferTo}
+      />
 
       <Textarea label="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} />
 

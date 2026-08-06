@@ -1,20 +1,26 @@
 import { useMemo, useState } from "react";
-import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
-import { useCreateStageEntry, useRecentStageEntries } from "../../../hooks/useStageEntries";
+import { useRecentStageEntries } from "../../../hooks/useStageEntries";
 import { DISPATCH_CONFIG } from "../../../lib/stageConfig";
+import { getAssignmentQty } from "../../../lib/orderQty";
 import { Button } from "../../ui/Button";
 import { Input, Textarea, Toggle } from "../../ui/FormControls";
 import { Loader } from "../../ui/Loader";
-import { QtyStat } from "./shared";
+import { QtyStat, useForwardConfirm, useStageEntryBuilder } from "./shared";
+import type { TransferType } from "../../../lib/types";
 import type { StageFormProps } from "./types";
 
 export function DispatchReturnForm({ order, assignment, onForwarded }: StageFormProps) {
-  const { appUser } = useAuth();
   const toast = useToast();
-  const createEntry = useCreateStageEntry();
+  const { createEntry, buildEntry, appUser } = useStageEntryBuilder(order, assignment);
   const entriesQuery = useRecentStageEntries(order.id, assignment.section_id);
-  const config = DISPATCH_CONFIG[assignment.section?.key ?? ""] ?? DISPATCH_CONFIG.printing_embroidery;
+  const stageKey = assignment.section?.key ?? "";
+  const config = DISPATCH_CONFIG[stageKey] ?? DISPATCH_CONFIG.printing_embroidery;
+  // Printing/embroidery and washing both leave the factory, so record them as an
+  // outside transfer — it surfaces on the dashboard and counts in the movement.
+  const transferType: Exclude<TransferType, "none"> = "outside";
+  const qty = getAssignmentQty(order, assignment);
+  const forwardConfirm = useForwardConfirm();
 
   const [isRequired, setIsRequired] = useState(true);
   const [sentQty, setSentQty] = useState("");
@@ -34,31 +40,20 @@ export function DispatchReturnForm({ order, assignment, onForwarded }: StageForm
 
   async function handleSkip() {
     if (!appUser) return;
+    if (!(await forwardConfirm(assignment.section?.label ?? "this stage"))) return;
     setError(null);
     try {
-      await createEntry.mutateAsync({
-        order_id: order.id,
-        po_id: assignment.po_id,
-        section_id: assignment.section_id,
-        entry_date: new Date().toISOString().slice(0, 10),
-        unit_type: "PCS",
-        qty_received: order.total_qty,
-        qty_completed_today: 0,
-        qty_forwarded: order.total_qty,
-        qty_shortage: 0,
-        qty_rejected: 0,
-        qty_returned: 0,
-        is_external: false,
-        external_unit_name: null,
-        is_sent_outside: false,
-        is_returned: false,
-        is_completed: true,
-        branch: null,
-        unit_name: assignment.unit_name,
-        notes: "Not required for this order.",
-        entered_by: appUser.id,
-        forwarded_to_user_id: null,
-      });
+      await createEntry.mutateAsync(
+        buildEntry(
+          {
+            unit_type: "PCS",
+            qty_received: qty,
+            qty_forwarded: qty,
+            notes: "Not required for this order.",
+          },
+          true,
+        ),
+      );
       toast.success("Marked as not required, forwarded to the next stage.");
       onForwarded();
     } catch (err) {
@@ -72,31 +67,29 @@ export function DispatchReturnForm({ order, assignment, onForwarded }: StageForm
     if (!appUser) return;
     setError(null);
     try {
-      await createEntry.mutateAsync({
-        order_id: order.id,
-        po_id: assignment.po_id,
-        section_id: assignment.section_id,
-        entry_date: new Date().toISOString().slice(0, 10),
-        unit_type: "PCS",
-        qty_received: order.total_qty,
-        qty_completed_today: 0,
-        qty_forwarded: Number(sentQty) || 0,
-        qty_shortage: 0,
-        qty_rejected: 0,
-        qty_returned: 0,
-        is_external: true,
-        external_unit_name: destination || null,
-        is_sent_outside: true,
-        is_returned: false,
-        is_completed: false,
-        branch: destination || null,
-        unit_name: assignment.unit_name,
-        notes: [location && `Location: ${location}`, expectedReturn && `Expected return: ${expectedReturn}`, notes]
-          .filter(Boolean)
-          .join(" · ") || null,
-        entered_by: appUser.id,
-        forwarded_to_user_id: null,
-      });
+      // Send-out entry: nothing forwarded to the NEXT stage yet (forwarded = 0);
+      // the sent qty is parked in qty_completed_today until it returns.
+      await createEntry.mutateAsync(
+        buildEntry(
+          {
+            unit_type: "PCS",
+            qty_received: qty,
+            qty_completed_today: Number(sentQty) || 0,
+            qty_forwarded: 0,
+            is_external: true,
+            external_unit_name: destination || null,
+            is_sent_outside: true,
+            branch: destination || null,
+            transfer_type: transferType,
+            transfer_to: destination || null,
+            notes:
+              [location && `Location: ${location}`, expectedReturn && `Expected return: ${expectedReturn}`, notes]
+                .filter(Boolean)
+                .join(" · ") || null,
+          },
+          false,
+        ),
+      );
       toast.success("Dispatch logged — waiting for it to come back.");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not save dispatch.";
@@ -107,33 +100,38 @@ export function DispatchReturnForm({ order, assignment, onForwarded }: StageForm
 
   async function handleConfirmReturn() {
     if (!appUser || !pendingSentEntry) return;
-    setError(null);
-    const sentQtyRef = pendingSentEntry.qty_forwarded;
+    const sentQtyRef = pendingSentEntry.qty_completed_today || pendingSentEntry.qty_forwarded;
     const returned = Number(returnedQty) || 0;
+    if (
+      !(await forwardConfirm(assignment.section?.label ?? "this stage", {
+        qty: Math.max(sentQtyRef - returned, 0),
+        unit: "PCS",
+      }))
+    )
+      return;
+    setError(null);
     try {
-      await createEntry.mutateAsync({
-        order_id: order.id,
-        po_id: assignment.po_id,
-        section_id: assignment.section_id,
-        entry_date: new Date().toISOString().slice(0, 10),
-        unit_type: "PCS",
-        qty_received: sentQtyRef,
-        qty_completed_today: returned,
-        qty_forwarded: returned,
-        qty_shortage: Math.max(sentQtyRef - returned, 0),
-        qty_rejected: 0,
-        qty_returned: returned,
-        is_external: true,
-        external_unit_name: pendingSentEntry.external_unit_name,
-        is_sent_outside: true,
-        is_returned: true,
-        is_completed: true,
-        branch: pendingSentEntry.branch,
-        unit_name: assignment.unit_name,
-        notes: notes || null,
-        entered_by: appUser.id,
-        forwarded_to_user_id: null,
-      });
+      await createEntry.mutateAsync(
+        buildEntry(
+          {
+            unit_type: "PCS",
+            qty_received: qty,
+            qty_completed_today: returned,
+            qty_forwarded: returned,
+            qty_shortage: Math.max(sentQtyRef - returned, 0),
+            qty_returned: returned,
+            is_external: true,
+            external_unit_name: pendingSentEntry.external_unit_name,
+            is_sent_outside: true,
+            is_returned: true,
+            branch: pendingSentEntry.branch,
+            transfer_type: transferType,
+            transfer_to: pendingSentEntry.transfer_to ?? pendingSentEntry.branch,
+            notes: notes || null,
+          },
+          true,
+        ),
+      );
       toast.success("Return confirmed and forwarded to the next stage.");
       onForwarded();
     } catch (err) {
@@ -144,7 +142,7 @@ export function DispatchReturnForm({ order, assignment, onForwarded }: StageForm
   }
 
   if (pendingSentEntry) {
-    const sentQtyRef = pendingSentEntry.qty_forwarded;
+    const sentQtyRef = pendingSentEntry.qty_completed_today || pendingSentEntry.qty_forwarded;
     const returned = Number(returnedQty) || 0;
     return (
       <div className="space-y-5">

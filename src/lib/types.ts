@@ -1,5 +1,9 @@
 export type UnitType = "KG" | "PCS";
 
+/** How a stage entry's goods moved: kept in-house, or transferred to another
+ * branch, another production unit, or an outside party. */
+export type TransferType = "none" | "branch" | "unit" | "outside";
+
 export type StageFormType =
   | "confirmation"
   | "material_planning"
@@ -96,6 +100,8 @@ export interface StageEntry {
   is_completed: boolean;
   branch: string | null;
   unit_name: string | null;
+  transfer_type: TransferType;
+  transfer_to: string | null;
   notes: string | null;
   entered_by: string;
   forwarded_to_user_id: string | null;

@@ -55,4 +55,14 @@
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     @apply bg-ink-300;
   }
+
+  /* Scrollable but with no visible scrollbar — used for the compact stage
+     strips inside cards, where a native scrollbar looks broken. */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }

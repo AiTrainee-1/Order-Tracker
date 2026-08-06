@@ -107,6 +107,10 @@ create table public.stage_entries (
   is_completed boolean not null default false,
   branch text,
   unit_name text,
+  -- Whether this movement transferred goods elsewhere, and where.
+  -- 'none' | 'branch' | 'unit' | 'outside'; transfer_to holds the destination.
+  transfer_type text not null default 'none' check (transfer_type in ('none', 'branch', 'unit', 'outside')),
+  transfer_to text,
   notes text,
   entered_by uuid not null references public.app_users(id),
   forwarded_to_user_id uuid references public.app_users(id),

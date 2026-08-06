@@ -47,7 +47,12 @@ export function useMyWork(userId: string | undefined) {
     return assignmentsQuery.data
       .filter((a) => !!a.order)
       .map((a) => {
-        const orderEntries = entries.filter((e) => e.order_id === a.order_id);
+        // When the assignment is scoped to a single PO, only that PO's movement
+        // counts toward its progress/quantities — so a user sees just the order/
+        // style/PO they were given, not the whole order's total.
+        const orderEntries = entries.filter(
+          (e) => e.order_id === a.order_id && (a.po_id ? e.po_id === a.po_id : true),
+        );
         const orderProgress = buildOrderProgress(a.order!, stagesQuery.data!, orderEntries);
         const stageProgress = orderProgress.stages.find((s) => s.stage.id === a.section_id);
         const sectionSequence = a.section?.sequence_no ?? -1;

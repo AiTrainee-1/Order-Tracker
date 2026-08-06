@@ -13,9 +13,10 @@ export function MultiUnitSplitTable({ units }: { units: UnitBreakdown[] }) {
         {
           header: "Unit / Vendor",
           render: (u) => (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium text-ink-900">{u.unitName}</span>
               {u.isExternal && <Badge tone="external">External</Badge>}
+              {u.transferLabel && <Badge tone="external">{u.transferLabel}</Badge>}
             </div>
           ),
         },

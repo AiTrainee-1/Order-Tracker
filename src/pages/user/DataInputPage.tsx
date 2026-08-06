@@ -15,6 +15,7 @@ import { GarmentPlaceholder } from "../../components/ui/GarmentPlaceholder";
 import { publicImageUrl } from "../../lib/supabaseClient";
 import { formatDisplayDate } from "../../lib/workflow";
 import { GameLevelPath } from "../../components/dashboard/GameLevelPath";
+import { NextStagesStrip } from "../../components/dashboard/NextStagesStrip";
 import { BackButton } from "../../components/ui/BackButton";
 import { StageFormRouter } from "../../components/forms/stage/StageFormRouter";
 import type { UserContact } from "../../lib/types";
@@ -24,6 +25,9 @@ const GATE_BADGE: Record<GateStatus, { tone: "good" | "warn" | "neutral"; label:
   completed: { tone: "good", label: "Completed" },
   locked: { tone: "neutral", label: "Waiting" },
 };
+
+/** Ordering priority for work lists: actionable first, done last. */
+const GATE_PRIORITY: Record<GateStatus, number> = { active: 0, locked: 1, completed: 2 };
 
 type StatusFilter = "all" | "active" | "locked" | "completed";
 
@@ -72,7 +76,11 @@ export function DataInputPage() {
 
   const searched = useMemo(() => workItems.filter((w) => matchesQuery(w, query)), [workItems, query]);
   const filtered = useMemo(
-    () => searched.filter((w) => matchesStatus(w, statusFilter)),
+    () =>
+      searched
+        .filter((w) => matchesStatus(w, statusFilter))
+        // Surface actionable work first: Your Turn → Waiting → Completed.
+        .sort((a, b) => GATE_PRIORITY[a.gateStatus] - GATE_PRIORITY[b.gateStatus]),
     [searched, statusFilter],
   );
   const tabCounts = useMemo(() => {
@@ -206,6 +214,12 @@ export function DataInputPage() {
                     <div className="mt-2">
                       <ProgressBar value={orderProgress.overallProgressPct} showLabel size="sm" />
                     </div>
+                    <div className="mt-2">
+                      <NextStagesStrip
+                        stages={orderProgress.stages}
+                        currentStageIndex={orderProgress.currentStageIndex}
+                      />
+                    </div>
                     <p className="mt-1.5 text-xs font-medium text-blue-700">{nextAction}</p>
                   </div>
                 </button>
@@ -287,23 +301,6 @@ function SelectedAssignmentView({
         </CardBody>
       </Card>
 
-      <Card>
-        <CardHeader
-          title="Complete Order Workflow"
-          subtitle={`Currently at: ${currentStage?.label ?? "—"} · ${orderProgress.completedStagesCount}/${orderProgress.stages.length} stages completed`}
-        />
-        <CardBody>
-          <GameLevelPath
-            stages={orderProgress.stages}
-            currentStageIndex={orderProgress.currentStageIndex}
-            selectedIndex={orderProgress.stages.findIndex((s) => s.stage.id === assignment.section_id)}
-            onSelect={() => {}}
-          />
-        </CardBody>
-      </Card>
-
-      <StageHistoryAndContacts item={item} />
-
       {gateStatus === "active" && (
         <Card>
           <CardHeader
@@ -348,7 +345,68 @@ function SelectedAssignmentView({
           </CardBody>
         </Card>
       )}
+
+      {/* Detailed workflow & stage info — kept below the data entry */}
+      <Card>
+        <CardHeader
+          title="Complete Order Workflow"
+          subtitle={`Currently at: ${currentStage?.label ?? "—"} · ${orderProgress.completedStagesCount}/${orderProgress.stages.length} stages completed`}
+        />
+        <CardBody>
+          <GameLevelPath
+            stages={orderProgress.stages}
+            currentStageIndex={orderProgress.currentStageIndex}
+            selectedIndex={orderProgress.stages.findIndex((s) => s.stage.id === assignment.section_id)}
+            onSelect={() => {}}
+          />
+        </CardBody>
+      </Card>
+
+      <UpcomingStages orderProgress={orderProgress} />
+
+      <StageHistoryAndContacts item={item} />
     </div>
+  );
+}
+
+function UpcomingStages({ orderProgress }: { orderProgress: WorkItem["orderProgress"] }) {
+  const { stages, currentStageIndex } = orderProgress;
+  const upcoming = stages.slice(currentStageIndex);
+  if (upcoming.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader
+        title="Upcoming Stages"
+        subtitle="The remaining production steps for this order, in sequence"
+      />
+      <CardBody>
+        <ol className="divide-y divide-ink-100">
+          {upcoming.map((s, i) => {
+            const isNow = i === 0;
+            return (
+              <li key={s.stage.id} className="flex items-center gap-3 py-2.5">
+                <span
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                    isNow ? "bg-brand-gradient text-white" : "bg-ink-100 text-ink-500"
+                  }`}
+                >
+                  {s.stage.sequence_no}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-ink-800">{s.stage.label}</p>
+                  <p className="text-xs text-ink-400">
+                    {s.stage.unit_type} · typically {s.stage.typical_duration_days} day
+                    {s.stage.typical_duration_days === 1 ? "" : "s"}
+                  </p>
+                </div>
+                <Badge tone={isNow ? "brand" : "neutral"}>{isNow ? "Current" : "Upcoming"}</Badge>
+              </li>
+            );
+          })}
+        </ol>
+      </CardBody>
+    </Card>
   );
 }
 

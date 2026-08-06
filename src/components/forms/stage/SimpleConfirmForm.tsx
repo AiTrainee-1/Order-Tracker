@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
-import { useCreateStageEntry } from "../../../hooks/useStageEntries";
 import { Button } from "../../ui/Button";
 import { Checkbox } from "../../ui/FormControls";
 import { Textarea } from "../../ui/FormControls";
+import { getAssignmentQty } from "../../../lib/orderQty";
+import { TransferFields, useForwardConfirm, useStageEntryBuilder, useTransferFields } from "./shared";
 import type { StageFormProps } from "./types";
 
 const COPY: Record<string, { prompt: string; confirmLabel: string }> = {
@@ -19,10 +19,12 @@ const COPY: Record<string, { prompt: string; confirmLabel: string }> = {
 };
 
 export function SimpleConfirmForm({ order, assignment, onForwarded }: StageFormProps) {
-  const { appUser } = useAuth();
   const toast = useToast();
-  const createEntry = useCreateStageEntry();
+  const { createEntry, buildEntry, appUser } = useStageEntryBuilder(order, assignment);
+  const transfer = useTransferFields();
   const copy = COPY[assignment.section?.key ?? ""] ?? COPY.po_to_suppliers;
+  const qty = getAssignmentQty(order, assignment);
+  const forwardConfirm = useForwardConfirm();
 
   const [confirmed, setConfirmed] = useState(false);
   const [notes, setNotes] = useState("");
@@ -30,31 +32,21 @@ export function SimpleConfirmForm({ order, assignment, onForwarded }: StageFormP
 
   async function handleForward() {
     if (!appUser) return;
+    if (!(await forwardConfirm(assignment.section?.label ?? "this stage"))) return;
     setError(null);
     try {
-      await createEntry.mutateAsync({
-        order_id: order.id,
-        po_id: assignment.po_id,
-        section_id: assignment.section_id,
-        entry_date: new Date().toISOString().slice(0, 10),
-        unit_type: "KG",
-        qty_received: order.total_qty,
-        qty_completed_today: order.total_qty,
-        qty_forwarded: order.total_qty,
-        qty_shortage: 0,
-        qty_rejected: 0,
-        qty_returned: 0,
-        is_external: false,
-        external_unit_name: null,
-        is_sent_outside: false,
-        is_returned: false,
-        is_completed: true,
-        branch: null,
-        unit_name: assignment.unit_name,
-        notes: notes || copy.confirmLabel,
-        entered_by: appUser.id,
-        forwarded_to_user_id: null,
-      });
+      await createEntry.mutateAsync(
+        buildEntry(
+          {
+            qty_received: qty,
+            qty_completed_today: qty,
+            qty_forwarded: qty,
+            notes: notes || copy.confirmLabel,
+            ...transfer.values,
+          },
+          true,
+        ),
+      );
       toast.success("Forwarded to the next stage.");
       onForwarded();
     } catch (err) {
@@ -69,6 +61,13 @@ export function SimpleConfirmForm({ order, assignment, onForwarded }: StageFormP
       <p className="rounded-lg bg-blue-50 px-3 py-2.5 text-sm text-blue-700">{copy.prompt}</p>
 
       <Checkbox checked={confirmed} onChange={setConfirmed} label={copy.confirmLabel} />
+
+      <TransferFields
+        type={transfer.transferType}
+        to={transfer.transferTo}
+        onTypeChange={transfer.setTransferType}
+        onToChange={transfer.setTransferTo}
+      />
 
       <Textarea label="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} />
 

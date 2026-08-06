@@ -1,25 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
-import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { useAllStageSubItemsForOrder, useStageSubItems, useUpsertStageSubItem } from "../../../hooks/useStageSubItems";
 import { useWorkflowStages } from "../../../hooks/useWorkflowStages";
-import { useCreateStageEntry } from "../../../hooks/useStageEntries";
 import { FABRIC_PLANNING_ITEM_KEY, FABRIC_PLANNING_STAGE_KEY, STAGE_SUB_ITEMS } from "../../../lib/stageConfig";
 import { Button } from "../../ui/Button";
 import { Input, Textarea } from "../../ui/FormControls";
 import { Loader } from "../../ui/Loader";
 import { Badge } from "../../ui/Badge";
+import { TransferFields, useForwardConfirm, useStageEntryBuilder, useTransferFields } from "./shared";
 import type { StageFormProps } from "./types";
 
 export function FabricProcessingForm({ order, assignment, onForwarded }: StageFormProps) {
-  const { appUser } = useAuth();
   const toast = useToast();
   const items = STAGE_SUB_ITEMS.fabric_processing;
   const stagesQuery = useWorkflowStages();
   const allSubItemsQuery = useAllStageSubItemsForOrder(order.id);
   const thisStageItemsQuery = useStageSubItems(order.id, assignment.section_id);
   const upsertItem = useUpsertStageSubItem();
-  const createEntry = useCreateStageEntry();
+  const { createEntry, buildEntry, appUser } = useStageEntryBuilder(order, assignment);
+  const transfer = useTransferFields();
+  const forwardConfirm = useForwardConfirm();
 
   const [completed, setCompleted] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
@@ -87,33 +87,27 @@ export function FabricProcessingForm({ order, assignment, onForwarded }: StageFo
 
   async function handleForward() {
     if (!appUser) return;
+    const minNow = Math.min(...items.map((item) => Number(completed[item.key]) || 0));
+    const balance = Math.max(plannedFabricQty - minNow, 0);
+    if (!(await forwardConfirm(assignment.section?.label ?? "this stage", { qty: balance, unit: "KG" }))) return;
     setError(null);
     try {
       await persistItems();
       const minCompleted = Math.min(...items.map((item) => Number(completed[item.key]) || 0));
-      await createEntry.mutateAsync({
-        order_id: order.id,
-        po_id: assignment.po_id,
-        section_id: assignment.section_id,
-        entry_date: new Date().toISOString().slice(0, 10),
-        unit_type: "KG",
-        qty_received: plannedFabricQty,
-        qty_completed_today: minCompleted,
-        qty_forwarded: minCompleted,
-        qty_shortage: Math.max(plannedFabricQty - minCompleted, 0),
-        qty_rejected: 0,
-        qty_returned: 0,
-        is_external: false,
-        external_unit_name: null,
-        is_sent_outside: false,
-        is_returned: false,
-        is_completed: true,
-        branch: null,
-        unit_name: assignment.unit_name,
-        notes: notes || null,
-        entered_by: appUser.id,
-        forwarded_to_user_id: null,
-      });
+      await createEntry.mutateAsync(
+        buildEntry(
+          {
+            unit_type: "KG",
+            qty_received: plannedFabricQty,
+            qty_completed_today: minCompleted,
+            qty_forwarded: minCompleted,
+            qty_shortage: Math.max(plannedFabricQty - minCompleted, 0),
+            notes: notes || null,
+            ...transfer.values,
+          },
+          true,
+        ),
+      );
       toast.success("Fabric processing forwarded to Fabric Store.");
       onForwarded();
     } catch (err) {
@@ -157,16 +151,23 @@ export function FabricProcessingForm({ order, assignment, onForwarded }: StageFo
         })}
       </div>
 
+      <TransferFields
+        type={transfer.transferType}
+        to={transfer.transferTo}
+        onTypeChange={transfer.setTransferType}
+        onToChange={transfer.setTransferTo}
+      />
+
       <Textarea label="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} />
 
       {error && <p className="text-sm text-status-bad">{error}</p>}
 
       <div className="flex flex-col gap-2 sm:flex-row">
         <Button variant="secondary" onClick={handleSaveProgress} isLoading={upsertItem.isPending} className="flex-1">
-          Save Progress
+          Save Progress (stay open)
         </Button>
         <Button onClick={handleForward} isLoading={createEntry.isPending} className="flex-1">
-          Forward to Fabric Store →
+          Forward &amp; Complete →
         </Button>
       </div>
     </div>

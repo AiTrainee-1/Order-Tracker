@@ -1,27 +1,26 @@
 import { useEffect, useState } from "react";
-import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { useStageSubItems, useUpsertStageSubItem } from "../../../hooks/useStageSubItems";
-import { useCreateStageEntry } from "../../../hooks/useStageEntries";
 import { STAGE_SUB_ITEMS } from "../../../lib/stageConfig";
-import { getFixedOrderQty } from "../../../lib/orderQty";
+import { getAssignmentFixedQty } from "../../../lib/orderQty";
 import { Button } from "../../ui/Button";
 import { Input, Textarea, Toggle } from "../../ui/FormControls";
 import { Loader } from "../../ui/Loader";
 import { Badge } from "../../ui/Badge";
-import { QtyStat } from "./shared";
+import { QtyStat, TransferFields, useForwardConfirm, useStageEntryBuilder, useTransferFields } from "./shared";
 import type { StageFormProps } from "./types";
 
 export function SubStepsForm({ order, assignment, onForwarded }: StageFormProps) {
-  const { appUser } = useAuth();
   const toast = useToast();
   const stageKey = assignment.section?.key ?? "sewing";
   const items = STAGE_SUB_ITEMS[stageKey] ?? [];
-  const fixedQty = getFixedOrderQty(order);
+  const fixedQty = getAssignmentFixedQty(order, assignment);
 
   const subItemsQuery = useStageSubItems(order.id, assignment.section_id);
   const upsertItem = useUpsertStageSubItem();
-  const createEntry = useCreateStageEntry();
+  const { createEntry, buildEntry, appUser } = useStageEntryBuilder(order, assignment);
+  const transfer = useTransferFields();
+  const forwardConfirm = useForwardConfirm();
 
   const [completed, setCompleted] = useState<Record<string, string>>({});
   const [done, setDone] = useState<Record<string, boolean>>({});
@@ -80,33 +79,27 @@ export function SubStepsForm({ order, assignment, onForwarded }: StageFormProps)
 
   async function handleForward() {
     if (!appUser) return;
+    const minNow = items.length ? Math.min(...items.map((item) => Number(completed[item.key]) || 0)) : 0;
+    const balance = Math.max(fixedQty - minNow, 0);
+    if (!(await forwardConfirm(assignment.section?.label ?? "this stage", { qty: balance, unit: "PCS" }))) return;
     setError(null);
     try {
       await persistItems();
       const minCompleted = Math.min(...items.map((item) => Number(completed[item.key]) || 0));
-      await createEntry.mutateAsync({
-        order_id: order.id,
-        po_id: assignment.po_id,
-        section_id: assignment.section_id,
-        entry_date: new Date().toISOString().slice(0, 10),
-        unit_type: "PCS",
-        qty_received: fixedQty,
-        qty_completed_today: minCompleted,
-        qty_forwarded: minCompleted,
-        qty_shortage: Math.max(fixedQty - minCompleted, 0),
-        qty_rejected: 0,
-        qty_returned: 0,
-        is_external: false,
-        external_unit_name: null,
-        is_sent_outside: false,
-        is_returned: false,
-        is_completed: true,
-        branch: null,
-        unit_name: assignment.unit_name,
-        notes: notes || null,
-        entered_by: appUser.id,
-        forwarded_to_user_id: null,
-      });
+      await createEntry.mutateAsync(
+        buildEntry(
+          {
+            unit_type: "PCS",
+            qty_received: fixedQty,
+            qty_completed_today: minCompleted,
+            qty_forwarded: minCompleted,
+            qty_shortage: Math.max(fixedQty - minCompleted, 0),
+            notes: notes || null,
+            ...transfer.values,
+          },
+          true,
+        ),
+      );
       toast.success(`${assignment.section?.label} completed and forwarded.`);
       onForwarded();
     } catch (err) {
@@ -118,7 +111,10 @@ export function SubStepsForm({ order, assignment, onForwarded }: StageFormProps)
 
   return (
     <div className="space-y-5">
-      <QtyStat label="Fixed Order Quantity (PCS)" value={fixedQty} />
+      <QtyStat
+        label={assignment.po ? `PO ${assignment.po.po_number} Qty (PCS)` : "Fixed Order Quantity (PCS)"}
+        value={fixedQty}
+      />
 
       <div className="space-y-2">
         {items.map((item) => {
@@ -151,22 +147,30 @@ export function SubStepsForm({ order, assignment, onForwarded }: StageFormProps)
         })}
       </div>
 
+      <TransferFields
+        type={transfer.transferType}
+        to={transfer.transferTo}
+        onTypeChange={transfer.setTransferType}
+        onToChange={transfer.setTransferTo}
+      />
+
       <Textarea label="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} />
 
       {error && <p className="text-sm text-status-bad">{error}</p>}
 
+      {!allDone && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          Not every step is marked Done — you can keep saving progress, or forward now and the
+          remaining quantity will be recorded as a shortage.
+        </p>
+      )}
+
       <div className="flex flex-col gap-2 sm:flex-row">
         <Button variant="secondary" onClick={handleSaveProgress} isLoading={upsertItem.isPending} className="flex-1">
-          Save Progress
+          Save Progress (stay open)
         </Button>
-        <Button
-          onClick={handleForward}
-          isLoading={createEntry.isPending}
-          disabled={!allDone}
-          className="flex-1"
-          title={!allDone ? "Mark every step Done before forwarding" : undefined}
-        >
-          {allDone ? "Forward to Next Stage →" : "Complete all steps to forward"}
+        <Button onClick={handleForward} isLoading={createEntry.isPending} className="flex-1">
+          Forward &amp; Complete →
         </Button>
       </div>
     </div>

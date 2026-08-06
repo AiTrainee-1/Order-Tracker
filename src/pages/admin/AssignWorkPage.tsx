@@ -14,6 +14,7 @@ import { Table } from "../../components/ui/Table";
 import { Badge } from "../../components/ui/Badge";
 import { Loader } from "../../components/ui/Loader";
 import { useToast } from "../../context/ToastContext";
+import type { AssignmentWithDetails, WorkflowStage } from "../../lib/types";
 
 export function AssignWorkPage() {
   const toast = useToast();
@@ -43,6 +44,29 @@ export function AssignWorkPage() {
     () => purchaseOrders.filter((p) => p.order_id === orderId),
     [purchaseOrders, orderId],
   );
+
+  // Sections this exact user is already assigned to on this order — pre-checked
+  // (and locked) so the admin never re-assigns the same scope.
+  const existingForUserOrder = useMemo(
+    () => (assignments ?? []).filter((a) => a.user_id === userId && a.order_id === orderId),
+    [assignments, userId, orderId],
+  );
+  const alreadyAssignedSectionIds = useMemo(
+    () => new Set(existingForUserOrder.map((a) => a.section_id)),
+    [existingForUserOrder],
+  );
+
+  // Everyone (any user) assigned to each section of the selected order — powers
+  // the per-section "who's on this" tooltip. `assignments` already embeds
+  // user + po + section for the admin.
+  const assigneesBySection = useMemo(() => {
+    const map = new Map<string, AssignmentWithDetails[]>();
+    for (const a of assignments ?? []) {
+      if (a.order_id !== orderId) continue;
+      map.set(a.section_id, [...(map.get(a.section_id) ?? []), a]);
+    }
+    return map;
+  }, [assignments, orderId]);
 
   // Numeric (not alphabetical) order-by-number, so "9/26" sorts before "10/26".
   const ordersInSequence = useMemo(
@@ -88,29 +112,38 @@ export function AssignWorkPage() {
     setError(null);
     setSuccess(null);
     if (!userId || !orderId || sectionIds.size === 0) {
-      setError("Select a user, an order, and at least one section.");
+      setError("Select a user, an order, and at least one new section.");
       return;
     }
     // Empty selection means "every PO" — represented by a single po_id: null row.
     const poTargets: (string | null)[] = poIds.size > 0 ? Array.from(poIds) : [null];
-    try {
-      await Promise.all(
-        Array.from(sectionIds).flatMap((sectionId) =>
-          poTargets.map((poId) =>
-            createAssignment.mutateAsync({
-              user_id: userId,
-              order_id: orderId,
-              po_id: poId,
-              section_id: sectionId,
-              unit_name: unitName || null,
-              can_enter_data: canEnterData,
-            }),
-          ),
+    // Exact (section, po) rows this user already has — skip them so we never
+    // duplicate an assignment (which would also trip the DB unique constraint).
+    const existingKeys = new Set(
+      existingForUserOrder.map((a) => `${a.section_id}::${a.po_id ?? "all"}`),
+    );
+    const jobs = Array.from(sectionIds).flatMap((sectionId) =>
+      poTargets
+        .filter((poId) => !existingKeys.has(`${sectionId}::${poId ?? "all"}`))
+        .map((poId) =>
+          createAssignment.mutateAsync({
+            user_id: userId,
+            order_id: orderId,
+            po_id: poId,
+            section_id: sectionId,
+            unit_name: unitName || null,
+            can_enter_data: canEnterData,
+          }),
         ),
-      );
-      const count = sectionIds.size * poTargets.length;
-      setSuccess(`Created ${count} assignment(s) successfully.`);
-      toast.success(`Created ${count} assignment(s) successfully.`);
+    );
+    if (jobs.length === 0) {
+      setError("Every selected section is already assigned to this user for that PO scope.");
+      return;
+    }
+    try {
+      await Promise.all(jobs);
+      setSuccess(`Created ${jobs.length} assignment(s) successfully.`);
+      toast.success(`Created ${jobs.length} assignment(s) successfully.`);
       setSectionIds(new Set());
       setUnitName("");
     } catch (err) {
@@ -222,18 +255,23 @@ export function AssignWorkPage() {
           </div>
 
           <div>
-            <p className="mb-2 text-xs font-medium text-ink-700">
-              Section(s) — numbered in actual production sequence
-            </p>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-xs font-medium text-ink-700">
+                Section(s) — numbered in actual production sequence
+              </p>
+              <p className="text-xs text-ink-400">Hover a section to see who's already on it</p>
+            </div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {[...(stages ?? [])]
                 .sort((a, b) => a.sequence_no - b.sequence_no)
                 .map((s) => (
-                  <Checkbox
+                  <SectionRow
                     key={s.id}
-                    checked={sectionIds.has(s.id)}
-                    onChange={() => toggleSection(s.id)}
-                    label={`${s.sequence_no}. ${s.label}`}
+                    stage={s}
+                    checked={alreadyAssignedSectionIds.has(s.id) || sectionIds.has(s.id)}
+                    alreadyAssigned={alreadyAssignedSectionIds.has(s.id)}
+                    onToggle={() => toggleSection(s.id)}
+                    assignees={assigneesBySection.get(s.id) ?? []}
                   />
                 ))}
             </div>
@@ -309,6 +347,72 @@ export function AssignWorkPage() {
           />
         </CardBody>
       </Card>
+    </div>
+  );
+}
+
+function SectionRow({
+  stage,
+  checked,
+  alreadyAssigned,
+  onToggle,
+  assignees,
+}: {
+  stage: WorkflowStage;
+  checked: boolean;
+  alreadyAssigned: boolean;
+  onToggle: () => void;
+  assignees: AssignmentWithDetails[];
+}) {
+  return (
+    <div className="group relative flex items-center justify-between gap-2 rounded-lg border border-ink-100 px-2.5 py-2">
+      <label
+        className={`flex min-w-0 items-center gap-2 text-sm ${
+          alreadyAssigned ? "text-ink-400" : "cursor-pointer text-ink-700"
+        }`}
+      >
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={alreadyAssigned}
+          onChange={onToggle}
+          className="h-4 w-4 shrink-0 rounded border border-ink-300 text-brand focus:ring-brand disabled:opacity-60"
+        />
+        <span className="truncate leading-tight">
+          {stage.sequence_no}. {stage.label}
+        </span>
+      </label>
+      <div className="flex shrink-0 items-center gap-1.5">
+        {alreadyAssigned && <Badge tone="info">Assigned</Badge>}
+        {assignees.length > 0 && (
+          <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-ink-100 px-1 text-[10px] font-semibold text-ink-600">
+            {assignees.length}
+          </span>
+        )}
+      </div>
+
+      {assignees.length > 0 && (
+        <div className="pointer-events-none absolute bottom-full right-0 z-30 mb-2 hidden w-64 max-w-[calc(100vw-2rem)] rounded-lg border border-ink-100 bg-white p-3 text-left opacity-0 shadow-popover transition-opacity group-hover:block group-hover:opacity-100">
+          <p className="mb-1.5 text-xs font-semibold text-ink-900">Assigned to {stage.label}</p>
+          <ul className="space-y-1.5">
+            {assignees.map((a) => (
+              <li key={a.id} className="text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-ink-800">{a.user?.name ?? "Unknown"}</span>
+                  <Badge tone={a.can_enter_data ? "neutral" : "info"}>
+                    {a.can_enter_data ? "Can Enter" : "Monitor"}
+                  </Badge>
+                </div>
+                <p className="text-ink-500">
+                  {a.user?.phone ? `${a.user.phone} · ` : ""}
+                  {a.po?.po_number ? `PO ${a.po.po_number}` : "All POs"}
+                  {a.unit_name ? ` · ${a.unit_name}` : ""}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

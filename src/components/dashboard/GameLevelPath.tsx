@@ -89,6 +89,7 @@ export function GameLevelPath({ stages, currentStageIndex, selectedIndex, onSele
                 isCurrent={index === currentStageIndex && !stage.isCompleted}
                 isSelected={index === selectedIndex}
                 onClick={() => onSelect(index)}
+                align={visualCol === 0 ? "left" : visualCol === COLS - 1 ? "right" : "center"}
               />
             </div>
           );
@@ -127,6 +128,8 @@ export function GameLevelPath({ stages, currentStageIndex, selectedIndex, onSele
   );
 }
 
+type TooltipAlign = "left" | "center" | "right";
+
 function LevelNode({
   stage,
   index,
@@ -134,6 +137,7 @@ function LevelNode({
   isSelected,
   onClick,
   compact = false,
+  align = "center",
 }: {
   stage: StageProgress;
   index: number;
@@ -141,6 +145,7 @@ function LevelNode({
   isSelected: boolean;
   onClick: () => void;
   compact?: boolean;
+  align?: TooltipAlign;
 }) {
   const nodeClasses = stage.isCompleted
     ? "bg-good-gradient text-white border-2 border-white"
@@ -181,17 +186,31 @@ function LevelNode({
         </span>
       )}
 
-      <StageTooltip stage={stage} />
+      <StageTooltip stage={stage} align={align} />
     </button>
   );
 }
 
-function StageTooltip({ stage }: { stage: StageProgress }) {
+const TOOLTIP_POS: Record<TooltipAlign, string> = {
+  center: "left-1/2 -translate-x-1/2",
+  left: "left-0",
+  right: "right-0",
+};
+
+const TOOLTIP_ARROW: Record<TooltipAlign, string> = {
+  center: "left-1/2 -translate-x-1/2",
+  left: "left-4",
+  right: "right-4",
+};
+
+function StageTooltip({ stage, align = "center" }: { stage: StageProgress; align?: TooltipAlign }) {
   const unit = stage.stage.unit_type;
   const status = stage.isCompleted ? "Completed" : stage.entries.length ? "In progress" : "Pending";
 
   return (
-    <div className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 hidden w-52 -translate-x-1/2 rounded-lg border border-ink-100 bg-white p-3 text-left opacity-0 shadow-popover transition-opacity duration-100 group-hover:opacity-100 md:block">
+    <div
+      className={`pointer-events-none absolute bottom-full z-30 mb-2 hidden w-52 rounded-lg border border-ink-100 bg-white p-3 text-left opacity-0 shadow-popover transition-opacity duration-100 group-hover:opacity-100 md:block ${TOOLTIP_POS[align]}`}
+    >
       <p className="text-xs font-semibold text-ink-900">{stage.stage.label}</p>
       <p className="mt-0.5 text-[11px] font-medium text-ink-500">{status}</p>
       <div className="mt-2 space-y-1 text-[11px] text-ink-600">
@@ -217,8 +236,16 @@ function StageTooltip({ stage }: { stage: StageProgress }) {
           <span>Last update</span>
           <span className="font-medium text-ink-800">{formatDisplayDate(stage.lastEntryDate)}</span>
         </div>
+        {stage.transfers.length > 0 && (
+          <div className="flex items-center justify-between text-cyan-700">
+            <span>Transfer</span>
+            <span className="max-w-[60%] truncate font-medium">{stage.transfers[0].to || "External"}</span>
+          </div>
+        )}
       </div>
-      <div className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-ink-100 bg-white" />
+      <div
+        className={`absolute top-full h-2 w-2 -translate-y-1/2 rotate-45 border-b border-r border-ink-100 bg-white ${TOOLTIP_ARROW[align]}`}
+      />
     </div>
   );
 }
