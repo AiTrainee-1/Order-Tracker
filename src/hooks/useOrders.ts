@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabaseClient";
 import type { Order, PurchaseOrder, StageEntry, WorkflowStage } from "../lib/types";
 import { useWorkflowStages } from "./useWorkflowStages";
 import { buildOrderProgress, type OrderProgress } from "../lib/progress";
+import { getCombinedCutQuantity } from "../lib/orderQty";
 
 export interface OrderBundle {
   order: Order;
@@ -61,7 +62,11 @@ function computeBundles(
   return orders.map((order) => {
     const purchaseOrders = pos.filter((p) => p.order_id === order.id);
     const orderEntries = entries.filter((e) => e.order_id === order.id);
-    const progress = buildOrderProgress(order, stages, orderEntries);
+    const qtyBaseline = {
+      totalQty: order.total_qty,
+      cutQuantity: getCombinedCutQuantity(order, purchaseOrders),
+    };
+    const progress = buildOrderProgress(order, stages, orderEntries, qtyBaseline);
     return { order, purchaseOrders, progress };
   });
 }

@@ -63,6 +63,9 @@ create table public.purchase_orders (
   order_id uuid not null references public.orders(id) on delete cascade,
   po_number text not null,
   quantity numeric not null default 0,
+  -- Fixed PCS baseline for THIS PO, set when Cutting completes for a
+  -- PO-scoped assignment — mirrors orders.cut_quantity but per PO.
+  cut_quantity numeric,
   delivery_date date,
   created_at timestamptz not null default now()
 );
@@ -109,7 +112,7 @@ create table public.stage_entries (
   unit_name text,
   -- Whether this movement transferred goods elsewhere, and where.
   -- 'none' | 'branch' | 'unit' | 'outside'; transfer_to holds the destination.
-  transfer_type text not null default 'none' check (transfer_type in ('none', 'branch', 'unit', 'outside')),
+  transfer_type text not null default 'none' check (transfer_type in ('none', 'branch', 'unit', 'outside', 'others')),
   transfer_to text,
   notes text,
   entered_by uuid not null references public.app_users(id),
@@ -398,11 +401,13 @@ insert into public.workflow_stages (key, label, sequence_no, unit_type, typical_
   ('fabric_store',          'Fabric Store',                         6,  'KG',  1, 'store_check'),
   ('pattern_marker',        'Pattern Making & Marker Planning',      7,  'KG',  2, 'simple_confirm'),
   ('cutting',               'Cutting',                              8,  'PCS', 3, 'cutting'),
-  ('printing_embroidery',   'Printing / Embroidery',                9,  'PCS', 4, 'dispatch_return'),
-  ('sewing',                'Sewing (Stitching)',                   10, 'PCS', 7, 'sub_steps'),
-  ('washing',               'Washing',                              11, 'PCS', 3, 'dispatch_return'),
-  ('finishing',             'Finishing',                            12, 'PCS', 3, 'sub_steps'),
-  ('packing',               'Packing',                              13, 'PCS', 2, 'sub_steps');
+  ('printing_embroidery',   'Embroidery',                           9,  'PCS', 4, 'dispatch_return'),
+  ('stitching',             'Sewing (Stitching)',                   10, 'PCS', 7, 'sub_steps'),
+  ('checking',              'Checking',                             11, 'PCS', 3, 'simple_confirm'),
+  ('ironing',               'Ironing',                              12, 'PCS', 2, 'simple_confirm'),
+  ('line_packing',          'Packing',                              13, 'PCS', 2, 'simple_confirm'),
+  ('finishing',             'Finishing',                            14, 'PCS', 3, 'sub_steps'),
+  ('packing',               'Packing',                              15, 'PCS', 2, 'sub_steps');
 
 -- ----------------------------------------------------------------------------
 -- Seed data: 4 orders (MCKENZIE / JD SPORTS sheet, ref MER6) + their POs

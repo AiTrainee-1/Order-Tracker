@@ -250,7 +250,7 @@ export function AssignWorkPage() {
           <div>
             <div className="mb-2 flex items-center justify-between">
               <p className="text-xs font-medium text-ink-700">
-                PO(s) — leave all unchecked to cover every PO
+                PO(s) — leave all unchecked to cover every PO (tracked separately, one work item per PO)
               </p>
               {posForOrder.length > 0 && (
                 <button

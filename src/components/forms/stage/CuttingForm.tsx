@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useToast } from "../../../context/ToastContext";
-import { useSetCutQuantity } from "../../../hooks/useOrderMutations";
+import { useSetCutQuantity, useSetPoCutQuantity } from "../../../hooks/useOrderMutations";
 import { Input, Textarea } from "../../ui/FormControls";
 import {
   InheritedQtyNote,
@@ -17,6 +17,7 @@ export function CuttingForm({ order, assignment, stageProgress, onForwarded }: S
   const toast = useToast();
   const { submitMovement, isPending: entryPending, appUser } = useStageEntryBuilder(order, assignment);
   const setCutQuantity = useSetCutQuantity();
+  const setPoCutQuantity = useSetPoCutQuantity();
   const qty = useStageQty(order, assignment, stageProgress);
   const splits = useSplitRecords();
 
@@ -25,7 +26,7 @@ export function CuttingForm({ order, assignment, stageProgress, onForwarded }: S
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const isPending = entryPending || setCutQuantity.isPending;
+  const isPending = entryPending || setCutQuantity.isPending || setPoCutQuantity.isPending;
   // Splits, when present, are the source of truth for what moved on.
   const forwarded = splits.records.length > 0 ? splits.totalQty : Number(forwardedQty) || 0;
   const balanceAfter = Math.max(qty.allotted - qty.alreadyForwarded - forwarded, 0);
@@ -34,13 +35,20 @@ export function CuttingForm({ order, assignment, stageProgress, onForwarded }: S
     if (!appUser) return;
     setError(null);
     try {
-      // Only an order-wide cut sets the order's fixed cut_quantity, and only on
-      // completion — a partial cut isn't the final baseline yet.
-      if (isFinal && !assignment.po_id) {
-        await setCutQuantity.mutateAsync({
-          orderId: order.id,
-          cutQuantity: qty.alreadyForwarded + forwarded,
-        });
+      // The fixed baseline is set on completion only — a partial cut isn't the
+      // final number yet. A PO-scoped assignment sets that PO's own baseline;
+      // an order-wide one sets the order's.
+      if (isFinal) {
+        const finalQty = qty.alreadyForwarded + forwarded;
+        if (assignment.po_id) {
+          await setPoCutQuantity.mutateAsync({
+            orderId: order.id,
+            poId: assignment.po_id,
+            cutQuantity: finalQty,
+          });
+        } else {
+          await setCutQuantity.mutateAsync({ orderId: order.id, cutQuantity: finalQty });
+        }
       }
       await submitMovement({
         base: {

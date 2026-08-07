@@ -26,6 +26,27 @@ const COPY: Record<
       "Part of the pattern set ready? Move it forward so Cutting can start — this stage stays orange until the full set is signed off.",
     partialLabel: "Not Completed — Move to Next Stage",
   },
+  checking: {
+    prompt: "Has this batch passed final garment checking (AQL / 100% inspection)?",
+    confirmLabel: "Checking passed for this quantity",
+    partialHint:
+      "Only part of the batch checked so far? Move it forward so Ironing isn't held up — this stage stays orange until the rest is checked.",
+    partialLabel: "Not Completed — Move to Next Stage",
+  },
+  ironing: {
+    prompt: "Has ironing been completed for this batch?",
+    confirmLabel: "Ironing is complete for this quantity",
+    partialHint:
+      "Only part of the batch ironed so far? Move it forward so Packing isn't held up — this stage stays orange until the rest is done.",
+    partialLabel: "Not Completed — Move to Next Stage",
+  },
+  line_packing: {
+    prompt: "Has this batch been packed and is it ready to move to Finishing?",
+    confirmLabel: "Packing is complete for this quantity",
+    partialHint:
+      "Only part of the batch packed so far? Move it forward so Finishing isn't held up — this stage stays orange until the rest is done.",
+    partialLabel: "Not Completed — Move to Next Stage",
+  },
 };
 
 export function SimpleConfirmForm({ order, assignment, onForwarded }: StageFormProps) {

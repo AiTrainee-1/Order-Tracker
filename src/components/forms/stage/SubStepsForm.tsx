@@ -12,7 +12,7 @@ import type { StageFormProps } from "./types";
 
 export function SubStepsForm({ order, assignment, onForwarded }: StageFormProps) {
   const toast = useToast();
-  const stageKey = assignment.section?.key ?? "sewing";
+  const stageKey = assignment.section?.key ?? "stitching";
   const items = STAGE_SUB_ITEMS[stageKey] ?? [];
   const fixedQty = getAssignmentFixedQty(order, assignment);
 

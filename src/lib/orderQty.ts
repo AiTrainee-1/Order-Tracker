@@ -1,4 +1,4 @@
-import type { AssignmentWithDetails, Order } from "./types";
+import type { AssignmentWithDetails, Order, PurchaseOrder } from "./types";
 
 /** The fixed reference quantity every post-Cutting stage compares against.
  * Before Cutting completes there's no fixed PCS number yet, so this falls
@@ -16,12 +16,32 @@ export function getAssignmentQty(order: Pick<Order, "total_qty">, assignment: As
 }
 
 /** Same idea for post-Cutting stages: a PO-scoped assignment measures against
- * its own PO quantity; an order-wide one uses the order's fixed cut quantity. */
+ * its own fixed cut quantity once Cutting has run for that PO (falling back to
+ * its planned quantity before that); an order-wide assignment uses the order's
+ * fixed cut quantity. */
 export function getAssignmentFixedQty(
   order: Pick<Order, "cut_quantity" | "total_qty">,
   assignment: AssignmentWithDetails,
 ): number {
-  return assignment.po?.quantity ?? getFixedOrderQty(order);
+  if (assignment.po) return assignment.po.cut_quantity ?? assignment.po.quantity;
+  return getFixedOrderQty(order);
+}
+
+/** The whole-order fixed baseline for a combined ("all POs") view, now that
+ * Cutting is normally completed per PO rather than order-wide — orders.cut_quantity
+ * stays null once every PO has been cut individually. Sums each PO's own fixed
+ * quantity so the combined view still shows a real post-cut PCS number instead
+ * of silently falling back to the pre-cut planned total. Falls back to the
+ * order's own cut_quantity (still set on legacy/order-wide cuts), then null
+ * (not every PO cut yet) so the caller's own pre-cut fallback takes over. */
+export function getCombinedCutQuantity(
+  order: Pick<Order, "cut_quantity">,
+  purchaseOrders: PurchaseOrder[],
+): number | null {
+  if (purchaseOrders.length === 0) return order.cut_quantity;
+  const allCut = purchaseOrders.every((po) => po.cut_quantity != null);
+  if (!allCut) return order.cut_quantity;
+  return purchaseOrders.reduce((sum, po) => sum + (po.cut_quantity ?? 0), 0);
 }
 
 export interface QtyComparison {

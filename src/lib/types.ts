@@ -1,8 +1,9 @@
 export type UnitType = "KG" | "PCS";
 
 /** How a stage entry's goods moved: kept in-house, or transferred to another
- * branch, another production unit, or an outside party. */
-export type TransferType = "none" | "branch" | "unit" | "outside";
+ * branch, another production unit, an outside party, or a custom-named
+ * destination that doesn't fit those categories. */
+export type TransferType = "none" | "branch" | "unit" | "outside" | "others";
 
 export type StageFormType =
   | "confirmation"
@@ -65,6 +66,10 @@ export interface PurchaseOrder {
   order_id: string;
   po_number: string;
   quantity: number;
+  /** Fixed PCS baseline for THIS PO, set when Cutting completes for a
+   * PO-scoped assignment — mirrors orders.cut_quantity but per PO, so every
+   * PO's downstream stages compare against its own fixed number. */
+  cut_quantity: number | null;
   delivery_date: string | null;
   created_at: string;
 }
@@ -127,7 +132,7 @@ export interface StageAssignment {
 }
 
 /** A named material/sub-step row within a stage (Yarn/Fabric/Trims/Accessories
- * under Raw Material Planning, Line Feeding/Inline QC/... under Sewing, etc). */
+ * under Raw Material Planning, Line Feeding/Inline QC/... under Checking, etc). */
 export interface StageSubItem {
   id: string;
   order_id: string;

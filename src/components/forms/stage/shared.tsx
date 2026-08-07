@@ -52,12 +52,14 @@ const DESTINATION_LABEL: Record<Exclude<TransferType, "none">, string> = {
   branch: "Destination branch",
   unit: "Destination unit / vendor",
   outside: "Outside party",
+  others: "Custom destination name",
 };
 
 const DESTINATION_PLACEHOLDER: Record<Exclude<TransferType, "none">, string> = {
   branch: "e.g. Tirupur Branch",
   unit: "e.g. Unit 2, ABC Subcontractor",
   outside: "e.g. External printing house",
+  others: "Type a name…",
 };
 
 export function TransferFields({
@@ -82,6 +84,7 @@ export function TransferFields({
         <option value="branch">Branch transfer</option>
         <option value="unit">Unit transfer</option>
         <option value="outside">Outside transfer</option>
+        <option value="others">Others</option>
       </Select>
       {type !== "none" && (
         <Input
@@ -382,12 +385,19 @@ export function SplitRecordsTable({
                 <option value="branch">Branch</option>
                 <option value="unit">Unit / vendor</option>
                 <option value="outside">Outside party</option>
+                <option value="others">Others</option>
               </Select>
               <Input
                 label="Destination"
                 value={r.destination}
                 onChange={(e) => onUpdate(r.key, { destination: e.target.value })}
-                placeholder={r.transferType === "none" ? "Own floor" : "e.g. Unit 2"}
+                placeholder={
+                  r.transferType === "none"
+                    ? "Own floor"
+                    : r.transferType === "others"
+                      ? "Type a name…"
+                      : "e.g. Unit 2"
+                }
                 disabled={r.transferType === "none"}
               />
               <Input

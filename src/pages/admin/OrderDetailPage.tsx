@@ -5,13 +5,15 @@ import { useStageSubItems } from "../../hooks/useStageSubItems";
 import { useOrderAssignments } from "../../hooks/useAssignments";
 import { publicImageUrl } from "../../lib/supabaseClient";
 import { deliveryUrgency, formatDisplayDate, urgencyTextClasses } from "../../lib/workflow";
-import { formatTransfer } from "../../lib/progress";
+import { buildOrderProgress, formatTransfer } from "../../lib/progress";
+import { getCombinedCutQuantity } from "../../lib/orderQty";
 import { Card, CardBody, CardHeader } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import { Loader } from "../../components/ui/Loader";
 import { Table } from "../../components/ui/Table";
+import { FilterTabs } from "../../components/ui/FilterTabs";
 import { GameLevelPath } from "../../components/dashboard/GameLevelPath";
 import { MultiUnitSplitTable } from "../../components/dashboard/MultiUnitSplitTable";
 import { GarmentPlaceholder } from "../../components/ui/GarmentPlaceholder";
@@ -19,15 +21,42 @@ import { BackButton } from "../../components/ui/BackButton";
 import type { AppUser } from "../../lib/types";
 
 const HISTORY_PAGE_SIZE = 15;
+const ALL_POS = "all";
 
 export function OrderDetailPage() {
   const { orderId } = useParams<{ orderId: string }>();
-  const { order, entries, usersById, progress, isLoading, isError } = useOrderDetail(orderId);
+  const { order, purchaseOrders, entries, usersById, progress, isLoading, isError } =
+    useOrderDetail(orderId);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [historyPage, setHistoryPage] = useState(1);
+  const [poScope, setPoScope] = useState<string>(ALL_POS);
+  const assignmentsQuery = useOrderAssignments(order?.id);
+  // Material/step breakdown (stage_sub_items) has no PO column — it's planned
+  // at the order level regardless of which PO tab is selected.
   const selectedSectionId = progress?.stages[selectedIndex]?.stage.id;
   const subItemsQuery = useStageSubItems(order?.id, selectedSectionId);
-  const assignmentsQuery = useOrderAssignments(order?.id);
+
+  const selectedPo = poScope === ALL_POS ? null : purchaseOrders.find((p) => p.id === poScope) ?? null;
+
+  // Recompute progress scoped to just the chosen PO's own entries/quantities —
+  // this is what makes "how much has been completed for THIS PO" possible,
+  // vs. the combined view which merges every PO's movement together.
+  const scopedProgress = useMemo(() => {
+    if (!order || !progress) return null;
+    if (!selectedPo) return progress;
+    const poEntries = entries.filter((e) => e.po_id === selectedPo.id);
+    return buildOrderProgress(
+      { ...order, delivery_date: selectedPo.delivery_date },
+      progress.stages.map((s) => s.stage),
+      poEntries,
+      { totalQty: selectedPo.quantity, cutQuantity: selectedPo.cut_quantity },
+    );
+  }, [order, progress, entries, selectedPo]);
+
+  const scopedEntries = useMemo(
+    () => (selectedPo ? entries.filter((e) => e.po_id === selectedPo.id) : entries),
+    [entries, selectedPo],
+  );
 
   /** Names for the workflow tooltips / responsible-person panels. */
   const nameOf = useMemo(
@@ -42,29 +71,40 @@ export function OrderDetailPage() {
   }, [progress]);
 
   if (isLoading) return <Loader full label="Loading order…" />;
-  if (isError || !order || !progress) {
+  if (isError || !order || !progress || !scopedProgress) {
     return <p className="text-sm text-status-bad">Couldn't load this order.</p>;
   }
 
   const imageUrl = publicImageUrl(order.image_path);
-  const urgency = deliveryUrgency(order.delivery_date);
-  const selectedStage = progress.stages[selectedIndex];
+  const urgency = deliveryUrgency(scopedProgress.order.delivery_date);
+  const selectedStage = scopedProgress.stages[selectedIndex];
+
+  const plannedQty = selectedPo ? selectedPo.quantity : order.total_qty;
+  const fixedQty = selectedPo
+    ? selectedPo.cut_quantity
+    : getCombinedCutQuantity(order, purchaseOrders);
 
   // Who is scheduled to run the NEXT stage — from the assignment roster rather
   // than only from whoever happened to be named on the last entry.
-  const nextStage = progress.stages[selectedIndex + 1];
+  const nextStage = scopedProgress.stages[selectedIndex + 1];
   const nextStageAssignees = (assignmentsQuery.data ?? [])
-    .filter((a) => a.section_id === nextStage?.stage.id)
+    .filter((a) => a.section_id === nextStage?.stage.id && (!selectedPo || !a.po_id || a.po_id === selectedPo.id))
     .map((a) => usersById.get(a.user_id))
     .filter((u): u is AppUser => !!u);
 
-  const history = [...entries].reverse();
+  const history = [...scopedEntries].reverse();
   const historyTotalPages = Math.max(1, Math.ceil(history.length / HISTORY_PAGE_SIZE));
   const historyCurrentPage = Math.min(historyPage, historyTotalPages);
   const historyRows = history.slice(
     (historyCurrentPage - 1) * HISTORY_PAGE_SIZE,
     historyCurrentPage * HISTORY_PAGE_SIZE,
   );
+
+  function selectPoScope(next: string) {
+    setPoScope(next);
+    setHistoryPage(1);
+    setSelectedIndex(0);
+  }
 
   return (
     <div className="space-y-6">
@@ -85,10 +125,10 @@ export function OrderDetailPage() {
               <h1 className="text-lg font-semibold text-ink-900">{order.style}</h1>
               <Badge tone="neutral">IO {order.io_no}</Badge>
               <Badge tone="neutral">{order.color}</Badge>
-              {progress.partialStagesCount > 0 && (
+              {scopedProgress.partialStagesCount > 0 && (
                 <Badge tone="warn">
-                  {progress.partialStagesCount} stage{progress.partialStagesCount === 1 ? "" : "s"} moved
-                  on unfinished
+                  {scopedProgress.partialStagesCount} stage{scopedProgress.partialStagesCount === 1 ? "" : "s"}{" "}
+                  moved on unfinished
                 </Badge>
               )}
             </div>
@@ -96,45 +136,65 @@ export function OrderDetailPage() {
             <p className="mt-1 text-xs text-ink-400">{order.fabric}</p>
 
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-              <Metric label="Planned Qty" value={order.total_qty.toLocaleString() + " PCS"} />
+              <Metric
+                label={selectedPo ? `PO ${selectedPo.po_number} Qty` : "Planned Qty (All POs)"}
+                value={plannedQty.toLocaleString() + " PCS"}
+              />
               <Metric
                 label="Fixed Qty (Post-Cutting)"
-                value={
-                  order.cut_quantity != null
-                    ? order.cut_quantity.toLocaleString() + " PCS"
-                    : "Not cut yet"
-                }
+                value={fixedQty != null ? fixedQty.toLocaleString() + " PCS" : "Not cut yet"}
               />
-              <Metric label="Delivery" value={formatDisplayDate(order.delivery_date)} />
+              <Metric label="Delivery" value={formatDisplayDate(scopedProgress.order.delivery_date)} />
               <Metric
                 label="Days Remaining"
                 value={
-                  progress.daysRemaining !== null
-                    ? progress.daysRemaining >= 0
-                      ? `${progress.daysRemaining} days`
-                      : `${Math.abs(progress.daysRemaining)} days overdue`
+                  scopedProgress.daysRemaining !== null
+                    ? scopedProgress.daysRemaining >= 0
+                      ? `${scopedProgress.daysRemaining} days`
+                      : `${Math.abs(scopedProgress.daysRemaining)} days overdue`
                     : "No date set"
                 }
                 tone={urgencyTextClasses[urgency]}
               />
-              <Metric label="Overall Progress" value={`${progress.overallProgressPct}%`} />
+              <Metric label="Overall Progress" value={`${scopedProgress.overallProgressPct}%`} />
             </div>
-            <ProgressBar value={progress.overallProgressPct} className="mt-3" />
+            <ProgressBar value={scopedProgress.overallProgressPct} className="mt-3" />
           </div>
         </CardBody>
       </Card>
 
+      {purchaseOrders.length > 0 && (
+        <Card>
+          <CardBody className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+              Track by Purchase Order
+            </p>
+            <FilterTabs
+              value={poScope}
+              onChange={selectPoScope}
+              tabs={[
+                { key: ALL_POS, label: "All POs (combined)" },
+                ...purchaseOrders.map((po) => ({
+                  key: po.id,
+                  label: `PO ${po.po_number}`,
+                })),
+              ]}
+            />
+          </CardBody>
+        </Card>
+      )}
+
       <Card>
         <CardHeader
           title="Production Workflow"
-          subtitle={`${progress.completedStagesCount} completed · ${progress.pendingStagesCount} pending${
-            progress.partialStagesCount ? ` · ${progress.partialStagesCount} moved on unfinished` : ""
-          }`}
+          subtitle={`${scopedProgress.completedStagesCount} completed · ${scopedProgress.pendingStagesCount} pending${
+            scopedProgress.partialStagesCount ? ` · ${scopedProgress.partialStagesCount} moved on unfinished` : ""
+          }${selectedPo ? ` · PO ${selectedPo.po_number}` : " · all POs combined"}`}
         />
         <CardBody>
           <GameLevelPath
-            stages={progress.stages}
-            currentStageIndex={progress.currentStageIndex}
+            stages={scopedProgress.stages}
+            currentStageIndex={scopedProgress.currentStageIndex}
             selectedIndex={selectedIndex}
             onSelect={setSelectedIndex}
             userNameById={nameOf}
@@ -378,7 +438,9 @@ export function OrderDetailPage() {
       <Card>
         <CardHeader
           title="Complete Movement History"
-          subtitle={`${entries.length} entries logged across all stages`}
+          subtitle={`${scopedEntries.length} entries logged across all stages${
+            selectedPo ? ` · PO ${selectedPo.po_number}` : " · all POs combined"
+          }`}
         />
         <CardBody className="space-y-3">
           <Table

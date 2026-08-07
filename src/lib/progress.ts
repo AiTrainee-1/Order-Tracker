@@ -93,6 +93,7 @@ const TRANSFER_PREFIX: Record<Exclude<TransferType, "none">, string> = {
   branch: "Branch",
   unit: "Unit",
   outside: "Outside",
+  others: "Others",
 };
 
 /** Human-readable label for a single transfer, e.g. "Branch → Unit 2". */
@@ -111,11 +112,17 @@ function summarizeTransfers(entries: StageEntry[]): string | null {
   return labels.size ? Array.from(labels).join(", ") : null;
 }
 
-/** The order-level fallback for a stage measured in this unit. PCS stages can
- * always fall back to the fixed cut quantity (or the planned total before
- * Cutting); KG has no order-level figure, so it must come from the chain. */
-function baselineFor(order: Order, stage: WorkflowStage): number {
-  return stage.unit_type === "PCS" ? order.cut_quantity ?? order.total_qty : 0;
+/** The last-resort baseline for a stage measured in this unit, before anything
+ * has been counted in or inherited. PCS stages fall back to the fixed cut
+ * quantity (or the planned total before Cutting); KG has no such figure, so it
+ * must come from the chain. */
+export interface QtyBaseline {
+  totalQty: number;
+  cutQuantity: number | null;
+}
+
+function baselineFor(scope: QtyBaseline, stage: WorkflowStage): number {
+  return stage.unit_type === "PCS" ? scope.cutQuantity ?? scope.totalQty : 0;
 }
 
 /**
@@ -143,6 +150,11 @@ export function buildOrderProgress(
   order: Order,
   stages: WorkflowStage[],
   entries: StageEntry[],
+  /** Overrides the fallback baseline — pass a PO's own { quantity, cut_quantity }
+   * when `entries` has already been filtered to that PO, so a PO-scoped view
+   * doesn't fall back to the whole order's numbers. Defaults to the order's own
+   * total_qty/cut_quantity, unchanged from before this param existed. */
+  qtyBaseline: QtyBaseline = { totalQty: order.total_qty, cutQuantity: order.cut_quantity },
 ): OrderProgress {
   const sortedStages = [...stages].sort((a, b) => a.sequence_no - b.sequence_no);
 
@@ -171,7 +183,7 @@ export function buildOrderProgress(
     const sameUnit = prevStage ? prevStage.unit_type === stage.unit_type : false;
     const qtyInherited = prev && sameUnit ? prev.qtyForwarded : 0;
 
-    const qtyAllotted = qtyReceived > 0 ? qtyReceived : qtyInherited > 0 ? qtyInherited : baselineFor(order, stage);
+    const qtyAllotted = qtyReceived > 0 ? qtyReceived : qtyInherited > 0 ? qtyInherited : baselineFor(qtyBaseline, stage);
     const hasQtyMismatch = qtyReceived > 0 && qtyInherited > 0 && qtyReceived !== qtyInherited;
 
     // Derived balance (never the sum of per-entry shortage). Pending while the

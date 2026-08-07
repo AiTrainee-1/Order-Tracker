@@ -42,8 +42,8 @@ export function StageRolesPage() {
         <h1 className="text-2xl font-bold tracking-tight text-ink-900">Stage Roles</h1>
         <p className="text-sm text-ink-500">
           Assign a default user to each production stage. They're automatically responsible for that
-          stage on <span className="font-medium text-ink-700">every order</span> — existing and new —
-          without assigning them order by order.
+          stage on <span className="font-medium text-ink-700">every order and every PO</span> —
+          existing and new — without assigning them order by order.
         </p>
       </div>
 

@@ -17,6 +17,30 @@ export function useSetCutQuantity() {
   });
 }
 
+/** Same idea, scoped to a single PO — a PO-scoped Cutting assignment sets its
+ * own fixed baseline instead of overwriting the whole order's. */
+export function useSetPoCutQuantity() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      orderId,
+      poId,
+      cutQuantity,
+    }: {
+      orderId: string;
+      poId: string;
+      cutQuantity: number;
+    }) => {
+      const { error } = await supabase
+        .from("purchase_orders")
+        .update({ cut_quantity: cutQuantity })
+        .eq("id", poId);
+      if (error) throw error;
+    },
+    onSuccess: (_data, variables) => invalidateOrderQueries(queryClient, variables.orderId),
+  });
+}
+
 export interface OrderPoInput {
   po_number: string;
   quantity: number;

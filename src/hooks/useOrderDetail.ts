@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabaseClient";
 import type { AppUser, Order, PurchaseOrder, StageEntry } from "../lib/types";
 import { useWorkflowStages } from "./useWorkflowStages";
 import { buildOrderProgress } from "../lib/progress";
+import { getCombinedCutQuantity } from "../lib/orderQty";
 
 export function useOrderDetail(orderId: string | undefined) {
   const stagesQuery = useWorkflowStages();
@@ -43,7 +44,11 @@ export function useOrderDetail(orderId: string | undefined) {
 
   const progress = useMemo(() => {
     if (!dataQuery.data || !stagesQuery.data) return null;
-    return buildOrderProgress(dataQuery.data.order, stagesQuery.data, dataQuery.data.entries);
+    const qtyBaseline = {
+      totalQty: dataQuery.data.order.total_qty,
+      cutQuantity: getCombinedCutQuantity(dataQuery.data.order, dataQuery.data.purchaseOrders),
+    };
+    return buildOrderProgress(dataQuery.data.order, stagesQuery.data, dataQuery.data.entries, qtyBaseline);
   }, [dataQuery.data, stagesQuery.data]);
 
   return {

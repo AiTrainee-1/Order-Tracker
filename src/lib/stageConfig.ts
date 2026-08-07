@@ -29,7 +29,7 @@ export const STAGE_SUB_ITEMS: Record<string, SubItemDef[]> = {
     { key: "relaxing", label: "Relaxing" },
     { key: "fabric_inspection", label: "Fabric Inspection (4 Point)" },
   ],
-  sewing: [
+  stitching: [
     { key: "line_feeding", label: "Line Feeding" },
     { key: "inline_qc", label: "Inline QC" },
     { key: "end_line_qc", label: "End Line QC" },
@@ -67,10 +67,5 @@ export const DISPATCH_CONFIG: Record<string, DispatchConfig> = {
     destinationLabel: "Branch / Company",
     showLocation: true,
     showExpectedReturn: false,
-  },
-  washing: {
-    destinationLabel: "Washing Company",
-    showLocation: false,
-    showExpectedReturn: true,
   },
 };
