@@ -6,6 +6,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { DashboardPage } from "./pages/admin/DashboardPage";
 import { OrdersPage } from "./pages/admin/OrdersPage";
 import { OrderDetailPage } from "./pages/admin/OrderDetailPage";
+import { OutputPage } from "./pages/admin/OutputPage";
 import { UsersPage } from "./pages/admin/UsersPage";
 import { AssignWorkPage } from "./pages/admin/AssignWorkPage";
 import { StageRolesPage } from "./pages/admin/StageRolesPage";
@@ -29,6 +30,7 @@ export default function App() {
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="orders" element={<OrdersPage />} />
         <Route path="orders/:orderId" element={<OrderDetailPage />} />
+        <Route path="output/:orderId" element={<OutputPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="assign" element={<AssignWorkPage />} />
         <Route path="stage-roles" element={<StageRolesPage />} />

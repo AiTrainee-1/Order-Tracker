@@ -1,83 +1,56 @@
 import { useState } from "react";
 import { useToast } from "../../../context/ToastContext";
-import { Checkbox } from "../../ui/FormControls";
-import { Textarea } from "../../ui/FormControls";
-import { getAssignmentQty } from "../../../lib/orderQty";
-import { StageActions, TransferFields, useStageEntryBuilder, useTransferFields } from "./shared";
+import { useStageChain } from "../../../hooks/useProductionChain";
+import { Checkbox, Textarea } from "../../ui/FormControls";
+import { Loader } from "../../ui/Loader";
+import { StageActions, useStageEntryBuilder } from "./shared";
+import { QtyBox, Section } from "./chainShared";
 import type { StageFormProps } from "./types";
 
-const COPY: Record<
-  string,
-  { prompt: string; confirmLabel: string; partialHint: string; partialLabel: string }
-> = {
-  po_to_suppliers: {
-    prompt:
-      "Have Purchase Orders been raised and approved with the suppliers for this order's material plan?",
-    confirmLabel: "All purchased items have physically arrived",
-    partialHint:
-      "DC / slip raised but the goods haven't landed yet? Move it forward now so the next stage isn't blocked — this stage stays orange until everything arrives and you tick the box below.",
-    partialLabel: "DC Raised — Move to Next Stage",
-  },
-  pattern_marker: {
-    prompt:
-      "Is the Pattern Card / Marker for this order ready in the Fabric Store, and is the order clear to proceed to Cutting?",
-    confirmLabel: "Pattern / Marker is ready",
-    partialHint:
-      "Part of the pattern set ready? Move it forward so Cutting can start — this stage stays orange until the full set is signed off.",
-    partialLabel: "Not Completed — Move to Next Stage",
-  },
-  checking: {
-    prompt: "Has this batch passed final garment checking (AQL / 100% inspection)?",
-    confirmLabel: "Checking passed for this quantity",
-    partialHint:
-      "Only part of the batch checked so far? Move it forward so Ironing isn't held up — this stage stays orange until the rest is checked.",
-    partialLabel: "Not Completed — Move to Next Stage",
-  },
-  ironing: {
-    prompt: "Has ironing been completed for this batch?",
-    confirmLabel: "Ironing is complete for this quantity",
-    partialHint:
-      "Only part of the batch ironed so far? Move it forward so Packing isn't held up — this stage stays orange until the rest is done.",
-    partialLabel: "Not Completed — Move to Next Stage",
-  },
-  line_packing: {
-    prompt: "Has this batch been packed and is it ready to move to Finishing?",
-    confirmLabel: "Packing is complete for this quantity",
-    partialHint:
-      "Only part of the batch packed so far? Move it forward so Finishing isn't held up — this stage stays orange until the rest is done.",
-    partialLabel: "Not Completed — Move to Next Stage",
-  },
-};
-
-export function SimpleConfirmForm({ order, assignment, onForwarded }: StageFormProps) {
+/**
+ * Pattern Making & Marker Planning — the one confirmation-only stage left.
+ *
+ * It plans rather than consumes, so it forwards the fabric it received
+ * untouched. Its real job is to show the planner the fabric actually in store
+ * and the size breakdown the marker has to satisfy, then get a sign-off before
+ * Cutting starts turning kilos into pieces.
+ */
+export function SimpleConfirmForm({ order, assignment, stageProgress, onForwarded }: StageFormProps) {
   const toast = useToast();
   const { submitMovement, isPending, appUser } = useStageEntryBuilder(order, assignment);
-  const transfer = useTransferFields();
-  const copy = COPY[assignment.section?.key ?? ""] ?? COPY.po_to_suppliers;
-  const qty = getAssignmentQty(order, assignment);
+  const { cs, sizes, isLoading, isError } = useStageChain(
+    order.id,
+    assignment.po_id,
+    assignment.section_id,
+  );
 
   const [confirmed, setConfirmed] = useState(false);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  if (isLoading) return <Loader label="Loading this stage…" />;
+  if (isError || !cs) return <p className="text-sm text-status-bad">Couldn't load this stage's data.</p>;
+
+  const totalPcs = sizes.reduce((sum, s) => sum + s.quantity, 0);
+
   async function handleForward(isFinal: boolean) {
     if (!appUser) return;
     setError(null);
     try {
+      const alreadyLogged = stageProgress?.qtyForwarded ?? 0;
       await submitMovement({
         base: {
-          qty_received: qty,
-          qty_completed_today: qty,
-          qty_forwarded: qty,
-          notes: notes || (isFinal ? copy.confirmLabel : copy.partialLabel),
-          ...transfer.values,
+          qty_received: cs!.input,
+          qty_completed_today: Math.max(cs!.input - alreadyLogged, 0),
+          qty_forwarded: Math.max(cs!.input - alreadyLogged, 0),
+          notes: notes || (isFinal ? "Pattern / marker ready." : "Part of the pattern set ready."),
         },
-        isFinal,
+        action: isFinal ? "complete" : "forward",
       });
       toast.success(
         isFinal
-          ? "Completed and forwarded to the next stage."
-          : "Moved forward — this stage stays open until everything arrives.",
+          ? "Marker confirmed — Cutting can start."
+          : "Moved forward — this stage stays open until the full set is signed off.",
       );
       onForwarded();
     } catch (err) {
@@ -87,37 +60,90 @@ export function SimpleConfirmForm({ order, assignment, onForwarded }: StageFormP
     }
   }
 
-  return (
-    <div className="space-y-5">
-      <p className="rounded-lg bg-blue-50 px-3 py-2.5 text-sm text-blue-700">{copy.prompt}</p>
+  /** Records marker progress without releasing the fabric to Cutting. */
+  async function savePlan() {
+    if (!appUser) return;
+    setError(null);
+    try {
+      await submitMovement({
+        base: {
+          qty_received: cs!.input,
+          qty_forwarded: 0,
+          notes: notes || (confirmed ? "Marker ready — not yet released to Cutting." : "Marker in progress."),
+        },
+        action: "plan",
+      });
+      toast.success("Saved. Nothing moved on.");
+      onForwarded();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not save.";
+      setError(message);
+      toast.error(message);
+    }
+  }
 
-      <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
-        {copy.partialHint}
+  return (
+    <div className="space-y-6">
+      <p className="rounded-lg bg-blue-50 px-3 py-2.5 text-sm text-blue-700">
+        Is the pattern card and marker ready for this order, and is it clear to proceed to Cutting?
       </p>
 
-      <Checkbox checked={confirmed} onChange={setConfirmed} label={copy.confirmLabel} />
+      <Section title="What this marker has to satisfy">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <QtyBox label="Fabric in store" value={cs.input} unit="KG" hint="carried in from Fabric Store" />
+          <QtyBox label="Pieces to cut" value={totalPcs} unit="PCS" />
+          <QtyBox label="Sizes" value={sizes.length} />
+        </div>
+        {sizes.length > 0 && (
+          <div className="overflow-x-auto rounded-xl border border-ink-100">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500">
+                  {sizes.map((s) => (
+                    <th key={s.size_code} className="px-3 py-2 text-center font-semibold">
+                      {s.size_code}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="bg-white">
+                  {sizes.map((s) => (
+                    <td key={s.size_code} className="px-3 py-2.5 text-center font-semibold tabular-nums">
+                      {s.quantity.toLocaleString()}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
 
-      <TransferFields
-        type={transfer.transferType}
-        to={transfer.transferTo}
-        onTypeChange={transfer.setTransferType}
-        onToChange={transfer.setTransferTo}
+      <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+        Part of the pattern set ready? Move it forward so Cutting can start — this stage stays orange
+        until the full set is signed off.
+      </p>
+
+      <Checkbox checked={confirmed} onChange={setConfirmed} label="Pattern / marker is ready" />
+
+      <Textarea
+        label="Notes (optional)"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        placeholder="e.g. Marker planned at 1:2:3:3:2:1 — 82% efficiency"
       />
-
-      <Textarea label="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} />
 
       {error && <p className="text-sm text-status-bad">{error}</p>}
 
       <StageActions
         sectionLabel={assignment.section?.label ?? "this stage"}
-        unitType="PCS"
+        unitType="KG"
         balance={0}
         isLoading={isPending}
+        onSavePlan={savePlan}
         onMoveForward={() => handleForward(false)}
-        moveForwardLabel={copy.partialLabel}
         onComplete={() => handleForward(true)}
-        completeLabel="Mark Completed & Move Forward →"
-        completeDisabled={!confirmed}
       />
     </div>
   );

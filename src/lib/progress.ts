@@ -171,9 +171,16 @@ export function buildOrderProgress(
     const qtyRejected = stageEntries.reduce((sum, e) => sum + e.qty_rejected, 0);
     const qtyReturned = stageEntries.reduce((sum, e) => sum + e.qty_returned, 0);
 
-    // Complete only when an entry explicitly forwards it — no auto-complete.
+    // Complete only when an entry explicitly says so — no auto-complete.
+    //
+    // Partial is likewise an explicit decision, not something inferred from the
+    // numbers. Quantity is the wrong signal: a stage can legitimately be handed
+    // on before anything has been counted at it — Raw Material Planning forwards
+    // a plan long before a kilo of yarn arrives — and the stage after it still
+    // has to unlock. The `qtyForwarded > 0` arm is the fallback for rows written
+    // before is_forwarded existed (see migration 012).
     const isCompleted = stageEntries.some((e) => e.is_completed);
-    const isPartial = !isCompleted && qtyForwarded > 0;
+    const isPartial = !isCompleted && stageEntries.some((e) => e.is_forwarded || e.qty_forwarded > 0);
 
     // --- Carry-over -------------------------------------------------------
     // Only inherit across stages measured in the same unit; Cutting switches

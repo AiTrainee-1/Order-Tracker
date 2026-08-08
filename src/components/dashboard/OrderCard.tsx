@@ -84,6 +84,16 @@ export function OrderCard({ bundle }: { bundle: OrderBundle }) {
           <span className="max-w-[60%] truncate font-medium text-ink-800">{currentStage}</span>
         </div>
 
+        {/* Stages that moved on without finishing still owe a balance. They're
+            easy to lose track of precisely because the line carried on, so the
+            count is surfaced on the card rather than only inside the order. */}
+        {progress.partialStagesCount > 0 && (
+          <p className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800">
+            {progress.partialStagesCount} stage{progress.partialStagesCount === 1 ? "" : "s"} not
+            complete — balance still owed
+          </p>
+        )}
+
         <div className="mt-auto flex items-center justify-between border-t border-ink-100 pt-3 text-xs">
           <span className="text-ink-500">Delivery {formatDisplayDate(order.delivery_date)}</span>
           <span className={`rounded-full border px-2 py-0.5 font-semibold ${urgencyColorClasses[urgency]}`}>

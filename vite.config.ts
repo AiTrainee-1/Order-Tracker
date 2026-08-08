@@ -77,6 +77,8 @@ function attachVercelHelpers(res: ServerResponse) {
 export default defineConfig({
   plugins: [react(), localApiPlugin()],
   server: {
-    port: 5173,
+    // 5173 by default, but honour PORT so a second dev server can be started
+    // alongside one that's already running.
+    port: Number(process.env.PORT) || 5173,
   },
 });

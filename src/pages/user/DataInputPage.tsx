@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { useMyWork, type GateStatus, type WorkItem } from "../../hooks/useMyWork";
+import { useMyWork, workBadge, type GateStatus, type WorkItem } from "../../hooks/useMyWork";
 import { useOrderAssignments } from "../../hooks/useAssignments";
 import { useStageAssignments } from "../../hooks/useStageAssignments";
 import { useUserContacts } from "../../hooks/useUserContacts";
@@ -21,12 +21,6 @@ import { BackButton } from "../../components/ui/BackButton";
 import { FilterTabs } from "../../components/ui/FilterTabs";
 import { StageFormRouter } from "../../components/forms/stage/StageFormRouter";
 import type { UserContact } from "../../lib/types";
-
-const GATE_BADGE: Record<GateStatus, { tone: "good" | "warn" | "neutral"; label: string }> = {
-  active: { tone: "warn", label: "Your Turn" },
-  completed: { tone: "good", label: "Completed" },
-  locked: { tone: "neutral", label: "Waiting" },
-};
 
 /** Ordering priority for work lists: actionable first, done last. */
 const GATE_PRIORITY: Record<GateStatus, number> = { active: 0, locked: 1, completed: 2 };
@@ -157,18 +151,20 @@ export function DataInputPage() {
 
           <div className="space-y-3">
             {pageItems.map((item) => {
-              const gate = GATE_BADGE[item.gateStatus];
+              const gate = workBadge(item);
               const { assignment, orderProgress } = item;
               const order = assignment.order;
               const imageUrl = publicImageUrl(order?.image_path);
               const currentStageLabel = orderProgress.stages[orderProgress.currentStageIndex]?.stage.label;
               const nextAction = !assignment.can_enter_data
                 ? "Monitor only — tap to view status"
-                : item.gateStatus === "completed"
-                  ? "Your part is done — awaiting later stages"
-                  : item.gateStatus === "locked"
-                    ? `Waiting — order is currently at "${currentStageLabel}"`
-                    : "Your turn — tap to enter today's production data";
+                : item.stageProgress?.isPartial
+                  ? `Moved on without completing — ${item.stageProgress.qtyPending.toLocaleString()} ${item.stageProgress.stage.unit_type} still owed here`
+                  : item.gateStatus === "completed"
+                    ? "Your part is done — you can still record late entries"
+                    : item.gateStatus === "locked"
+                      ? `Waiting — order is currently at "${currentStageLabel}"`
+                      : "Your turn — tap to enter today's production data";
 
               return (
                 <button
@@ -204,7 +200,13 @@ export function DataInputPage() {
                         currentStageIndex={orderProgress.currentStageIndex}
                       />
                     </div>
-                    <p className="mt-1.5 text-xs font-medium text-blue-700">{nextAction}</p>
+                    <p
+                      className={`mt-1.5 text-xs font-medium ${
+                        item.stageProgress?.isPartial ? "text-amber-700" : "text-blue-700"
+                      }`}
+                    >
+                      {nextAction}
+                    </p>
                   </div>
                 </button>
               );
@@ -249,7 +251,8 @@ function SelectedAssignmentView({
   const { assignment, orderProgress, gateStatus } = item;
   const order = assignment.order!;
   const imageUrl = publicImageUrl(order.image_path);
-  const gate = GATE_BADGE[gateStatus];
+  const gate = workBadge(item);
+  const isPartial = item.stageProgress?.isPartial ?? false;
   const currentStage = orderProgress.stages[orderProgress.currentStageIndex]?.stage;
 
   return (
@@ -282,17 +285,53 @@ function SelectedAssignmentView({
             </div>
           </div>
           <ProgressBar value={orderProgress.overallProgressPct} showLabel />
+
+          {isPartial && item.stageProgress && (
+            <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+              This stage was moved on without being completed —{" "}
+              <b>
+                {item.stageProgress.qtyPending.toLocaleString()} {item.stageProgress.stage.unit_type}
+              </b>{" "}
+              is still owed here. The next stage has already started; record the balance below and
+              use <b>Completed – Move Forward</b> when it's finished.
+            </p>
+          )}
         </CardBody>
       </Card>
 
-      {gateStatus === "active" && (
+      {/* Data entry stays available after a stage is completed. Marking a stage
+          done is a statement about the handoff, not a lock — a late balance, a
+          recount or a correction still has to be recordable, and the entries
+          below are what the Output reconciliation is built from. */}
+      {(gateStatus === "active" || gateStatus === "completed") && (
         <Card>
           <CardHeader
             title={assignment.section?.label ?? "Data Entry"}
-            subtitle="This is the order's current stage — you can enter data now."
-            action={<Badge tone="brand">{assignment.section?.unit_type}</Badge>}
+            subtitle={
+              gateStatus === "completed"
+                ? "This stage is marked complete. You can still record late entries or corrections."
+                : "This is the order's current stage — you can enter data now."
+            }
+            action={
+              <div className="flex items-center gap-2">
+                {gateStatus === "completed" && <Badge tone="good">Completed</Badge>}
+                <Badge tone="brand">{assignment.section?.unit_type}</Badge>
+              </div>
+            }
           />
-          <CardBody>
+          <CardBody className="space-y-4">
+            {gateStatus === "completed" && item.stageProgress && (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Stat label={`Qty (${item.stageProgress.stage.unit_type})`} value={item.stageProgress.qtyReceived} />
+                <Stat label="Forwarded" value={item.stageProgress.qtyForwarded} />
+                <Stat
+                  label="Shortage"
+                  value={item.stageProgress.qtyShortage}
+                  tone={item.stageProgress.qtyShortage > 0 ? "bad" : undefined}
+                />
+                <Stat label="Last Update" value={formatDisplayDate(item.stageProgress.lastEntryDate)} />
+              </div>
+            )}
             <StageFormRouter
               order={order}
               assignment={assignment}
@@ -312,25 +351,10 @@ function SelectedAssignmentView({
               <p className="max-w-sm text-sm text-ink-500">
                 This order is currently at <span className="font-medium text-ink-700">{currentStage?.label}</span>.
                 Your assigned stage, <span className="font-medium text-ink-700">{assignment.section?.label}</span>,
-                hasn't been reached yet — it'll unlock automatically once every earlier stage is completed.
+                hasn't been reached yet — it'll unlock as soon as the stage before it moves anything
+                on, whether or not that stage is finished.
               </p>
             </div>
-          </CardBody>
-        </Card>
-      )}
-
-      {gateStatus === "completed" && (
-        <Card>
-          <CardHeader title={`${assignment.section?.label} — Completed`} subtitle="Read-only summary of what was entered" />
-          <CardBody className="space-y-4">
-            {item.stageProgress && (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Stat label={`Qty (${item.stageProgress.stage.unit_type})`} value={item.stageProgress.qtyReceived} />
-                <Stat label="Forwarded" value={item.stageProgress.qtyForwarded} />
-                <Stat label="Shortage" value={item.stageProgress.qtyShortage} tone={item.stageProgress.qtyShortage > 0 ? "bad" : undefined} />
-                <Stat label="Last Update" value={formatDisplayDate(item.stageProgress.lastEntryDate)} />
-              </div>
-            )}
           </CardBody>
         </Card>
       )}

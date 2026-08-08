@@ -26,13 +26,17 @@ export function NextStagesStrip({
           {i > 0 && <span className="h-px w-3 shrink-0 bg-ink-200" aria-hidden />}
           <span
             className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${
-              i === 0
-                ? "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200"
-                : "bg-ink-50 text-ink-500 ring-1 ring-inset ring-ink-200/60"
+              // Orange means one thing everywhere: moved on, not finished.
+              s.isPartial
+                ? "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-300"
+                : i === 0
+                  ? "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200"
+                  : "bg-ink-50 text-ink-500 ring-1 ring-inset ring-ink-200/60"
             }`}
           >
             {i === 0 ? "▶ " : ""}
             {s.stage.label}
+            {s.isPartial ? " •" : ""}
           </span>
         </div>
       ))}

@@ -1,18 +1,34 @@
 import { useState } from "react";
 import { useToast } from "../../../context/ToastContext";
+import { useStageChain } from "../../../hooks/useProductionChain";
 import { Textarea } from "../../ui/FormControls";
+import { Loader } from "../../ui/Loader";
+import { Badge } from "../../ui/Badge";
 import { formatDisplayDate } from "../../../lib/workflow";
-import { getAssignmentQty } from "../../../lib/orderQty";
-import { StageActions, TransferFields, useStageEntryBuilder, useTransferFields } from "./shared";
+import { StageActions, useStageEntryBuilder } from "./shared";
+import { QtyBox, Section } from "./chainShared";
 import type { StageFormProps } from "./types";
 
+/**
+ * Order Confirmation — the gate everything downstream depends on.
+ *
+ * Its job is to make someone actually look at the size breakdown before the
+ * factory starts spending yarn against it, because every later stage measures
+ * itself against these numbers. A PO with no size split is flagged rather than
+ * silently allowed through: Cutting would otherwise have nothing to compare
+ * against and the size-wise tracking would be hollow from the start.
+ */
 export function ConfirmationForm({ order, assignment, onForwarded }: StageFormProps) {
   const toast = useToast();
   const { submitMovement, isPending, appUser } = useStageEntryBuilder(order, assignment);
-  const transfer = useTransferFields();
-  const qty = getAssignmentQty(order, assignment);
+  const { cs, sizes, isLoading } = useStageChain(order.id, assignment.po_id, assignment.section_id);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  if (isLoading) return <Loader label="Loading order details…" />;
+
+  const total = sizes.reduce((sum, s) => sum + s.quantity, 0);
+  const hasSizeBreakdown = sizes.length > 1 || (sizes.length === 1 && sizes[0].size_code !== "TOTAL");
 
   async function handleForward(isFinal: boolean) {
     if (!appUser) return;
@@ -20,13 +36,12 @@ export function ConfirmationForm({ order, assignment, onForwarded }: StageFormPr
     try {
       await submitMovement({
         base: {
-          qty_received: qty,
-          qty_completed_today: qty,
-          qty_forwarded: qty,
+          qty_received: total,
+          qty_completed_today: total,
+          qty_forwarded: total,
           notes: notes || (isFinal ? "Order confirmed." : "Order confirmed — awaiting paperwork."),
-          ...transfer.values,
         },
-        isFinal,
+        action: isFinal ? "complete" : "forward",
       });
       toast.success(
         isFinal
@@ -41,65 +56,120 @@ export function ConfirmationForm({ order, assignment, onForwarded }: StageFormPr
     }
   }
 
-  return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div>
-          <p className="text-[11px] uppercase tracking-wide text-ink-400">Style</p>
-          <p className="text-sm font-semibold text-ink-900">{order.style}</p>
-        </div>
-        <div>
-          <p className="text-[11px] uppercase tracking-wide text-ink-400">IO / No</p>
-          <p className="text-sm font-semibold text-ink-900">{order.io_no}</p>
-        </div>
-        <div>
-          <p className="text-[11px] uppercase tracking-wide text-ink-400">Color</p>
-          <p className="text-sm font-semibold text-ink-900">{order.color}</p>
-        </div>
-        <div>
-          <p className="text-[11px] uppercase tracking-wide text-ink-400">
-            {assignment.po ? `PO ${assignment.po.po_number} Qty` : "Total Quantity"}
-          </p>
-          <p className="text-sm font-semibold text-ink-900">{qty.toLocaleString()} PCS</p>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-        <div>
-          <p className="text-[11px] uppercase tracking-wide text-ink-400">Description</p>
-          <p className="text-sm text-ink-800">{order.description || "—"}</p>
-        </div>
-        <div>
-          <p className="text-[11px] uppercase tracking-wide text-ink-400">Delivery Date</p>
-          <p className="text-sm text-ink-800">{formatDisplayDate(order.delivery_date)}</p>
-        </div>
-      </div>
-      <p className="text-xs text-ink-500">{order.fabric}</p>
+  /** Records the note against the order without releasing it to planning —
+   * used when the sizes need checking with the buyer first. */
+  async function savePlan() {
+    if (!appUser) return;
+    setError(null);
+    try {
+      await submitMovement({
+        base: {
+          qty_received: total,
+          qty_forwarded: 0,
+          notes: notes || "Reviewed — not yet confirmed.",
+        },
+        action: "plan",
+      });
+      toast.success("Saved. The order hasn't moved on yet.");
+      onForwarded();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not save.";
+      setError(message);
+      toast.error(message);
+    }
+  }
 
-      <TransferFields
-        type={transfer.transferType}
-        to={transfer.transferTo}
-        onTypeChange={transfer.setTransferType}
-        onToChange={transfer.setTransferTo}
-      />
+  return (
+    <div className="space-y-6">
+      <Section title="Order">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Field label="Style" value={order.style} />
+          <Field label="IO / No" value={order.io_no} />
+          <Field label="Colour" value={order.color ?? "—"} />
+          <Field label="Delivery" value={formatDisplayDate(order.delivery_date)} />
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Description" value={order.description || "—"} />
+          <Field label="Fabric" value={order.fabric || "—"} />
+        </div>
+      </Section>
+
+      <Section
+        title={assignment.po ? `PO ${assignment.po.po_number} — size breakdown` : "Size breakdown"}
+        subtitle="These quantities are the yardstick for Cutting, Panel Checking, Sewing and Packing. Check them now."
+      >
+        {!hasSizeBreakdown && (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            This PO has no size split — only a total. Size-wise tracking won't be available
+            downstream until an Admin edits the order and breaks the quantity out by size.
+          </p>
+        )}
+        <div className="overflow-x-auto rounded-xl border border-ink-100">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500">
+                {sizes.map((s) => (
+                  <th key={s.size_code} className="px-3 py-2 text-center font-semibold">
+                    {s.size_code}
+                  </th>
+                ))}
+                <th className="px-3 py-2 text-center font-semibold">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="bg-white">
+                {sizes.map((s) => (
+                  <td key={s.size_code} className="px-3 py-2.5 text-center font-semibold tabular-nums text-ink-900">
+                    {s.quantity.toLocaleString()}
+                  </td>
+                ))}
+                <td className="bg-ink-50 px-3 py-2.5 text-center font-bold tabular-nums text-ink-900">
+                  {total.toLocaleString()}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </Section>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <QtyBox label="Order quantity" value={total} unit="PCS" />
+        <QtyBox label="Sizes" value={sizes.length} />
+        <div className="flex items-center justify-center rounded-xl border border-white/70 bg-white/70 px-3 py-2.5">
+          <Badge tone={cs?.isStarted ? "good" : "neutral"}>
+            {cs?.isStarted ? "Confirmed" : "Awaiting confirmation"}
+          </Badge>
+        </div>
+      </div>
 
       <Textarea
         label="Notes (optional)"
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
-        placeholder="Any confirmation notes…"
+        placeholder="Anything the planning team should know before material is committed…"
       />
 
       {error && <p className="text-sm text-status-bad">{error}</p>}
 
       <StageActions
-        sectionLabel={assignment.section?.label ?? "this stage"}
+        sectionLabel={assignment.section?.label ?? "Order Confirmation"}
         unitType="PCS"
         balance={0}
         isLoading={isPending}
+        onSavePlan={savePlan}
         onMoveForward={() => handleForward(false)}
         onComplete={() => handleForward(true)}
-        completeLabel="Confirm Order & Move Forward →"
+        completeLabel="Completed – Confirm & Move Forward"
       />
+    </div>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[11px] uppercase tracking-wide text-ink-400">{label}</p>
+      <p className="text-sm font-semibold text-ink-900">{value}</p>
     </div>
   );
 }

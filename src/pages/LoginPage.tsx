@@ -68,12 +68,12 @@ export function LoginPage() {
             </span>
           </h1>
           <p className="mt-4 max-w-md text-sm leading-relaxed text-ink-600 sm:text-base">
-            Track every order from PO to packing across the full 13-stage production workflow — in
+            Track every order from PO to packing across the full 20-stage production workflow — in
             real time.
           </p>
 
           <div className="mt-9 grid gap-3 sm:max-w-md">
-            <FeaturePill icon="📦" tone="sky" text="13-stage production workflow tracking" />
+            <FeaturePill icon="📦" tone="sky" text="Lot & size-wise tracking, yarn to carton" />
             <FeaturePill icon="⏱" tone="amber" text="Live delivery countdowns & urgency alerts" />
             <FeaturePill icon="👥" tone="emerald" text="Role-based assignments, monitor-only access" />
           </div>

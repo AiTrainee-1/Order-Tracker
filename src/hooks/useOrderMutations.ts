@@ -41,10 +41,47 @@ export function useSetPoCutQuantity() {
   });
 }
 
+export interface PoSizeInput {
+  size_code: string;
+  quantity: number;
+}
+
 export interface OrderPoInput {
   po_number: string;
+  /** Derived from `sizes` — kept on the row so every existing query that reads
+   * purchase_orders.quantity keeps working without a join. */
   quantity: number;
   delivery_date: string | null;
+  sizes: PoSizeInput[];
+}
+
+/** A PO's quantity is the sum of its size rows, never typed directly — the two
+ * can then never disagree. */
+export function poTotal(sizes: PoSizeInput[]): number {
+  return sizes.reduce((total, s) => total + (Number(s.quantity) || 0), 0);
+}
+
+/** Writes the size breakdown for a set of freshly-inserted POs. Called after
+ * both create and update, which is why it takes the saved rows rather than the
+ * form input. */
+async function saveSizes(
+  savedPos: { id: string; po_number: string }[],
+  input: OrderPoInput[],
+): Promise<void> {
+  const rows = savedPos.flatMap((saved) => {
+    const source = input.find((p) => p.po_number === saved.po_number);
+    return (source?.sizes ?? [])
+      .filter((s) => s.size_code.trim().length > 0)
+      .map((s, i) => ({
+        po_id: saved.id,
+        size_code: s.size_code.trim(),
+        sort_order: i,
+        quantity: Number(s.quantity) || 0,
+      }));
+  });
+  if (rows.length === 0) return;
+  const { error } = await supabase.from("po_size_quantities").insert(rows);
+  if (error) throw error;
 }
 
 export interface OrderFormInput {
@@ -65,6 +102,10 @@ function invalidateOrderQueries(queryClient: ReturnType<typeof useQueryClient>, 
   // invalidating too whenever an order field (like cut_quantity) changes.
   queryClient.invalidateQueries({ queryKey: ["user_assignments"] });
   queryClient.invalidateQueries({ queryKey: ["my_work_entries"] });
+  // Size rows are part of the chain bundle, so editing an order's POs has to
+  // refresh it too — otherwise Cutting would keep measuring against the old
+  // size breakdown.
+  queryClient.invalidateQueries({ queryKey: ["production_chain"] });
   if (orderId) queryClient.invalidateQueries({ queryKey: ["order_detail", orderId] });
 }
 
@@ -72,7 +113,7 @@ export function useCreateOrder() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: OrderFormInput) => {
-      const totalQty = input.purchaseOrders.reduce((sum, po) => sum + (po.quantity || 0), 0);
+      const totalQty = input.purchaseOrders.reduce((sum, po) => sum + poTotal(po.sizes), 0);
 
       const { data: order, error: orderError } = await supabase
         .from("orders")
@@ -98,17 +139,21 @@ export function useCreateOrder() {
         if (imgError) throw imgError;
       }
 
-      const poRows = input.purchaseOrders
-        .filter((po) => po.po_number.trim().length > 0)
-        .map((po) => ({
-          order_id: order.id,
-          po_number: po.po_number,
-          quantity: po.quantity,
-          delivery_date: po.delivery_date,
-        }));
-      if (poRows.length > 0) {
-        const { error: poError } = await supabase.from("purchase_orders").insert(poRows);
+      const usablePos = input.purchaseOrders.filter((po) => po.po_number.trim().length > 0);
+      if (usablePos.length > 0) {
+        const { data: savedPos, error: poError } = await supabase
+          .from("purchase_orders")
+          .insert(
+            usablePos.map((po) => ({
+              order_id: order.id,
+              po_number: po.po_number,
+              quantity: poTotal(po.sizes),
+              delivery_date: po.delivery_date,
+            })),
+          )
+          .select("id, po_number");
         if (poError) throw poError;
+        await saveSizes((savedPos ?? []) as { id: string; po_number: string }[], usablePos);
       }
 
       return order;
@@ -121,7 +166,7 @@ export function useUpdateOrder() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ orderId, input }: { orderId: string; input: OrderFormInput }) => {
-      const totalQty = input.purchaseOrders.reduce((sum, po) => sum + (po.quantity || 0), 0);
+      const totalQty = input.purchaseOrders.reduce((sum, po) => sum + poTotal(po.sizes), 0);
 
       let imagePath: string | undefined;
       if (input.imageFile) {
@@ -143,23 +188,30 @@ export function useUpdateOrder() {
         .eq("id", orderId);
       if (orderError) throw orderError;
 
+      // POs are replaced wholesale rather than diffed. po_size_quantities
+      // cascades on delete, so the size rows go with them and are re-inserted
+      // below from the form — no orphans, no stale sizes.
       const { error: deleteError } = await supabase
         .from("purchase_orders")
         .delete()
         .eq("order_id", orderId);
       if (deleteError) throw deleteError;
 
-      const poRows = input.purchaseOrders
-        .filter((po) => po.po_number.trim().length > 0)
-        .map((po) => ({
-          order_id: orderId,
-          po_number: po.po_number,
-          quantity: po.quantity,
-          delivery_date: po.delivery_date,
-        }));
-      if (poRows.length > 0) {
-        const { error: poError } = await supabase.from("purchase_orders").insert(poRows);
+      const usablePos = input.purchaseOrders.filter((po) => po.po_number.trim().length > 0);
+      if (usablePos.length > 0) {
+        const { data: savedPos, error: poError } = await supabase
+          .from("purchase_orders")
+          .insert(
+            usablePos.map((po) => ({
+              order_id: orderId,
+              po_number: po.po_number,
+              quantity: poTotal(po.sizes),
+              delivery_date: po.delivery_date,
+            })),
+          )
+          .select("id, po_number");
         if (poError) throw poError;
+        await saveSizes((savedPos ?? []) as { id: string; po_number: string }[], usablePos);
       }
     },
     onSuccess: (_data, variables) => invalidateOrderQueries(queryClient, variables.orderId),

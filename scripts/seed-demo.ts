@@ -1,31 +1,40 @@
 /**
- * Demo data bootstrap: one example user per production section, two NEW
- * sample orders (each with two POs) added alongside whatever orders already
- * exist — including the 4 original demo orders from supabase/schema.sql,
- * which this script never touches — and realistic mock movement mirroring
- * exactly what each stage's real form would write.
+ * Demo data bootstrap.
+ *
+ * Creates one example user per production section, then two sample orders with
+ * size-wise POs and walks realistic production through the whole chain —
+ * material requirements and receipts, lots raised at knitting, kilos losing a
+ * little at every fabric process, then pieces cut size by size and carried
+ * through to packing.
  *
  * Run AFTER supabase/schema.sql and every migration through
- * 010_po_tracking_and_sections.sql have been applied (that migration reshapes
- * workflow_stages to 15 rows — this script depends on that shape, but does
- * NOT touch orders/purchase_orders):
+ * 011_production_chain.sql have been applied:
  *
  *   npm run seed:demo
  *
- * Safe to re-run: auth accounts are looked up by email and reused, and orders
- * are looked up by (io_no, style) before creating — nothing is duplicated.
+ * Safe to re-run. Auth accounts are looked up by email and reused; a sample
+ * order that already exists has its production data cleared and rebuilt, so the
+ * result is the same whether it's the first run or the fifth. Orders you
+ * created yourself are never touched.
  *
- * Data design (see the PLAN comment block below function main for the full
- * per-PO walkthrough): one sample order is carried, PO by PO, all the way
- * through every one of the 15 stages exactly as a real production run would
- * be entered — including the small, realistic losses that accumulate at
- * Cutting, Embroidery, and Stitching's inline QC. The other sample order is
- * left genuinely mid-production: one PO stalls partway through Stitching (the
- * app's "moved on without completing" orange state), the other hasn't left
- * Raw Material Planning yet.
+ * WHAT IT SEEDS
+ *
+ *   Order A — MCKTM 18001-010 Classic Crew Sweatshirt, Navy.
+ *     Both POs carried fully complete through all 20 stages. Losses are the
+ *     ones a real run actually accumulates: a few kilos at each fabric process,
+ *     ~0.5% cutting wastage, a small embroidery reject in job-work transit, and
+ *     sequential QC rejects down the sewing line.
+ *
+ *   Order B — MCKTM 18045-022 Zip Hoodie Fleece, Charcoal.
+ *     Deliberately mid-production. One PO stalls partway through Sewing — the
+ *     line has been fed but hasn't finished, which is the app's orange "moved
+ *     on, not completed" state. The other hasn't left Order Confirmation.
  */
 import "dotenv/config";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+
+const DEMO_PASSWORD = "demo123";
+const EXPECTED_STAGES = 20;
 
 interface SectionUser {
   sectionKey: string;
@@ -40,29 +49,45 @@ const SECTION_USERS: SectionUser[] = [
   { sectionKey: "raw_material_planning", name: "Anita Sharma", username: "anita", role: "Raw Material Planner", phone: "+91 98765 10002" },
   { sectionKey: "po_to_suppliers", name: "Suresh Patel", username: "suresh", role: "Purchase Officer", phone: "+91 98765 10003" },
   { sectionKey: "raw_material_inward", name: "Divya Nair", username: "divya", role: "Store Inward Officer", phone: "+91 98765 10004" },
-  { sectionKey: "fabric_processing", name: "Karthik Rajan", username: "karthik", role: "Fabric Processing Supervisor", phone: "+91 98765 10005" },
-  { sectionKey: "fabric_store", name: "Meena Iyer", username: "meena", role: "Fabric Store Keeper", phone: "+91 98765 10006" },
-  { sectionKey: "pattern_marker", name: "Arjun Mehta", username: "arjun", role: "Pattern Master", phone: "+91 98765 10007" },
-  { sectionKey: "cutting", name: "Vikram Singh", username: "vikram", role: "Cutting Master", phone: "+91 98765 10008" },
-  { sectionKey: "printing_embroidery", name: "Lakshmi Devi", username: "lakshmi", role: "Embroidery Supervisor", phone: "+91 98765 10009" },
-  { sectionKey: "stitching", name: "Deepak Nair", username: "deepak", role: "Sewing Line Supervisor", phone: "+91 98765 10010" },
-  { sectionKey: "checking", name: "Priya Reddy", username: "priya", role: "QC Checker", phone: "+91 98765 10011" },
-  { sectionKey: "ironing", name: "Ramesh Babu", username: "ramesh", role: "Ironing Supervisor", phone: "+91 98765 10012" },
-  { sectionKey: "line_packing", name: "Sunita Rao", username: "sunita", role: "Packing Supervisor", phone: "+91 98765 10013" },
-  { sectionKey: "finishing", name: "Manoj Verma", username: "manoj", role: "Finishing Supervisor", phone: "+91 98765 10014" },
-  { sectionKey: "packing", name: "Geeta Krishnan", username: "geeta", role: "Packing & Dispatch Manager", phone: "+91 98765 10015" },
+  { sectionKey: "knitting", name: "Karthik Rajan", username: "karthik", role: "Knitting Supervisor", phone: "+91 98765 10005" },
+  { sectionKey: "dyeing", name: "Nandini Bose", username: "nandini", role: "Dyeing Supervisor", phone: "+91 98765 10006" },
+  { sectionKey: "setting", name: "Imran Khan", username: "imran", role: "Setting Operator", phone: "+91 98765 10007" },
+  { sectionKey: "raising", name: "Joseph Thomas", username: "joseph", role: "Raising Operator", phone: "+91 98765 10008" },
+  { sectionKey: "compacting", name: "Bhavna Shah", username: "bhavna", role: "Compacting Operator", phone: "+91 98765 10009" },
+  { sectionKey: "fabric_inhouse", name: "Rajesh Pillai", username: "rajesh", role: "Fabric Receiving", phone: "+91 98765 10010" },
+  { sectionKey: "fabric_inspection", name: "Shalini Menon", username: "shalini", role: "Fabric Inspector", phone: "+91 98765 10011" },
+  { sectionKey: "fabric_store", name: "Meena Iyer", username: "meena", role: "Fabric Store Keeper", phone: "+91 98765 10012" },
+  { sectionKey: "pattern_marker", name: "Arjun Mehta", username: "arjun", role: "Pattern Master", phone: "+91 98765 10013" },
+  { sectionKey: "cutting", name: "Vikram Singh", username: "vikram", role: "Cutting Master", phone: "+91 98765 10014" },
+  { sectionKey: "panel_checking", name: "Fatima Sheikh", username: "fatima", role: "Panel Checker", phone: "+91 98765 10015" },
+  { sectionKey: "embroidery", name: "Lakshmi Devi", username: "lakshmi", role: "Embroidery Supervisor", phone: "+91 98765 10016" },
+  { sectionKey: "sewing", name: "Deepak Nair", username: "deepak", role: "Sewing Line Supervisor", phone: "+91 98765 10017" },
+  { sectionKey: "checking", name: "Priya Reddy", username: "priya", role: "QC Checker", phone: "+91 98765 10018" },
+  { sectionKey: "ironing", name: "Ramesh Babu", username: "ramesh", role: "Ironing Supervisor", phone: "+91 98765 10019" },
+  { sectionKey: "packing", name: "Geeta Krishnan", username: "geeta", role: "Packing & Dispatch Manager", phone: "+91 98765 10020" },
 ];
 
-const DEMO_PASSWORD = "demo123";
+/** A second and third planner on Raw Material Planning — the spec calls for
+ * three people sharing that stage, and the app supports it by simply assigning
+ * more than one user to the same section. */
+const EXTRA_PLANNERS: SectionUser[] = [
+  { sectionKey: "raw_material_planning", name: "Vinod Chandra", username: "vinod", role: "Yarn Planner", phone: "+91 98765 10021" },
+  { sectionKey: "raw_material_planning", name: "Sneha Kulkarni", username: "sneha", role: "Fabric Planner", phone: "+91 98765 10022" },
+];
+
+const ALL_USERS = [...SECTION_USERS, ...EXTRA_PLANNERS];
 
 interface StageRow {
   id: string;
   key: string;
   sequence_no: number;
   unit_type: "KG" | "PCS";
-  form_type: string;
   typical_duration_days: number;
 }
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 async function ensureAuthUser(admin: SupabaseClient, email: string, password: string): Promise<string> {
   const { data: created, error: createError } = await admin.auth.admin.createUser({
@@ -84,463 +109,607 @@ async function ensureAuthUser(admin: SupabaseClient, email: string, password: st
   return existing.id;
 }
 
-// ---------------------------------------------------------------------------
-// Per-stage writers — each mirrors exactly what the real form in
-// src/components/forms/stage/*.tsx submits for that form_type, so the seeded
-// rows are indistinguishable from a real production entry.
-// ---------------------------------------------------------------------------
-
-interface Ctx {
-  admin: SupabaseClient;
-  orderId: string;
-  poId: string;
-  entryDate: string;
-  userId: string;
-}
-
-interface EntryFields {
-  section_id: string;
-  entry_date: string;
-  unit_type: "KG" | "PCS";
-  qty_received: number;
-  qty_completed_today: number;
-  qty_forwarded: number;
-  qty_shortage?: number;
-  qty_rejected?: number;
-  qty_returned?: number;
-  is_external?: boolean;
-  external_unit_name?: string | null;
-  is_sent_outside?: boolean;
-  is_returned?: boolean;
-  is_completed: boolean;
-  branch?: string | null;
-  unit_name?: string | null;
-  transfer_type?: "none" | "branch" | "unit" | "outside" | "others";
-  transfer_to?: string | null;
-  notes?: string | null;
-  entered_by: string;
-}
-
-async function insertEntry(admin: SupabaseClient, orderId: string, poId: string, f: EntryFields) {
-  const { error } = await admin.from("stage_entries").insert({
-    order_id: orderId,
-    po_id: poId,
-    section_id: f.section_id,
-    entry_date: f.entry_date,
-    unit_type: f.unit_type,
-    qty_received: f.qty_received,
-    qty_completed_today: f.qty_completed_today,
-    qty_forwarded: f.qty_forwarded,
-    qty_shortage: f.qty_shortage ?? 0,
-    qty_rejected: f.qty_rejected ?? 0,
-    qty_returned: f.qty_returned ?? 0,
-    is_external: f.is_external ?? false,
-    external_unit_name: f.external_unit_name ?? null,
-    is_sent_outside: f.is_sent_outside ?? false,
-    is_returned: f.is_returned ?? false,
-    is_completed: f.is_completed,
-    branch: f.branch ?? null,
-    unit_name: f.unit_name ?? null,
-    transfer_type: f.transfer_type ?? "none",
-    transfer_to: f.transfer_to ?? null,
-    notes: f.notes ?? null,
-    entered_by: f.entered_by,
-    forwarded_to_user_id: null,
-  });
-  if (error) throw new Error(`Failed to insert stage_entries (${f.section_id}): ${error.message}`);
-}
-
-interface SubItemRow {
-  key: string;
-  label: string;
-  planned: number;
-  completed: number;
-  isCompleted: boolean;
-}
-
-async function upsertSubItems(
-  admin: SupabaseClient,
-  orderId: string,
-  sectionId: string,
-  unitType: "KG" | "PCS",
-  rows: SubItemRow[],
-  userId: string,
-) {
-  const { error } = await admin.from("stage_sub_items").upsert(
-    rows.map((r) => ({
-      order_id: orderId,
-      section_id: sectionId,
-      item_key: r.key,
-      item_label: r.label,
-      planned_qty: r.planned,
-      completed_qty: r.completed,
-      unit_type: unitType,
-      is_completed: r.isCompleted,
-      notes: null,
-      updated_by: userId,
-    })),
-    { onConflict: "order_id,section_id,item_key" },
-  );
-  if (error) throw new Error(`Failed to upsert stage_sub_items (${sectionId}): ${error.message}`);
-}
-
-/** order_confirmation (ConfirmationForm) — always confirms the PO's full quantity. */
-async function writeConfirmation(ctx: Ctx, stage: StageRow, poQty: number, notes: string) {
-  await insertEntry(ctx.admin, ctx.orderId, ctx.poId, {
-    section_id: stage.id,
-    entry_date: ctx.entryDate,
-    unit_type: stage.unit_type,
-    qty_received: poQty,
-    qty_completed_today: poQty,
-    qty_forwarded: poQty,
-    is_completed: true,
-    entered_by: ctx.userId,
-    notes,
-  });
-}
-
-/** raw_material_planning (MaterialPlanningForm) — plans each material; the
- * form never tracks completion per item here, only the total moves forward. */
-async function writeMaterialPlanning(
-  ctx: Ctx,
-  stage: StageRow,
-  planned: { yarn: number; fabric: number; trims: number; accessories: number },
-  notes: string,
-) {
-  const rows: SubItemRow[] = [
-    { key: "yarn", label: "Yarn", planned: planned.yarn, completed: 0, isCompleted: false },
-    { key: "fabric", label: "Fabric", planned: planned.fabric, completed: 0, isCompleted: false },
-    { key: "trims", label: "Trims", planned: planned.trims, completed: 0, isCompleted: false },
-    { key: "accessories", label: "Accessories", planned: planned.accessories, completed: 0, isCompleted: false },
-  ];
-  await upsertSubItems(ctx.admin, ctx.orderId, stage.id, "KG", rows, ctx.userId);
-  const total = planned.yarn + planned.fabric + planned.trims + planned.accessories;
-  await insertEntry(ctx.admin, ctx.orderId, ctx.poId, {
-    section_id: stage.id,
-    entry_date: ctx.entryDate,
-    unit_type: "KG",
-    qty_received: total,
-    qty_completed_today: total,
-    qty_forwarded: total,
-    is_completed: true,
-    entered_by: ctx.userId,
-    notes,
-  });
-  return total;
-}
-
-/** po_to_suppliers / pattern_marker / ironing / line_packing (SimpleConfirmForm)
- * — a pure confirmation against the PO's own quantity, no independent qty field. */
-async function writeSimpleConfirm(ctx: Ctx, stage: StageRow, poQty: number, notes: string) {
-  await insertEntry(ctx.admin, ctx.orderId, ctx.poId, {
-    section_id: stage.id,
-    entry_date: ctx.entryDate,
-    unit_type: stage.unit_type,
-    qty_received: poQty,
-    qty_completed_today: poQty,
-    qty_forwarded: poQty,
-    is_completed: true,
-    entered_by: ctx.userId,
-    notes,
-  });
-}
-
-/** raw_material_inward (MaterialInwardForm) — confirms arrival against what
- * Raw Material Planning actually planned per material. */
-async function writeMaterialInward(
-  ctx: Ctx,
-  stage: StageRow,
-  planned: { yarn: number; fabric: number; trims: number; accessories: number },
-  received: { yarn: number; fabric: number; trims: number; accessories: number },
-  notes: string,
-) {
-  const keys: (keyof typeof planned)[] = ["yarn", "fabric", "trims", "accessories"];
-  const labels = { yarn: "Yarn", fabric: "Fabric", trims: "Trims", accessories: "Accessories" };
-  const rows: SubItemRow[] = keys.map((k) => ({
-    key: k,
-    label: labels[k],
-    planned: planned[k],
-    completed: received[k],
-    isCompleted: received[k] >= planned[k],
-  }));
-  await upsertSubItems(ctx.admin, ctx.orderId, stage.id, "KG", rows, ctx.userId);
-  const totalPlanned = keys.reduce((s, k) => s + planned[k], 0);
-  const totalReceived = keys.reduce((s, k) => s + received[k], 0);
-  const shortage = Math.max(totalPlanned - totalReceived, 0);
-  await insertEntry(ctx.admin, ctx.orderId, ctx.poId, {
-    section_id: stage.id,
-    entry_date: ctx.entryDate,
-    unit_type: "KG",
-    qty_received: totalPlanned,
-    qty_completed_today: totalReceived,
-    qty_forwarded: totalReceived,
-    qty_shortage: shortage,
-    is_completed: true,
-    entered_by: ctx.userId,
-    notes,
-  });
-  return totalReceived;
-}
-
-/** fabric_processing (FabricProcessingForm) — five processing steps against
- * the fabric-only planned figure; forwarded is the slowest step (bottleneck). */
-async function writeFabricProcessing(
-  ctx: Ctx,
-  stage: StageRow,
-  plannedFabricQty: number,
-  steps: { knitting: number; dyeing: number; compacting: number; relaxing: number; fabric_inspection: number },
-  notes: string,
-  transfer?: { type: "unit" | "branch" | "outside" | "others"; to: string },
-) {
-  const labels: Record<string, string> = {
-    knitting: "Knitting",
-    dyeing: "Dyeing",
-    compacting: "Compacting",
-    relaxing: "Relaxing",
-    fabric_inspection: "Fabric Inspection (4 Point)",
+/** Walks a production calendar forward so entry dates read like a schedule
+ * rather than every row landing on the same day. */
+function calendar(startIso: string) {
+  let current = new Date(startIso);
+  return {
+    today: () => current.toISOString().slice(0, 10),
+    advance(days: number) {
+      current = new Date(current.getTime() + days * 86_400_000);
+      return current.toISOString().slice(0, 10);
+    },
   };
-  const entries = Object.entries(steps) as [string, number][];
-  const rows: SubItemRow[] = entries.map(([key, completed]) => ({
-    key,
-    label: labels[key],
-    planned: plannedFabricQty,
-    completed,
-    isCompleted: completed >= plannedFabricQty,
-  }));
-  await upsertSubItems(ctx.admin, ctx.orderId, stage.id, "KG", rows, ctx.userId);
-  const forwarded = Math.min(...entries.map(([, v]) => v));
-  await insertEntry(ctx.admin, ctx.orderId, ctx.poId, {
-    section_id: stage.id,
-    entry_date: ctx.entryDate,
-    unit_type: "KG",
-    qty_received: plannedFabricQty,
-    qty_completed_today: forwarded,
-    qty_forwarded: forwarded,
-    qty_shortage: Math.max(plannedFabricQty - forwarded, 0),
-    is_completed: true,
-    entered_by: ctx.userId,
-    notes,
-    transfer_type: transfer?.type,
-    transfer_to: transfer?.to,
-  });
-  return forwarded;
 }
 
-/** fabric_store (StoreCheckForm) — verifies what physically reached the store. */
-async function writeStoreCheck(ctx: Ctx, stage: StageRow, plannedFabricQty: number, receivedQty: number, notes: string) {
-  await insertEntry(ctx.admin, ctx.orderId, ctx.poId, {
-    section_id: stage.id,
-    entry_date: ctx.entryDate,
-    unit_type: "KG",
-    qty_received: plannedFabricQty,
-    qty_completed_today: receivedQty,
-    qty_forwarded: receivedQty,
-    qty_shortage: Math.max(plannedFabricQty - receivedQty, 0),
-    is_completed: true,
-    entered_by: ctx.userId,
-    notes,
-  });
-  return receivedQty;
-}
-
-/** cutting (CuttingForm) — converts KG planning into the fixed PCS baseline
- * for this PO; sets purchase_orders.cut_quantity, exactly as the real form does. */
-async function writeCutting(ctx: Ctx, stage: StageRow, plannedPieces: number, cutPieces: number, forwardedPieces: number, notes: string) {
-  await insertEntry(ctx.admin, ctx.orderId, ctx.poId, {
-    section_id: stage.id,
-    entry_date: ctx.entryDate,
-    unit_type: "PCS",
-    qty_received: plannedPieces,
-    qty_completed_today: cutPieces,
-    qty_forwarded: forwardedPieces,
-    qty_shortage: Math.max(plannedPieces - forwardedPieces, 0),
-    is_completed: true,
-    entered_by: ctx.userId,
-    notes,
-  });
-  const { error } = await ctx.admin.from("purchase_orders").update({ cut_quantity: forwardedPieces }).eq("id", ctx.poId);
-  if (error) throw new Error(`Failed to set cut_quantity: ${error.message}`);
-  return forwardedPieces;
-}
-
-/** printing_embroidery (DispatchReturnForm) — two-phase send/return against an
- * outside job worker. Pass returnedQty=null to leave it out sent (not modelled
- * here; every lane in this seed completes the return before moving on). */
-async function writeEmbroidery(
-  ctx: Ctx,
-  stage: StageRow,
-  poQty: number,
-  sentQty: number,
-  sentDate: string,
-  vendor: string,
-  location: string,
-  sendNotes: string,
-  returnedQty: number,
-  returnDate: string,
-  returnNotes: string,
-) {
-  await insertEntry(ctx.admin, ctx.orderId, ctx.poId, {
-    section_id: stage.id,
-    entry_date: sentDate,
-    unit_type: "PCS",
-    qty_received: poQty,
-    qty_completed_today: sentQty,
-    qty_forwarded: 0,
-    is_external: true,
-    external_unit_name: vendor,
-    is_sent_outside: true,
-    branch: vendor,
-    transfer_type: "outside",
-    transfer_to: vendor,
-    is_completed: false,
-    entered_by: ctx.userId,
-    notes: `Location: ${location}. ${sendNotes}`,
-  });
-  await insertEntry(ctx.admin, ctx.orderId, ctx.poId, {
-    section_id: stage.id,
-    entry_date: returnDate,
-    unit_type: "PCS",
-    qty_received: poQty,
-    qty_completed_today: returnedQty,
-    qty_forwarded: returnedQty,
-    qty_returned: returnedQty,
-    qty_shortage: Math.max(sentQty - returnedQty, 0),
-    is_external: true,
-    external_unit_name: vendor,
-    is_sent_outside: true,
-    is_returned: true,
-    branch: vendor,
-    transfer_type: "outside",
-    transfer_to: vendor,
-    is_completed: true,
-    entered_by: ctx.userId,
-    notes: returnNotes,
-  });
-  return returnedQty;
-}
-
-/** checking / finishing / packing (SubStepsForm) — several sequential
- * checkpoints against the PO's fixed cut quantity; forwarded is the slowest
- * checkpoint. isFinal=false leaves it open (the orange "moved on, not
- * completed" state) with whatever's been keyed in so far. */
-async function writeSubSteps(
-  ctx: Ctx,
-  stage: StageRow,
-  items: { key: string; label: string }[],
-  fixedQty: number,
-  completedByKey: Record<string, number>,
-  isFinal: boolean,
-  notes: string,
-) {
-  const rows: SubItemRow[] = items.map((item) => {
-    const completed = completedByKey[item.key] ?? 0;
-    return {
-      key: item.key,
-      label: item.label,
-      planned: fixedQty,
-      completed,
-      isCompleted: isFinal && completed >= fixedQty,
-    };
-  });
-  await upsertSubItems(ctx.admin, ctx.orderId, stage.id, "PCS", rows, ctx.userId);
-  const forwarded = Math.min(...items.map((item) => completedByKey[item.key] ?? 0));
-  await insertEntry(ctx.admin, ctx.orderId, ctx.poId, {
-    section_id: stage.id,
-    entry_date: ctx.entryDate,
-    unit_type: "PCS",
-    qty_received: fixedQty,
-    qty_completed_today: forwarded,
-    qty_forwarded: forwarded,
-    qty_shortage: isFinal ? Math.max(fixedQty - forwarded, 0) : 0,
-    is_completed: isFinal,
-    entered_by: ctx.userId,
-    notes,
-  });
-  return forwarded;
+async function insert(admin: SupabaseClient, table: string, rows: unknown[]): Promise<void> {
+  if (rows.length === 0) return;
+  const { error } = await admin.from(table).insert(rows);
+  if (error) throw new Error(`Insert into ${table} failed: ${error.message}`);
 }
 
 // ---------------------------------------------------------------------------
+// Order scaffolding
+// ---------------------------------------------------------------------------
 
-interface OrderSeed {
+interface PoSpec {
+  po_number: string;
+  delivery_date: string;
+  /** size code → pieces */
+  sizes: Record<string, number>;
+}
+
+interface OrderSpec {
   io_no: string;
   style: string;
   description: string;
   color: string;
   fabric: string;
   delivery_date: string;
-  pos: { po_number: string; quantity: number; delivery_date: string }[];
+  /** Kilos of finished fabric per garment — a crew needs less than a hoodie. */
+  kgPerPiece: number;
+  pos: PoSpec[];
+}
+
+interface CreatedPo {
+  id: string;
+  po_number: string;
+  quantity: number;
+  sizes: { size_code: string; quantity: number }[];
 }
 
 interface CreatedOrder {
   id: string;
-  pos: { id: string; po_number: string; quantity: number }[];
+  spec: OrderSpec;
+  pos: CreatedPo[];
 }
 
-async function ensureOrder(admin: SupabaseClient, seed: OrderSeed): Promise<CreatedOrder> {
-  const { data: existing } = await admin
+/**
+ * Creates the order if it's missing, then clears and rebuilds its production
+ * data. Clearing is scoped to this one order, which is what makes re-running
+ * safe without touching anything the user entered on their own orders.
+ */
+async function ensureOrder(admin: SupabaseClient, spec: OrderSpec): Promise<CreatedOrder> {
+  const { data: existing, error: findError } = await admin
     .from("orders")
     .select("id")
-    .eq("io_no", seed.io_no)
-    .eq("style", seed.style)
+    .eq("io_no", spec.io_no)
+    .eq("style", spec.style)
     .maybeSingle();
+  if (findError) throw new Error(`Failed to look up order ${spec.style}: ${findError.message}`);
+
+  const totalQty = spec.pos.reduce(
+    (sum, po) => sum + Object.values(po.sizes).reduce((a, b) => a + b, 0),
+    0,
+  );
 
   let orderId: string;
   if (existing) {
-    orderId = existing.id as string;
-    console.log(`  · Order ${seed.io_no} / ${seed.style} already exists — reusing it.`);
+    orderId = (existing as { id: string }).id;
+    // Wipe this order's production data so the walkthrough below is rebuilt
+    // from a known-empty state. production_txns and material_entries cascade
+    // from their parents, so lots/requirements/POs are enough.
+    for (const table of ["production_txns", "stage_entries", "audit_log", "production_lots", "material_requirements"]) {
+      const { error } = await admin.from(table).delete().eq("order_id", orderId);
+      if (error) throw new Error(`Failed to clear ${table} for ${spec.style}: ${error.message}`);
+    }
+    const { error: poDeleteError } = await admin.from("purchase_orders").delete().eq("order_id", orderId);
+    if (poDeleteError) throw new Error(`Failed to clear POs for ${spec.style}: ${poDeleteError.message}`);
+    const { error: updateError } = await admin
+      .from("orders")
+      .update({ total_qty: totalQty, cut_quantity: null })
+      .eq("id", orderId);
+    if (updateError) throw new Error(`Failed to reset ${spec.style}: ${updateError.message}`);
   } else {
-    const totalQty = seed.pos.reduce((sum, p) => sum + p.quantity, 0);
-    const { data: order, error } = await admin
+    const { data, error } = await admin
       .from("orders")
       .insert({
-        io_no: seed.io_no,
-        style: seed.style,
-        description: seed.description,
-        color: seed.color,
-        fabric: seed.fabric,
+        io_no: spec.io_no,
+        style: spec.style,
+        description: spec.description,
+        color: spec.color,
+        fabric: spec.fabric,
         total_qty: totalQty,
-        delivery_date: seed.delivery_date,
+        delivery_date: spec.delivery_date,
       })
       .select("id")
       .single();
-    if (error || !order) throw new Error(`Failed to create order ${seed.style}: ${error?.message}`);
-    orderId = order.id as string;
-
-    const { error: poError } = await admin.from("purchase_orders").insert(
-      seed.pos.map((p) => ({
-        order_id: orderId,
-        po_number: p.po_number,
-        quantity: p.quantity,
-        delivery_date: p.delivery_date,
-      })),
-    );
-    if (poError) throw new Error(`Failed to create POs for ${seed.style}: ${poError.message}`);
-    console.log(`  ✓ Created order ${seed.io_no} / ${seed.style} with ${seed.pos.length} POs`);
+    if (error || !data) throw new Error(`Failed to create ${spec.style}: ${error?.message}`);
+    orderId = (data as { id: string }).id;
   }
 
-  const { data: pos, error: posError } = await admin
+  const { data: poRows, error: poError } = await admin
     .from("purchase_orders")
-    .select("id, po_number, quantity")
-    .eq("order_id", orderId)
-    .order("po_number", { ascending: true });
-  if (posError || !pos) throw new Error(`Failed to load POs for order ${orderId}: ${posError?.message}`);
+    .insert(
+      spec.pos.map((po) => ({
+        order_id: orderId,
+        po_number: po.po_number,
+        quantity: Object.values(po.sizes).reduce((a, b) => a + b, 0),
+        delivery_date: po.delivery_date,
+      })),
+    )
+    .select("id, po_number, quantity");
+  if (poError || !poRows) throw new Error(`Failed to create POs for ${spec.style}: ${poError?.message}`);
 
-  return { id: orderId, pos: pos as CreatedOrder["pos"] };
+  const pos: CreatedPo[] = [];
+  for (const row of poRows as { id: string; po_number: string; quantity: number }[]) {
+    const source = spec.pos.find((p) => p.po_number === row.po_number)!;
+    const sizes = Object.entries(source.sizes).map(([size_code, quantity], i) => ({
+      po_id: row.id,
+      size_code,
+      sort_order: i,
+      quantity,
+    }));
+    await insert(admin, "po_size_quantities", sizes);
+    pos.push({
+      id: row.id,
+      po_number: row.po_number,
+      quantity: row.quantity,
+      sizes: sizes.map((s) => ({ size_code: s.size_code, quantity: s.quantity })),
+    });
+  }
+
+  return { id: orderId, spec, pos };
 }
 
-/** A running production calendar for one PO — each call advances by a
- * stage's typical_duration_days, so entry dates read like a real schedule
- * instead of a flat +N-days-per-row loop. */
-function dateCursor(startIso: string) {
-  let current = new Date(startIso);
-  return {
-    current: () => current.toISOString().slice(0, 10),
-    advance: (days: number) => {
-      current = new Date(current.getTime() + days * 86_400_000);
-      return current.toISOString().slice(0, 10);
+// ---------------------------------------------------------------------------
+// The production walkthrough
+// ---------------------------------------------------------------------------
+
+interface SeedCtx {
+  admin: SupabaseClient;
+  stage: (key: string) => StageRow;
+  userFor: (sectionKey: string) => string;
+}
+
+/** How far through the workflow a PO should be carried. */
+type Depth = "confirmation_only" | "stall_at_sewing" | "complete";
+
+/** Writes the gating row that tells progress.ts a stage moved. The quantity
+ * layer holds the real numbers; this only has to be consistent with them. */
+async function closeStage(
+  ctx: SeedCtx,
+  order: CreatedOrder,
+  po: CreatedPo,
+  stageKey: string,
+  date: string,
+  qty: { received: number; forwarded: number; rejected?: number },
+  isCompleted: boolean,
+  notes: string | null,
+) {
+  const s = ctx.stage(stageKey);
+  await insert(ctx.admin, "stage_entries", [
+    {
+      order_id: order.id,
+      po_id: po.id,
+      section_id: s.id,
+      entry_date: date,
+      unit_type: s.unit_type,
+      qty_received: Math.round(qty.received),
+      qty_completed_today: Math.round(qty.forwarded),
+      qty_forwarded: Math.round(qty.forwarded),
+      qty_rejected: Math.round(qty.rejected ?? 0),
+      // Every seeded row is a forward — either a completion or the deliberate
+      // "moved on, not finished" state. Nothing here is a Save Plan.
+      is_forwarded: true,
+      is_completed: isCompleted,
+      transfer_type: "none",
+      notes,
+      entered_by: ctx.userFor(stageKey),
     },
-  };
+  ]);
 }
+
+async function seedPo(ctx: SeedCtx, order: CreatedOrder, po: CreatedPo, depth: Depth) {
+  const { admin, stage, userFor } = ctx;
+  const cal = calendar("2026-06-01");
+  const pieces = po.quantity;
+
+  // ---- 1. Order Confirmation --------------------------------------------
+  await closeStage(ctx, order, po, "order_confirmation", cal.today(), { received: pieces, forwarded: pieces }, true,
+    `PO ${po.po_number} confirmed — ${pieces.toLocaleString()} pcs across ${po.sizes.length} sizes.`);
+  if (depth === "confirmation_only") return;
+
+  // ---- 2. Raw Material Planning ------------------------------------------
+  // Fabric needed for the garment, plus 4% for cutting wastage and process
+  // loss. Yarn runs 3% above fabric because knitting and dyeing both shed some.
+  const fabricKg = Math.round(pieces * order.spec.kgPerPiece * 1.04);
+  const yarnKg = Math.round(fabricKg * 1.03);
+
+  const yarnSplit = [
+    { name: "40s", share: 0.55 },
+    { name: "30s", share: 0.3 },
+    { name: "20s", share: 0.15 },
+  ];
+  const fabricSplit = [
+    { name: "Single Jersey", share: 0.82 },
+    { name: "Rib 1x1", share: 0.18 },
+  ];
+
+  const planningDate = cal.advance(2);
+  const requirementRows = [
+    ...yarnSplit.map((y, i) => ({
+      order_id: order.id,
+      po_id: po.id,
+      category: "yarn",
+      name: y.name,
+      required_qty: Math.round(yarnKg * y.share),
+      unit: "KG",
+      supplier: "Sri Lakshmi Spinning Mills",
+      sort_order: i,
+      is_completed: true,
+      created_by: userFor("raw_material_planning"),
+      updated_by: userFor("raw_material_planning"),
+    })),
+    ...fabricSplit.map((f, i) => ({
+      order_id: order.id,
+      po_id: po.id,
+      category: "fabric",
+      name: f.name,
+      required_qty: Math.round(fabricKg * f.share),
+      unit: "KG",
+      supplier: "In-house knitting",
+      sort_order: i,
+      is_completed: true,
+      created_by: userFor("raw_material_planning"),
+      updated_by: userFor("raw_material_planning"),
+    })),
+  ];
+
+  const { data: reqRows, error: reqError } = await admin
+    .from("material_requirements")
+    .insert(requirementRows)
+    .select("id, name, required_qty, category");
+  if (reqError || !reqRows) throw new Error(`Failed to seed requirements: ${reqError?.message}`);
+
+  // Each requirement arrives in three batches — never one clean delivery,
+  // which is the whole point of the multi-entry ledger.
+  const entryRows: unknown[] = [];
+  for (const r of reqRows as { id: string; name: string; required_qty: number; category: string }[]) {
+    const total = r.required_qty;
+    const batches = [Math.round(total * 0.4), Math.round(total * 0.35), 0];
+    batches[2] = total - batches[0] - batches[1];
+
+    entryRows.push({
+      requirement_id: r.id,
+      entry_type: "plan",
+      qty: total,
+      entry_date: planningDate,
+      supplier: "Sri Lakshmi Spinning Mills",
+      notes: `Production plan raised for ${r.name}.`,
+      entered_by: userFor("raw_material_planning"),
+    });
+
+    batches.forEach((qty, i) => {
+      const day = cal.advance(i === 0 ? 3 : 2);
+      const docNo = `DC-${po.po_number.slice(-4)}-${i + 1}`;
+      entryRows.push({
+        requirement_id: r.id,
+        entry_type: "dc",
+        qty,
+        entry_date: day,
+        supplier: "Sri Lakshmi Spinning Mills",
+        doc_no: docNo,
+        doc_date: day,
+        notes: `Batch ${i + 1} of 3 dispatched.`,
+        entered_by: userFor("po_to_suppliers"),
+      });
+      entryRows.push({
+        requirement_id: r.id,
+        entry_type: "receipt",
+        qty,
+        entry_date: day,
+        supplier: "Sri Lakshmi Spinning Mills",
+        doc_no: docNo,
+        notes: i === 1 ? "Weighed at gate — matched DC." : null,
+        entered_by: userFor("po_to_suppliers"),
+      });
+      entryRows.push({
+        requirement_id: r.id,
+        entry_type: "inward",
+        qty,
+        entry_date: day,
+        notes: null,
+        entered_by: userFor("raw_material_inward"),
+      });
+    });
+  }
+  await insert(admin, "material_entries", entryRows);
+
+  await closeStage(ctx, order, po, "raw_material_planning", planningDate,
+    { received: yarnKg + fabricKg, forwarded: yarnKg + fabricKg }, true,
+    "Yarn counts and fabric planned; all lines marked complete.");
+  await closeStage(ctx, order, po, "po_to_suppliers", cal.today(),
+    { received: yarnKg + fabricKg, forwarded: yarnKg + fabricKg }, true,
+    "All DCs raised and received in full.");
+  await closeStage(ctx, order, po, "raw_material_inward", cal.advance(1),
+    { received: yarnKg + fabricKg, forwarded: yarnKg + fabricKg }, true,
+    "Full quantity taken into store.");
+
+  // ---- 3. Lots -----------------------------------------------------------
+  // The batch sizes a knitting floor actually runs — two lots per PO here.
+  const { data: lotRows, error: lotError } = await admin
+    .from("production_lots")
+    .insert([
+      {
+        order_id: order.id,
+        po_id: po.id,
+        lot_no: `LOT-${po.po_number.slice(-4)}-A`,
+        fabric_type: "Single Jersey",
+        created_by: userFor("knitting"),
+      },
+      {
+        order_id: order.id,
+        po_id: po.id,
+        lot_no: `LOT-${po.po_number.slice(-4)}-B`,
+        fabric_type: "Single Jersey",
+        created_by: userFor("knitting"),
+      },
+    ])
+    .select("id, lot_no");
+  if (lotError || !lotRows) throw new Error(`Failed to create lots: ${lotError?.message}`);
+  const lots = lotRows as { id: string; lot_no: string }[];
+
+  // ---- 4. Fabric processing, lot by lot ----------------------------------
+  // Every stage shaves a little off. These are the loss rates a well-run floor
+  // actually sees, not round numbers.
+  const FABRIC_STAGES: { key: string; loss: number; ref?: string }[] = [
+    { key: "knitting", loss: 0.015, ref: "JKR" },
+    { key: "dyeing", loss: 0.02 },
+    { key: "setting", loss: 0.008 },
+    { key: "raising", loss: 0.012 },
+    { key: "compacting", loss: 0.01 },
+    { key: "fabric_inhouse", loss: 0.004 },
+    { key: "fabric_inspection", loss: 0.006 },
+  ];
+
+  // Split the yarn between the two lots, 55/45.
+  const lotInput = [Math.round(yarnKg * 0.55), yarnKg - Math.round(yarnKg * 0.55)];
+  const lotCarry = [...lotInput];
+  const txnRows: unknown[] = [];
+
+  for (const [stageIndex, fs] of FABRIC_STAGES.entries()) {
+    const s = stage(fs.key);
+    const date = cal.advance(s.typical_duration_days);
+    let stageIn = 0;
+    let stageOut = 0;
+
+    lots.forEach((lot, i) => {
+      const qtyIn = lotCarry[i];
+      const rejected = fs.key === "fabric_inspection" ? Math.round(qtyIn * 0.004) : 0;
+      const qtyOut = Math.round(qtyIn * (1 - fs.loss)) - rejected;
+      lotCarry[i] = qtyOut;
+      stageIn += qtyIn;
+      stageOut += qtyOut;
+
+      txnRows.push({
+        order_id: order.id,
+        po_id: po.id,
+        section_id: s.id,
+        lot_id: lot.id,
+        txn_type: "process",
+        unit: "KG",
+        qty_in: qtyIn,
+        qty_out: qtyOut,
+        qty_rejected: rejected,
+        ref_name: fs.ref ?? (i === 0 ? "JKR" : "Texwell"),
+        entry_date: date,
+        notes:
+          stageIndex === 0
+            ? `${lot.lot_no} knitted — ${qtyOut.toLocaleString()} KG greige.`
+            : fs.key === "fabric_inspection" && rejected > 0
+              ? `${rejected} KG held back on 4-point — barré marks on two rolls.`
+              : null,
+        entered_by: userFor(fs.key),
+      });
+    });
+
+    await closeStage(ctx, order, po, fs.key, date, { received: stageIn, forwarded: stageOut }, true, null);
+  }
+  await insert(admin, "production_txns", txnRows);
+
+  const inStoreKg = lotCarry.reduce((a, b) => a + b, 0);
+
+  // ---- 5. Fabric Store + Pattern -----------------------------------------
+  const storeDate = cal.advance(1);
+  await insert(admin, "production_txns", [
+    {
+      order_id: order.id,
+      po_id: po.id,
+      section_id: stage("fabric_store").id,
+      txn_type: "process",
+      unit: "KG",
+      qty_in: inStoreKg,
+      qty_out: inStoreKg,
+      entry_date: storeDate,
+      notes: `${inStoreKg.toLocaleString()} KG on the shelf against a ${fabricKg.toLocaleString()} KG plan.`,
+      entered_by: userFor("fabric_store"),
+    },
+  ]);
+  await closeStage(ctx, order, po, "fabric_store", storeDate, { received: inStoreKg, forwarded: inStoreKg }, true, null);
+  await closeStage(ctx, order, po, "pattern_marker", cal.advance(2), { received: inStoreKg, forwarded: inStoreKg }, true,
+    "Marker planned — 6 sizes, 1:2:3:3:2:1 ratio.");
+
+  // ---- 6. Cutting onwards, in pieces --------------------------------------
+  // Each lot cuts roughly half of every size. Wastage is taken off the top and
+  // the remainder is split so the sizes still add up to what was actually cut.
+  const CUT_YIELD = 0.995;
+  const cuttingDate = cal.advance(3);
+  const cutTxns: unknown[] = [];
+  const cutBySize = new Map<string, number>();
+
+  for (const size of po.sizes) {
+    const cutTotal = Math.floor(size.quantity * CUT_YIELD);
+    const perLot = [Math.ceil(cutTotal / 2), cutTotal - Math.ceil(cutTotal / 2)];
+    cutBySize.set(size.size_code, cutTotal);
+    lots.forEach((lot, i) => {
+      if (perLot[i] <= 0) return;
+      cutTxns.push({
+        order_id: order.id,
+        po_id: po.id,
+        section_id: stage("cutting").id,
+        lot_id: lot.id,
+        size_code: size.size_code,
+        txn_type: "process",
+        unit: "PCS",
+        qty_in: 0,
+        qty_out: perLot[i],
+        entry_date: cuttingDate,
+        entered_by: userFor("cutting"),
+      });
+    });
+  }
+  await insert(admin, "production_txns", cutTxns);
+
+  const cutTotal = [...cutBySize.values()].reduce((a, b) => a + b, 0);
+  await closeStage(ctx, order, po, "cutting", cuttingDate, { received: pieces, forwarded: cutTotal }, true,
+    `${cutTotal.toLocaleString()} pcs cut against ${pieces.toLocaleString()} ordered — 0.5% lay wastage.`);
+
+  const { error: cutQtyError } = await admin
+    .from("purchase_orders")
+    .update({ cut_quantity: cutTotal })
+    .eq("id", po.id);
+  if (cutQtyError) throw new Error(`Failed to set cut_quantity: ${cutQtyError.message}`);
+
+  /**
+   * Every PCS stage after Cutting is the same move: take what the previous
+   * stage produced for each lot/size, lose a small percentage, pass it on.
+   */
+  async function garmentStage(
+    key: string,
+    carry: Map<string, number[]>,
+    rejectRate: number,
+    opts: { txnType?: "process" | "send" | "receive"; ref?: (i: number) => string; note?: string; complete?: boolean } = {},
+  ): Promise<Map<string, number[]>> {
+    const s = stage(key);
+    const date = cal.advance(s.typical_duration_days);
+    const rows: unknown[] = [];
+    const next = new Map<string, number[]>();
+    let stageIn = 0;
+    let stageOut = 0;
+    let stageRejected = 0;
+
+    for (const [sizeCode, perLot] of carry) {
+      const outPerLot = perLot.map((qtyIn, i) => {
+        const rejected = Math.round(qtyIn * rejectRate);
+        const qtyOut = qtyIn - rejected;
+        stageIn += qtyIn;
+        stageOut += qtyOut;
+        stageRejected += rejected;
+        rows.push({
+          order_id: order.id,
+          po_id: po.id,
+          section_id: s.id,
+          lot_id: lots[i].id,
+          size_code: sizeCode,
+          txn_type: opts.txnType ?? "process",
+          unit: "PCS",
+          qty_in: opts.txnType === "send" ? 0 : qtyIn,
+          qty_out: qtyOut,
+          qty_rejected: rejected,
+          ref_name: opts.ref?.(i) ?? null,
+          entry_date: date,
+          entered_by: userFor(key),
+        });
+        return qtyOut;
+      });
+      next.set(sizeCode, outPerLot);
+    }
+
+    await insert(admin, "production_txns", rows);
+    await closeStage(ctx, order, po, key, date,
+      { received: stageIn, forwarded: stageOut, rejected: stageRejected },
+      opts.complete ?? true, opts.note ?? null);
+    return next;
+  }
+
+  let carry = new Map<string, number[]>();
+  for (const size of po.sizes) {
+    const total = cutBySize.get(size.size_code) ?? 0;
+    carry.set(size.size_code, [Math.ceil(total / 2), total - Math.ceil(total / 2)]);
+  }
+
+  carry = await garmentStage("panel_checking", carry, 0.006, {
+    note: "Panels checked lot-wise — a handful rejected for shade variation.",
+  });
+
+  // Embroidery goes out and comes back, so both directions are written.
+  const embroideryStage = stage("embroidery");
+  const sendDate = cal.advance(1);
+  const sendRows: unknown[] = [];
+  for (const [sizeCode, perLot] of carry) {
+    perLot.forEach((qty, i) => {
+      sendRows.push({
+        order_id: order.id,
+        po_id: po.id,
+        section_id: embroideryStage.id,
+        lot_id: lots[i].id,
+        size_code: sizeCode,
+        txn_type: "send",
+        unit: "PCS",
+        qty_in: 0,
+        qty_out: qty,
+        ref_name: "Sri Venkateswara Embroidery",
+        doc_no: `EMB-DC-${po.po_number.slice(-4)}`,
+        entry_date: sendDate,
+        entered_by: userFor("embroidery"),
+      });
+    });
+  }
+  await insert(admin, "production_txns", sendRows);
+
+  carry = await garmentStage("embroidery", carry, 0.002, {
+    txnType: "receive",
+    ref: () => "Sri Venkateswara Embroidery",
+    note: "Received back from job work — small transit reject.",
+  });
+
+  if (depth === "stall_at_sewing") {
+    // The line has been fed and is producing, but the batch isn't finished —
+    // the app's orange "moved on, not completed" state.
+    const s = stage("sewing");
+    const date = cal.advance(4);
+    const rows: unknown[] = [];
+    let fedIn = 0;
+    let outSoFar = 0;
+
+    for (const [sizeCode, perLot] of carry) {
+      perLot.forEach((qtyIn, i) => {
+        const done = Math.round(qtyIn * 0.62);
+        fedIn += qtyIn;
+        outSoFar += done;
+        rows.push({
+          order_id: order.id,
+          po_id: po.id,
+          section_id: s.id,
+          lot_id: lots[i].id,
+          size_code: sizeCode,
+          txn_type: "process",
+          unit: "PCS",
+          qty_in: qtyIn,
+          qty_out: done,
+          ref_name: i === 0 ? "Line 01" : "Line 02",
+          entry_date: date,
+          entered_by: userFor("sewing"),
+        });
+      });
+    }
+    await insert(admin, "production_txns", rows);
+    await closeStage(ctx, order, po, "sewing", date, { received: fedIn, forwarded: outSoFar }, false,
+      "Whole batch fed to the line; end-line QC still working through it. Balance to follow.");
+    return;
+  }
+
+  carry = await garmentStage("sewing", carry, 0.011, {
+    ref: (i) => (i === 0 ? "Line 01" : "Line 02"),
+    note: "Both lines completed — sequential inline QC rejects.",
+  });
+  carry = await garmentStage("checking", carry, 0.008, { note: "Final inspection pass." });
+  carry = await garmentStage("ironing", carry, 0.001, {});
+  carry = await garmentStage("packing", carry, 0.001, { note: "Cartons sealed and ready for dispatch." });
+}
+
+// ---------------------------------------------------------------------------
 
 async function main() {
   const url = process.env.VITE_SUPABASE_URL;
@@ -559,15 +728,16 @@ async function main() {
 
   const { data: stageRows, error: stagesError } = await admin
     .from("workflow_stages")
-    .select("id, key, sequence_no, unit_type, form_type, typical_duration_days")
+    .select("id, key, sequence_no, unit_type, typical_duration_days")
     .order("sequence_no", { ascending: true });
   if (stagesError) throw new Error(`Failed to load workflow_stages: ${stagesError.message}`);
-  if (!stageRows || stageRows.length !== 15) {
+  if (!stageRows || stageRows.length !== EXPECTED_STAGES) {
     throw new Error(
-      `Expected 15 workflow_stages (found ${stageRows?.length ?? 0}). Run migration ` +
-        "010_po_tracking_and_sections.sql before seeding demo data.",
+      `Expected ${EXPECTED_STAGES} workflow_stages (found ${stageRows?.length ?? 0}). ` +
+        "Run migration 011_production_chain.sql before seeding demo data.",
     );
   }
+
   const stageByKey = new Map((stageRows as StageRow[]).map((s) => [s.key, s]));
   const stage = (key: string): StageRow => {
     const s = stageByKey.get(key);
@@ -575,12 +745,12 @@ async function main() {
     return s;
   };
 
-  console.log(`Creating ${SECTION_USERS.length} example users…`);
+  console.log(`Creating ${ALL_USERS.length} example users…`);
   const userIdByUsername = new Map<string, string>();
-  for (const u of SECTION_USERS) {
+  for (const u of ALL_USERS) {
     const email = `${u.username}@${emailDomain}`;
     const userId = await ensureAuthUser(admin, email, DEMO_PASSWORD);
-    const { error: profileError } = await admin.from("app_users").upsert({
+    const { error } = await admin.from("app_users").upsert({
       id: userId,
       name: u.name,
       username: u.username,
@@ -590,10 +760,11 @@ async function main() {
       is_monitor_only: false,
       is_active: true,
     });
-    if (profileError) throw new Error(`Failed to upsert app_users row for ${u.username}: ${profileError.message}`);
+    if (error) throw new Error(`Failed to upsert app_users row for ${u.username}: ${error.message}`);
     userIdByUsername.set(u.username, userId);
     console.log(`  ✓ ${u.name} (@${u.username}) — ${u.role}`);
   }
+
   const userFor = (sectionKey: string): string => {
     const su = SECTION_USERS.find((s) => s.sectionKey === sectionKey);
     const id = su && userIdByUsername.get(su.username);
@@ -601,41 +772,19 @@ async function main() {
     return id;
   };
 
-  console.log("Wiring each user to their section (Stage Roles) — applies to every order, old and new…");
-  for (const su of SECTION_USERS) {
-    const s = stageByKey.get(su.sectionKey);
-    const userId = userIdByUsername.get(su.username);
+  console.log("Wiring users to their sections (Stage Roles) — applies to every order…");
+  for (const u of ALL_USERS) {
+    const s = stageByKey.get(u.sectionKey);
+    const userId = userIdByUsername.get(u.username);
     if (!s || !userId) continue;
     const { error } = await admin
       .from("stage_assignments")
       .upsert({ user_id: userId, section_id: s.id, can_enter_data: true }, { onConflict: "user_id,section_id" });
-    if (error) throw new Error(`Failed to assign ${su.username} to ${su.sectionKey}: ${error.message}`);
+    if (error) throw new Error(`Failed to assign ${u.username}: ${error.message}`);
   }
+  console.log("  ✓ Raw Material Planning has three planners sharing it.");
 
-  // =========================================================================
-  // PLAN
-  //
-  // Order A — MCKTM 18001-010, Classic Crew Sweatshirt, Navy — CARRIED FULLY
-  // COMPLETE through all 15 stages, both its POs. Fabric consumption ~0.42
-  // kg/pc for a basic crew (no hood/zip). Small realistic losses accumulate
-  // at Cutting (~0.5% wastage), Embroidery (~0.2% reject in job-work transit),
-  // and Stitching's inline QC (sequential small rejects) — everything
-  // upstream of Cutting (materials) arrives in full, which is the realistic
-  // case for a well-managed supplier relationship. Checking, Ironing and the
-  // interim Packing are each a quick pass/fail confirmation, as they would be
-  // on the real floor.
-  //
-  // Order B — MCKTM 18045-022, Zip Hoodie Fleece, Charcoal Grey — left
-  // genuinely PARTIAL. PO 01700010 is carried the same way as Order A through
-  // Embroidery, then stalls partway through Stitching: the line has fed the
-  // whole batch and is progressing through its four checkpoints at different
-  // speeds (a completely normal, sequential sewing-line QC bottleneck) —
-  // moved forward without completing, so it shows the orange "not completed"
-  // state and Checking unlocks with nothing entered yet. PO 01700011 hasn't
-  // gone past Order Confirmation — Raw Material Planning is sitting
-  // untouched, exactly as it would if the planner simply hasn't gotten to it
-  // yet.
-  // =========================================================================
+  const ctx: SeedCtx = { admin, stage, userFor };
 
   console.log("Creating sample orders…");
   const orderA = await ensureOrder(admin, {
@@ -644,355 +793,45 @@ async function main() {
     description: "CLASSIC CREW SWEATSHIRT",
     color: "NAVY",
     fabric: "Brushed Back Fleece 60% BCI Cotton 40% Recycled Poly - 280GSM",
-    delivery_date: "2026-11-10",
+    delivery_date: "2026-11-20",
+    kgPerPiece: 0.42,
     pos: [
-      { po_number: "01700001", quantity: 6000, delivery_date: "2026-10-20" },
-      { po_number: "01700002", quantity: 4200, delivery_date: "2026-11-10" },
+      { po_number: "01700001", delivery_date: "2026-10-30", sizes: { XS: 420, S: 1180, M: 1960, L: 1740, XL: 890, "2XL": 310 } },
+      { po_number: "01700002", delivery_date: "2026-11-14", sizes: { XS: 260, S: 720, M: 1210, L: 1080, XL: 540, "2XL": 190 } },
     ],
   });
+
   const orderB = await ensureOrder(admin, {
     io_no: "96/26",
     style: "MCKTM 18045-022",
-    description: "ZIP HOODIE FLEECE",
+    description: "ZIP THROUGH HOODIE FLEECE",
     color: "CHARCOAL GREY",
-    fabric: "Brushed Back Fleece 65% Cotton 35% Poly - 320GSM",
-    delivery_date: "2026-11-24",
+    fabric: "Brushed Back Fleece 60% BCI Cotton 40% Recycled Poly - 320GSM",
+    delivery_date: "2026-12-05",
+    kgPerPiece: 0.58,
     pos: [
-      { po_number: "01700010", quantity: 5200, delivery_date: "2026-11-05" },
-      { po_number: "01700011", quantity: 3100, delivery_date: "2026-11-24" },
+      { po_number: "01700010", delivery_date: "2026-11-25", sizes: { XS: 340, S: 980, M: 1620, L: 1440, XL: 760, "2XL": 260 } },
+      { po_number: "01700011", delivery_date: "2026-12-05", sizes: { XS: 180, S: 510, M: 860, L: 770, XL: 400, "2XL": 140 } },
     ],
   });
 
-  console.log("Writing realistic production movement…");
-
-  // --- Order A / PO 01700001 (6000 pcs) — fully completed ------------------
-  {
-    const po = orderA.pos.find((p) => p.po_number === "01700001")!;
-    const d = dateCursor("2026-08-10");
-    let ctx: Ctx = { admin, orderId: orderA.id, poId: po.id, entryDate: d.current(), userId: userFor("order_confirmation") };
-    await writeConfirmation(ctx, stage("order_confirmation"), po.quantity, "PO received and confirmed with buyer techpack. Ex-factory 20 Oct.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("order_confirmation").typical_duration_days), userId: userFor("raw_material_planning") };
-    const planned = { yarn: 0, fabric: 2520, trims: 90, accessories: 15 };
-    await writeMaterialPlanning(ctx, stage("raw_material_planning"), planned, "Sourcing finished fabric — no in-house knitting for this style. Fabric @0.42kg/pc incl. wastage allowance.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("raw_material_planning").typical_duration_days), userId: userFor("po_to_suppliers") };
-    await writeSimpleConfirm(ctx, stage("po_to_suppliers"), po.quantity, "POs raised with fabric mill and trims vendor as per material plan.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("po_to_suppliers").typical_duration_days), userId: userFor("raw_material_inward") };
-    await writeMaterialInward(ctx, stage("raw_material_inward"), planned, planned, "Full delivery received against PO — fabric, rib trims and hardware all matched the material plan.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("raw_material_inward").typical_duration_days), userId: userFor("fabric_processing") };
-    const fabricForwarded = await writeFabricProcessing(
-      ctx,
-      stage("fabric_processing"),
-      planned.fabric,
-      { knitting: 2520, dyeing: 2520, compacting: 2520, relaxing: 2520, fabric_inspection: 2520 },
-      "Piece-dyed navy, compacted and relaxed 24hrs before inspection. No shade bands found.",
-      { type: "unit", to: "Unit 2 — Wet Processing" },
-    );
-
-    ctx = { ...ctx, entryDate: d.advance(stage("fabric_processing").typical_duration_days), userId: userFor("fabric_store") };
-    await writeStoreCheck(ctx, stage("fabric_store"), planned.fabric, fabricForwarded, "Fabric rolls counted in and shade-sorted at store.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("fabric_store").typical_duration_days), userId: userFor("pattern_marker") };
-    await writeSimpleConfirm(ctx, stage("pattern_marker"), po.quantity, "Marker efficiency 84% across size ratio. Approved for cutting.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("pattern_marker").typical_duration_days), userId: userFor("cutting") };
-    const cutQty = await writeCutting(ctx, stage("cutting"), po.quantity, 5985, 5970, "30 pcs cutting wastage (fabric flaws at roll ends) — within 1% tolerance.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("cutting").typical_duration_days), userId: userFor("printing_embroidery") };
-    const embroideryReturned = await writeEmbroidery(
-      ctx,
-      stage("printing_embroidery"),
-      po.quantity,
-      cutQty,
-      ctx.entryDate,
-      "Sunrise Embroidery Works, Tirupur",
-      "Tirupur",
-      "Chest logo, navy thread, 3500 stitch count.",
-      5960,
-      d.advance(stage("printing_embroidery").typical_duration_days),
-      "10 pcs rejected for thread breaks/misalignment — recut not required, absorbed as embroidery loss.",
-    );
-
-    ctx = { ...ctx, entryDate: d.advance(stage("printing_embroidery").typical_duration_days), userId: userFor("stitching") };
-    const stitchingItems = [
-      { key: "line_feeding", label: "Line Feeding" },
-      { key: "inline_qc", label: "Inline QC" },
-      { key: "end_line_qc", label: "End Line QC" },
-      { key: "measurement_check", label: "Measurement Check" },
-    ];
-    const stitchingForwarded = await writeSubSteps(
-      ctx,
-      stage("stitching"),
-      stitchingItems,
-      cutQty,
-      { line_feeding: embroideryReturned, inline_qc: 5950, end_line_qc: 5945, measurement_check: 5940 },
-      true,
-      "Full batch stitched. 30 pcs rejected across inline/end-line QC checkpoints (seam/measurement).",
-    );
-
-    ctx = { ...ctx, entryDate: d.advance(stage("stitching").typical_duration_days), userId: userFor("checking") };
-    await writeSimpleConfirm(ctx, stage("checking"), po.quantity, "100% garment checking passed — AQL 1.5 sample cleared.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("checking").typical_duration_days), userId: userFor("ironing") };
-    await writeSimpleConfirm(ctx, stage("ironing"), po.quantity, "Steam-pressed, folded ready for pack.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("ironing").typical_duration_days), userId: userFor("line_packing") };
-    await writeSimpleConfirm(ctx, stage("line_packing"), po.quantity, "Poly-bagged at line, staged for finishing.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("line_packing").typical_duration_days), userId: userFor("finishing") };
-    const finishingItems = [
-      { key: "thread_trimming", label: "Thread Trimming" },
-      { key: "ironing", label: "Ironing" },
-      { key: "spot_cleaning", label: "Spot Cleaning" },
-      { key: "final_inspection", label: "Final Inspection" },
-      { key: "metal_detection", label: "Metal Detection" },
-    ];
-    const finishingForwarded = await writeSubSteps(
-      ctx,
-      stage("finishing"),
-      finishingItems,
-      cutQty,
-      { thread_trimming: stitchingForwarded, ironing: stitchingForwarded, spot_cleaning: 5938, final_inspection: 5935, metal_detection: 5935 },
-      true,
-      "5 pcs held at final inspection for spot stains, cleared after rework — 5935 pcs cleared metal detection.",
-    );
-
-    ctx = { ...ctx, entryDate: d.advance(stage("packing").typical_duration_days), userId: userFor("packing") };
-    const packingItems = [
-      { key: "folding", label: "Folding" },
-      { key: "poly_bag", label: "Poly Bag" },
-      { key: "barcode", label: "Barcode" },
-      { key: "carton_packing", label: "Carton Packing" },
-      { key: "carton_qc", label: "Carton QC" },
-    ];
-    await writeSubSteps(
-      ctx,
-      stage("packing"),
-      packingItems,
-      cutQty,
-      { folding: finishingForwarded, poly_bag: finishingForwarded, barcode: finishingForwarded, carton_packing: finishingForwarded, carton_qc: finishingForwarded },
-      true,
-      "5935 pcs carton-packed, 199 cartons @30pcs avg. Ready for dispatch — PO complete.",
-    );
-    console.log(`  ✓ Order A / PO ${po.po_number} — fully completed, ${finishingForwarded.toLocaleString()} pcs shipped-ready`);
+  console.log(`Walking ${orderA.spec.style} through all ${EXPECTED_STAGES} stages…`);
+  for (const po of orderA.pos) {
+    await seedPo(ctx, orderA, po, "complete");
+    console.log(`  ✓ PO ${po.po_number} — complete through Packing`);
   }
 
-  // --- Order A / PO 01700002 (4200 pcs) — fully completed -------------------
-  {
-    const po = orderA.pos.find((p) => p.po_number === "01700002")!;
-    const d = dateCursor("2026-08-10");
-    let ctx: Ctx = { admin, orderId: orderA.id, poId: po.id, entryDate: d.current(), userId: userFor("order_confirmation") };
-    await writeConfirmation(ctx, stage("order_confirmation"), po.quantity, "PO received and confirmed with buyer techpack. Ex-factory 20 Oct.");
+  console.log(`Walking ${orderB.spec.style} to a realistic mid-production state…`);
+  await seedPo(ctx, orderB, orderB.pos[0], "stall_at_sewing");
+  console.log(`  ✓ PO ${orderB.pos[0].po_number} — stalled partway through Sewing`);
+  await seedPo(ctx, orderB, orderB.pos[1], "confirmation_only");
+  console.log(`  ✓ PO ${orderB.pos[1].po_number} — confirmed, awaiting material planning`);
 
-    ctx = { ...ctx, entryDate: d.advance(stage("order_confirmation").typical_duration_days), userId: userFor("raw_material_planning") };
-    const planned = { yarn: 0, fabric: 1764, trims: 60, accessories: 10 };
-    await writeMaterialPlanning(ctx, stage("raw_material_planning"), planned, "Second PO of the same style/colour — material plan scaled to 4200 pcs.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("raw_material_planning").typical_duration_days), userId: userFor("po_to_suppliers") };
-    await writeSimpleConfirm(ctx, stage("po_to_suppliers"), po.quantity, "Added to the same supplier POs as PO 01700001 — combined delivery.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("po_to_suppliers").typical_duration_days), userId: userFor("raw_material_inward") };
-    await writeMaterialInward(ctx, stage("raw_material_inward"), planned, planned, "Full delivery received, matched to material plan.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("raw_material_inward").typical_duration_days), userId: userFor("fabric_processing") };
-    const fabricForwarded = await writeFabricProcessing(
-      ctx,
-      stage("fabric_processing"),
-      planned.fabric,
-      { knitting: 1764, dyeing: 1764, compacting: 1764, relaxing: 1764, fabric_inspection: 1764 },
-      "Same dye lot as PO 01700001 — processed in the same batch.",
-      { type: "unit", to: "Unit 2 — Wet Processing" },
-    );
-
-    ctx = { ...ctx, entryDate: d.advance(stage("fabric_processing").typical_duration_days), userId: userFor("fabric_store") };
-    await writeStoreCheck(ctx, stage("fabric_store"), planned.fabric, fabricForwarded, "Fabric rolls counted in and shade-sorted at store.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("fabric_store").typical_duration_days), userId: userFor("pattern_marker") };
-    await writeSimpleConfirm(ctx, stage("pattern_marker"), po.quantity, "Same marker as PO 01700001, re-graded for this PO's size ratio.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("pattern_marker").typical_duration_days), userId: userFor("cutting") };
-    const cutQty = await writeCutting(ctx, stage("cutting"), po.quantity, 4190, 4180, "20 pcs cutting wastage — within tolerance.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("cutting").typical_duration_days), userId: userFor("printing_embroidery") };
-    const embroideryReturned = await writeEmbroidery(
-      ctx,
-      stage("printing_embroidery"),
-      po.quantity,
-      cutQty,
-      ctx.entryDate,
-      "Sunrise Embroidery Works, Tirupur",
-      "Tirupur",
-      "Chest logo, navy thread, 3500 stitch count — same job as PO 01700001.",
-      4175,
-      d.advance(stage("printing_embroidery").typical_duration_days),
-      "5 pcs rejected for thread breaks.",
-    );
-
-    ctx = { ...ctx, entryDate: d.advance(stage("printing_embroidery").typical_duration_days), userId: userFor("stitching") };
-    const stitchingItems = [
-      { key: "line_feeding", label: "Line Feeding" },
-      { key: "inline_qc", label: "Inline QC" },
-      { key: "end_line_qc", label: "End Line QC" },
-      { key: "measurement_check", label: "Measurement Check" },
-    ];
-    const stitchingForwarded = await writeSubSteps(
-      ctx,
-      stage("stitching"),
-      stitchingItems,
-      cutQty,
-      { line_feeding: embroideryReturned, inline_qc: 4170, end_line_qc: 4165, measurement_check: 4160 },
-      true,
-      "Full batch stitched. 20 pcs rejected across inline/end-line QC checkpoints.",
-    );
-
-    ctx = { ...ctx, entryDate: d.advance(stage("stitching").typical_duration_days), userId: userFor("checking") };
-    await writeSimpleConfirm(ctx, stage("checking"), po.quantity, "100% garment checking passed.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("checking").typical_duration_days), userId: userFor("ironing") };
-    await writeSimpleConfirm(ctx, stage("ironing"), po.quantity, "Steam-pressed, folded ready for pack.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("ironing").typical_duration_days), userId: userFor("line_packing") };
-    await writeSimpleConfirm(ctx, stage("line_packing"), po.quantity, "Poly-bagged at line, staged for finishing.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("line_packing").typical_duration_days), userId: userFor("finishing") };
-    const finishingItems = [
-      { key: "thread_trimming", label: "Thread Trimming" },
-      { key: "ironing", label: "Ironing" },
-      { key: "spot_cleaning", label: "Spot Cleaning" },
-      { key: "final_inspection", label: "Final Inspection" },
-      { key: "metal_detection", label: "Metal Detection" },
-    ];
-    const finishingForwarded = await writeSubSteps(
-      ctx,
-      stage("finishing"),
-      finishingItems,
-      cutQty,
-      { thread_trimming: stitchingForwarded, ironing: stitchingForwarded, spot_cleaning: 4158, final_inspection: 4155, metal_detection: 4155 },
-      true,
-      "5 pcs held for spot stains, cleared after rework.",
-    );
-
-    ctx = { ...ctx, entryDate: d.advance(stage("packing").typical_duration_days), userId: userFor("packing") };
-    const packingItems = [
-      { key: "folding", label: "Folding" },
-      { key: "poly_bag", label: "Poly Bag" },
-      { key: "barcode", label: "Barcode" },
-      { key: "carton_packing", label: "Carton Packing" },
-      { key: "carton_qc", label: "Carton QC" },
-    ];
-    await writeSubSteps(
-      ctx,
-      stage("packing"),
-      packingItems,
-      cutQty,
-      { folding: finishingForwarded, poly_bag: finishingForwarded, barcode: finishingForwarded, carton_packing: finishingForwarded, carton_qc: finishingForwarded },
-      true,
-      "4155 pcs carton-packed, ready for dispatch — PO complete.",
-    );
-    console.log(`  ✓ Order A / PO ${po.po_number} — fully completed, ${finishingForwarded.toLocaleString()} pcs shipped-ready`);
-  }
-
-  // --- Order B / PO 01700010 (5200 pcs) — partial: stalls in Stitching ------
-  {
-    const po = orderB.pos.find((p) => p.po_number === "01700010")!;
-    const d = dateCursor("2026-08-12");
-    let ctx: Ctx = { admin, orderId: orderB.id, poId: po.id, entryDate: d.current(), userId: userFor("order_confirmation") };
-    await writeConfirmation(ctx, stage("order_confirmation"), po.quantity, "PO received and confirmed. Zip hoodie — buyer approved hood/pocket construction sample.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("order_confirmation").typical_duration_days), userId: userFor("raw_material_planning") };
-    const planned = { yarn: 0, fabric: 3020, trims: 135, accessories: 45 };
-    await writeMaterialPlanning(ctx, stage("raw_material_planning"), planned, "Hoodie needs more fabric (hood + pocket) and trims (zip tape, drawcord) than a crew style — 0.58kg/pc.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("raw_material_planning").typical_duration_days), userId: userFor("po_to_suppliers") };
-    await writeSimpleConfirm(ctx, stage("po_to_suppliers"), po.quantity, "POs raised — fabric, YKK zips, drawcord and hardware.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("po_to_suppliers").typical_duration_days), userId: userFor("raw_material_inward") };
-    await writeMaterialInward(ctx, stage("raw_material_inward"), planned, planned, "Full delivery received — fabric, zip tape and hardware all matched.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("raw_material_inward").typical_duration_days), userId: userFor("fabric_processing") };
-    const fabricForwarded = await writeFabricProcessing(
-      ctx,
-      stage("fabric_processing"),
-      planned.fabric,
-      { knitting: 3020, dyeing: 3020, compacting: 3020, relaxing: 3020, fabric_inspection: 3020 },
-      "Charcoal grey, garment-dyed. No shade bands found.",
-    );
-
-    ctx = { ...ctx, entryDate: d.advance(stage("fabric_processing").typical_duration_days), userId: userFor("fabric_store") };
-    await writeStoreCheck(ctx, stage("fabric_store"), planned.fabric, fabricForwarded, "Fabric rolls counted in and shade-sorted at store.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("fabric_store").typical_duration_days), userId: userFor("pattern_marker") };
-    await writeSimpleConfirm(ctx, stage("pattern_marker"), po.quantity, "5-panel hood + kangaroo pocket marker approved. Efficiency 81% (more complex nesting than a crew).");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("pattern_marker").typical_duration_days), userId: userFor("cutting") };
-    const cutQty = await writeCutting(ctx, stage("cutting"), po.quantity, 5175, 5160, "40 pcs cutting wastage — more panels per garment than the crew style, slightly higher loss.");
-
-    ctx = { ...ctx, entryDate: d.advance(stage("cutting").typical_duration_days), userId: userFor("printing_embroidery") };
-    const embroideryReturned = await writeEmbroidery(
-      ctx,
-      stage("printing_embroidery"),
-      po.quantity,
-      cutQty,
-      ctx.entryDate,
-      "Classic Thread Embroidery, Tirupur",
-      "Tirupur",
-      "Left-chest logo on hood panel, grey-on-charcoal tonal thread.",
-      5145,
-      d.advance(stage("printing_embroidery").typical_duration_days),
-      "15 pcs rejected — hood-panel embroidery placement slightly trickier than a flat crew panel.",
-    );
-
-    // Stitching: fed the full batch, but the four checkpoints are progressing
-    // at different speeds — a normal sewing-line QC bottleneck. Moved forward
-    // without completing so the balance can be finished once the line
-    // catches up. Checking/Ironing/Packing/Finishing/Packing all stay
-    // untouched — exactly the "remaining stages still pending" state.
-    ctx = { ...ctx, entryDate: d.advance(stage("printing_embroidery").typical_duration_days), userId: userFor("stitching") };
-    const stitchingItems = [
-      { key: "line_feeding", label: "Line Feeding" },
-      { key: "inline_qc", label: "Inline QC" },
-      { key: "end_line_qc", label: "End Line QC" },
-      { key: "measurement_check", label: "Measurement Check" },
-    ];
-    await writeSubSteps(
-      ctx,
-      stage("stitching"),
-      stitchingItems,
-      cutQty,
-      { line_feeding: embroideryReturned, inline_qc: 4800, end_line_qc: 2600, measurement_check: 1800 },
-      false,
-      "Full batch fed to the line. Inline QC ahead of end-line, measurement checkpoint just started — will complete once the line catches up.",
-    );
-    console.log(`  ✓ Order B / PO ${po.po_number} — partial, stalled mid-Stitching (1,800 pcs cleared so far)`);
-  }
-
-  // --- Order B / PO 01700011 (3100 pcs) — barely started ---------------------
-  {
-    const po = orderB.pos.find((p) => p.po_number === "01700011")!;
-    const ctx: Ctx = {
-      admin,
-      orderId: orderB.id,
-      poId: po.id,
-      entryDate: "2026-08-13",
-      userId: userFor("order_confirmation"),
-    };
-    await writeConfirmation(
-      ctx,
-      stage("order_confirmation"),
-      po.quantity,
-      "Second PO of this style confirmed — material planning to follow once PO 01700010 clears fabric processing.",
-    );
-    console.log(`  ✓ Order B / PO ${po.po_number} — just started (Order Confirmation only)`);
-  }
-
-  console.log("\nDone. Demo users all share the password:", DEMO_PASSWORD);
-  console.log("Sign in as any of:", SECTION_USERS.map((u) => u.username).join(", "));
+  console.log("\nDone. Sign in as any example user with the password 'demo123'.");
+  console.log("Admins can see the full picture at Orders → open an order → Production Output & Reports.");
 }
 
 main().catch((err) => {
-  console.error(err.message || err);
+  console.error(`\nSeeding failed: ${err instanceof Error ? err.message : err}`);
   process.exit(1);
 });

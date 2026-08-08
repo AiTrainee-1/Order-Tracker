@@ -23,6 +23,27 @@ export interface WorkItem {
   isDefault: boolean;
 }
 
+export interface WorkBadge {
+  tone: "good" | "warn" | "info" | "neutral";
+  label: string;
+}
+
+/**
+ * How a work item presents in a list.
+ *
+ * Orange is reserved for exactly one meaning across the whole app — "moved on
+ * but not finished, a balance is still owed here" — so it has to outrank the
+ * gate status: a partially-forwarded stage is still `active`, but showing it as
+ * an ordinary "Your Turn" would hide the outstanding balance. "Your Turn" is
+ * blue for the same reason; if both were amber the distinction would be lost.
+ */
+export function workBadge(item: WorkItem): WorkBadge {
+  if (item.stageProgress?.isPartial) return { tone: "warn", label: "Not Complete" };
+  if (item.gateStatus === "completed") return { tone: "good", label: "Completed" };
+  if (item.gateStatus === "locked") return { tone: "neutral", label: "Waiting" };
+  return { tone: "info", label: "Your Turn" };
+}
+
 /**
  * Every work item is scoped to (order, PO, section) — never just (order,
  * section). Tracking is PO-first: an assignment that covers "every PO" (no

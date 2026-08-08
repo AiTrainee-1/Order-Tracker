@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useOrderDetail } from "../../hooks/useOrderDetail";
-import { useStageSubItems } from "../../hooks/useStageSubItems";
+import { useProductionChain } from "../../hooks/useProductionChain";
 import { useOrderAssignments } from "../../hooks/useAssignments";
+import { LotSummaryTable, SizeSummaryTable } from "../../components/forms/stage/chainShared";
 import { publicImageUrl } from "../../lib/supabaseClient";
 import { deliveryUrgency, formatDisplayDate, urgencyTextClasses } from "../../lib/workflow";
-import { buildOrderProgress, formatTransfer } from "../../lib/progress";
+import { buildOrderProgress } from "../../lib/progress";
 import { getCombinedCutQuantity } from "../../lib/orderQty";
 import { Card, CardBody, CardHeader } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
@@ -15,7 +17,6 @@ import { Loader } from "../../components/ui/Loader";
 import { Table } from "../../components/ui/Table";
 import { FilterTabs } from "../../components/ui/FilterTabs";
 import { GameLevelPath } from "../../components/dashboard/GameLevelPath";
-import { MultiUnitSplitTable } from "../../components/dashboard/MultiUnitSplitTable";
 import { GarmentPlaceholder } from "../../components/ui/GarmentPlaceholder";
 import { BackButton } from "../../components/ui/BackButton";
 import type { AppUser } from "../../lib/types";
@@ -31,12 +32,19 @@ export function OrderDetailPage() {
   const [historyPage, setHistoryPage] = useState(1);
   const [poScope, setPoScope] = useState<string>(ALL_POS);
   const assignmentsQuery = useOrderAssignments(order?.id);
-  // Material/step breakdown (stage_sub_items) has no PO column — it's planned
-  // at the order level regardless of which PO tab is selected.
-  const selectedSectionId = progress?.stages[selectedIndex]?.stage.id;
-  const subItemsQuery = useStageSubItems(order?.id, selectedSectionId);
 
   const selectedPo = poScope === ALL_POS ? null : purchaseOrders.find((p) => p.id === poScope) ?? null;
+
+  // The quantity layer, scoped to whichever PO tab is open. progress (below)
+  // still drives which stages are open/complete; this drives what the numbers
+  // actually are, lot by lot and size by size.
+  const { chain } = useProductionChain({
+    orderId,
+    purchaseOrders,
+    poId: selectedPo?.id ?? null,
+  });
+  const selectedSectionId = progress?.stages[selectedIndex]?.stage.id;
+  const selectedChainStage = chain?.stages.find((s) => s.stage.id === selectedSectionId) ?? null;
 
   // Recompute progress scoped to just the chosen PO's own entries/quantities —
   // this is what makes "how much has been completed for THIS PO" possible,
@@ -108,7 +116,12 @@ export function OrderDetailPage() {
 
   return (
     <div className="space-y-6">
-      <BackButton to="/admin/dashboard" label="Back to Dashboard" />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <BackButton to="/admin/dashboard" label="Back to Dashboard" />
+        <Link to={`/admin/output/${order.id}`}>
+          <Button size="sm">Production Output & Reports →</Button>
+        </Link>
+      </div>
 
       <Card>
         <CardBody className="flex flex-col gap-5 md:flex-row md:items-start">
@@ -306,53 +319,56 @@ export function OrderDetailPage() {
               </p>
             )}
 
-            {(subItemsQuery.data?.length ?? 0) > 0 && (
+            {selectedChainStage && selectedChainStage.byLot.length > 0 && (
               <div>
                 <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
-                  Material / Step Breakdown
+                  Lot-wise Breakdown
+                </h4>
+                <LotSummaryTable cs={selectedChainStage} />
+              </div>
+            )}
+
+            {selectedChainStage && selectedChainStage.bySize.length > 0 && (
+              <div>
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
+                  Size-wise Breakdown
+                </h4>
+                <SizeSummaryTable cs={selectedChainStage} />
+              </div>
+            )}
+
+            {selectedChainStage && selectedChainStage.material && (
+              <div>
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
+                  Material Position
                 </h4>
                 <Table
-                  keyFor={(s) => s.id}
-                  rows={subItemsQuery.data!}
+                  keyFor={(f) => f.requirement.id}
+                  rows={chain?.requirementFlows ?? []}
+                  emptyMessage="No yarn or fabric planned for this order yet."
                   columns={[
-                    { header: "Item", render: (s) => s.item_label },
-                    {
-                      header: `Planned (${subItemsQuery.data![0].unit_type})`,
-                      render: (s) => s.planned_qty.toLocaleString(),
-                    },
-                    { header: "Completed", render: (s) => s.completed_qty.toLocaleString() },
+                    { header: "Material", render: (f) => f.requirement.name },
+                    { header: "Type", render: (f) => f.requirement.category },
+                    { header: "Required", render: (f) => f.totals.required.toLocaleString() },
+                    { header: "DC", render: (f) => f.totals.dc.toLocaleString() },
+                    { header: "Received", render: (f) => f.totals.received.toLocaleString() },
+                    { header: "Inward", render: (f) => f.totals.inward.toLocaleString() },
                     {
                       header: "Balance",
-                      render: (s) => Math.max(s.planned_qty - s.completed_qty, 0).toLocaleString(),
+                      render: (f) => Math.max(f.balance, 0).toLocaleString(),
                     },
                     {
                       header: "Status",
-                      render: (s) => (
-                        <Badge tone={s.is_completed ? "good" : "warn"}>
-                          {s.is_completed ? "Complete" : "In Progress"}
+                      render: (f) => (
+                        <Badge tone={f.requirement.is_completed ? "good" : "warn"}>
+                          {f.requirement.is_completed ? "Complete" : "In Progress"}
                         </Badge>
                       ),
                     },
-                    { header: "Updated", render: (s) => formatDisplayDate(s.updated_at) },
                   ]}
                 />
               </div>
             )}
-
-            <div>
-              <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                  Unit / Vendor Split
-                </h4>
-                <span className="text-xs text-ink-500">
-                  {selectedStage.unitBreakdown.length} destination
-                  {selectedStage.unitBreakdown.length === 1 ? "" : "s"} ·{" "}
-                  {selectedStage.qtyForwarded.toLocaleString()} {selectedStage.stage.unit_type} moved in
-                  total
-                </span>
-              </div>
-              <MultiUnitSplitTable units={selectedStage.unitBreakdown} />
-            </div>
 
             <div>
               <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
@@ -387,14 +403,6 @@ export function OrderDetailPage() {
                         )}
                       </div>
                     ),
-                  },
-                  {
-                    header: "Moved To",
-                    render: (e) => {
-                      const label = formatTransfer(e.transfer_type, e.transfer_to);
-                      if (label) return <Badge tone="external">{label}</Badge>;
-                      return <span className="text-ink-500">In-house</span>;
-                    },
                   },
                   {
                     header: "Forwarded",
@@ -458,10 +466,6 @@ export function OrderDetailPage() {
                 ),
               },
               { header: "By", render: (e) => nameOf(e.entered_by) },
-              {
-                header: "Moved To",
-                render: (e) => formatTransfer(e.transfer_type, e.transfer_to) ?? "In-house",
-              },
               { header: "Qty Fwd", render: (e) => e.qty_forwarded.toLocaleString() },
               {
                 header: "Result",

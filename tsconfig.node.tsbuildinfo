@@ -1,1 +1,1 @@
-{"root":["./vite.config.ts","./scripts/seed-admin.ts","./scripts/seed-demo.ts","./api/_supabaseadmin.ts","./api/admin-create-user.ts","./api/admin-delete-user.ts","./api/admin-update-password.ts"],"version":"5.9.3"}
+{"root":["./vite.config.ts","./scripts/check-gating.ts","./scripts/seed-admin.ts","./scripts/seed-demo.ts","./api/_supabaseadmin.ts","./api/admin-create-user.ts","./api/admin-delete-user.ts","./api/admin-update-password.ts"],"version":"5.9.3"}

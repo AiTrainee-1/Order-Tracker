@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { useMyWork, type GateStatus, type WorkItem } from "../../hooks/useMyWork";
+import { useMyWork, workBadge, type GateStatus, type WorkItem } from "../../hooks/useMyWork";
 import { publicImageUrl } from "../../lib/supabaseClient";
 import { formatDisplayDate } from "../../lib/workflow";
 import { Card, CardBody } from "../../components/ui/Card";
@@ -17,12 +17,6 @@ import { NextStagesStrip } from "../../components/dashboard/NextStagesStrip";
 const PAGE_SIZE = 9;
 
 type StatusFilter = "all" | "active" | "locked" | "completed" | "monitor";
-
-const GATE_BADGE: Record<GateStatus, { tone: "good" | "warn" | "neutral"; label: string }> = {
-  active: { tone: "warn", label: "Your Turn" },
-  completed: { tone: "good", label: "Completed" },
-  locked: { tone: "neutral", label: "Waiting" },
-};
 
 /** Ordering priority for the work grid: actionable first, done last. */
 const GATE_PRIORITY: Record<GateStatus, number> = { active: 0, locked: 1, completed: 2 };
@@ -198,16 +192,19 @@ function WorkItemCard({ item, onOpen }: { item: WorkItem; onOpen: () => void }) 
   const { assignment, orderProgress, gateStatus } = item;
   const order = assignment.order!;
   const imageUrl = publicImageUrl(order.image_path);
-  const gate = GATE_BADGE[gateStatus];
+  const gate = workBadge(item);
+  const isPartial = item.stageProgress?.isPartial ?? false;
   const currentStageLabel = orderProgress.stages[orderProgress.currentStageIndex]?.stage.label;
 
   const requiredAction = !assignment.can_enter_data
     ? "Monitor only — tap to view status"
-    : gateStatus === "completed"
-      ? "Your part is done — awaiting later stages"
-      : gateStatus === "locked"
-        ? `Waiting — order is at "${currentStageLabel}"`
-        : "Your turn — tap to enter today's production data";
+    : isPartial && item.stageProgress
+      ? `Not complete — ${item.stageProgress.qtyPending.toLocaleString()} ${item.stageProgress.stage.unit_type} still owed here`
+      : gateStatus === "completed"
+        ? "Your part is done — awaiting later stages"
+        : gateStatus === "locked"
+          ? `Waiting — order is at "${currentStageLabel}"`
+          : "Your turn — tap to enter today's production data";
 
   return (
     <button
@@ -252,7 +249,13 @@ function WorkItemCard({ item, onOpen }: { item: WorkItem; onOpen: () => void }) 
             <Badge tone={gate.tone}>{gate.label}</Badge>
           </div>
 
-          <p className="mt-auto rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5 text-xs font-medium text-blue-700">
+          <p
+            className={`mt-auto rounded-md border px-2 py-1.5 text-xs font-medium ${
+              isPartial
+                ? "border-amber-300 bg-amber-50 text-amber-800"
+                : "border-blue-200 bg-blue-50 text-blue-700"
+            }`}
+          >
             {requiredAction}
           </p>
         </CardBody>

@@ -27,6 +27,7 @@ export function OrdersPage() {
 
   const orders = data?.orders ?? [];
   const purchaseOrders = data?.purchaseOrders ?? [];
+  const sizes = data?.sizes ?? [];
 
   if (isLoading) return <Loader full label="Loading orders…" />;
 
@@ -133,6 +134,13 @@ export function OrdersPage() {
           initialOrder={editingOrder ?? undefined}
           initialPurchaseOrders={
             editingOrder ? purchaseOrders.filter((p) => p.order_id === editingOrder.id) : undefined
+          }
+          initialSizes={
+            editingOrder
+              ? sizes.filter((s) =>
+                  purchaseOrders.some((p) => p.id === s.po_id && p.order_id === editingOrder.id),
+                )
+              : undefined
           }
           existingImageUrl={editingOrder ? publicImageUrl(editingOrder.image_path) : undefined}
           onSubmit={handleSubmit}

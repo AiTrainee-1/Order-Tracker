@@ -8,13 +8,20 @@ export type TransferType = "none" | "branch" | "unit" | "outside" | "others";
 export type StageFormType =
   | "confirmation"
   | "material_planning"
-  | "simple_confirm"
+  | "supplier_dc"
   | "material_inward"
-  | "fabric_processing"
-  | "store_check"
+  | "knitting"
+  | "lot_process"
+  | "lot_inspection"
+  | "fabric_store"
+  | "simple_confirm"
   | "cutting"
-  | "dispatch_return"
-  | "sub_steps";
+  | "panel_check"
+  | "embroidery"
+  | "sewing"
+  | "garment_qc"
+  | "garment_process"
+  | "packing";
 
 export interface AppUser {
   id: string;
@@ -102,6 +109,11 @@ export interface StageEntry {
   external_unit_name: string | null;
   is_sent_outside: boolean;
   is_returned: boolean;
+  /** The operator moved this stage on. Deliberately independent of quantity —
+   * a stage can be forwarded with nothing counted yet (planning before the
+   * material arrives) and the next stage still has to unlock. */
+  is_forwarded: boolean;
+  /** Forwarded AND finished. Implies is_forwarded. */
   is_completed: boolean;
   branch: string | null;
   unit_name: string | null;
@@ -128,6 +140,139 @@ export interface StageAssignment {
   user_id: string;
   section_id: string;
   can_enter_data: boolean;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Production chain (migration 011)
+//
+// These are the QUANTITY layer. stage_entries above remains the GATING layer —
+// it says whether a stage is open, partial or complete; these say how much
+// actually moved. Keeping them apart lets a figure be corrected without
+// disturbing which stages are unlocked.
+// ---------------------------------------------------------------------------
+
+/** One size row of a purchase order — the base every downstream PCS figure
+ * (cut, checked, embroidered, sewn, packed) is compared against. */
+export interface PoSizeQuantity {
+  id: string;
+  po_id: string;
+  size_code: string;
+  sort_order: number;
+  quantity: number;
+  created_at: string;
+}
+
+/** A physical batch of fabric, created at Knitting or Dyeing and referenced by
+ * every stage after it. po_id null = the lot serves the whole order. */
+export interface ProductionLot {
+  id: string;
+  order_id: string;
+  po_id: string | null;
+  lot_no: string;
+  fabric_type: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export type MaterialCategory = "yarn" | "fabric";
+
+/** One user-defined yarn count ("40s") or fabric type ("Single Jersey") with
+ * its required quantity. Yarn counts are never hard-coded — the planner adds,
+ * renames and removes them per order. */
+export interface MaterialRequirement {
+  id: string;
+  order_id: string;
+  po_id: string | null;
+  category: MaterialCategory;
+  name: string;
+  required_qty: number;
+  unit: UnitType;
+  supplier: string | null;
+  sort_order: number;
+  is_completed: boolean;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+/** Which link of the procurement chain an entry represents. All four write
+ * against the SAME requirement, which is how Planning → Suppliers → Inward
+ * stay reconciled without any stage re-typing another's numbers. */
+export type MaterialEntryType = "plan" | "dc" | "receipt" | "inward";
+
+export interface MaterialEntry {
+  id: string;
+  requirement_id: string;
+  entry_type: MaterialEntryType;
+  qty: number;
+  entry_date: string;
+  supplier: string | null;
+  doc_no: string | null;
+  doc_date: string | null;
+  lot_ref: string | null;
+  notes: string | null;
+  entered_by: string;
+  created_at: string;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+/** 'process' for ordinary stages; 'send'/'receive' split Embroidery's dispatch
+ * from its return so both directions accumulate separately. */
+export type TxnType = "process" | "send" | "receive";
+
+/**
+ * One thing that happened at one stage. Every stage from Knitting to Packing
+ * writes here and reads its predecessor's rows from here.
+ *
+ * A row may carry only qty_in (a sewing line feed), only qty_out (that line's
+ * output later the same day), or both (a dyeing lot in and back). Each column
+ * sums independently, which is what makes repeat entries accumulate instead of
+ * overwriting one another.
+ */
+export interface ProductionTxn {
+  id: string;
+  order_id: string;
+  po_id: string | null;
+  section_id: string;
+  lot_id: string | null;
+  /** Null for KG stages; set from Cutting onwards. */
+  size_code: string | null;
+  txn_type: TxnType;
+  unit: UnitType;
+  qty_in: number;
+  qty_out: number;
+  qty_rejected: number;
+  qty_rework: number;
+  /** Knitting unit, embroidery vendor, or sewing line. */
+  ref_name: string | null;
+  doc_no: string | null;
+  entry_date: string;
+  notes: string | null;
+  entered_by: string;
+  created_at: string;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+/** Append-only history. Written by the app on every create/update so a
+ * corrected figure keeps its trail rather than silently replacing the old one. */
+export interface AuditLogRow {
+  id: string;
+  order_id: string | null;
+  po_id: string | null;
+  section_id: string | null;
+  entity: string;
+  entity_id: string | null;
+  action: "create" | "update" | "delete";
+  summary: string;
+  changes: Record<string, { from: unknown; to: unknown }> | null;
+  notes: string | null;
+  user_id: string;
   created_at: string;
 }
 
