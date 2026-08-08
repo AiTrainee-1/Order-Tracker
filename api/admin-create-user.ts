@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { requireAdminCaller, respondError, usernameToEmail } from "./_supabaseAdmin";
+import { requireAdminCaller, respondError, usernameToEmail } from "./_supabaseAdmin.js";
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 
