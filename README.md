@@ -497,6 +497,17 @@ a stage forwarded with no quantity yet — which Raw Material Planning always is
 from a saved plan, so it never goes orange and never unlocks what follows. Apply 012, then
 `npm run check:gating` to confirm.
 
+**Creating a user fails with 400 / 500 on `/api/admin-create-user`**
+Read the message in the toast, not the browser console line — the console only shows the status, the
+body carries the reason. `SERVER_MISCONFIGURED` means `SUPABASE_SERVICE_ROLE_KEY` (or
+`VITE_SUPABASE_URL`) is missing from `.env`; the response names which one. It fails on every attempt,
+not intermittently, because `/api/*` cannot create Supabase Auth accounts without it. Add it, then
+**restart the dev server** — Vite reads `.env` only at startup. On Vercel, set it in Project Settings
+→ Environment Variables and redeploy.
+
+The rest of the app keeps working meanwhile: the browser talks to Supabase with the anon key, and
+only admin user management needs the service role.
+
 **403 when saving a production entry**
 The RLS policy doesn't recognise your assignment. `production_txns` requires `can_enter_data` on
 that order + section, via either a per-order assignment or a global stage role. Editing the yarn or

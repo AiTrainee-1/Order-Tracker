@@ -1,14 +1,35 @@
 import { createClient } from "@supabase/supabase-js";
 import type { VercelRequest } from "@vercel/node";
 
+/** The server is missing configuration. Distinct from a bad request, because
+ * the caller can do nothing about it and retrying will never help. */
+export class ConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConfigError";
+  }
+}
+
 /** Server-only Supabase client using the service-role key. Never import this in src/. */
 export function supabaseAdmin() {
   const url = process.env.VITE_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceRoleKey) {
-    throw new Error("Supabase server env vars are not configured.");
+
+  // Named individually: "env vars are not configured" sent an admin hunting
+  // through all of them when only one was ever missing.
+  const missing = [
+    !url && "VITE_SUPABASE_URL",
+    !serviceRoleKey && "SUPABASE_SERVICE_ROLE_KEY",
+  ].filter(Boolean);
+
+  if (missing.length > 0) {
+    throw new ConfigError(
+      `Server is not configured: ${missing.join(" and ")} ${missing.length === 1 ? "is" : "are"} missing. ` +
+        "Add it to .env and restart the dev server, or to Vercel → Project Settings → Environment Variables and redeploy.",
+    );
   }
-  return createClient(url, serviceRoleKey, {
+
+  return createClient(url!, serviceRoleKey!, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }
@@ -70,11 +91,32 @@ export function usernameToEmail(username: string): string {
   return `${username.trim().toLowerCase()}@${AUTH_EMAIL_DOMAIN}`;
 }
 
-/** Standard error responder used by every api/admin-*.ts handler. */
+/**
+ * Standard error responder used by every api/admin-*.ts handler.
+ *
+ * Anything that reaches here was THROWN, and the handlers only throw for auth
+ * and configuration problems — every genuine validation failure is returned
+ * directly with an explicit 400. So the default here is 500, not 400.
+ *
+ * It used to be 400, which meant a missing SUPABASE_SERVICE_ROLE_KEY surfaced
+ * as "Bad Request" against a perfectly valid form. That sends an admin looking
+ * at what they typed instead of at the server, every single time, and the
+ * status code actively lied about whose fault it was.
+ */
 export function respondError(res: { status: (code: number) => { json: (body: unknown) => void } }, err: unknown) {
   if (err instanceof AuthError) {
     res.status(err.status).json({ error: err.message, code: err.code });
     return;
   }
-  res.status(400).json({ error: err instanceof Error ? err.message : "Something went wrong." });
+  if (err instanceof ConfigError) {
+    // Also logged: this one is for whoever runs the server, not the admin.
+    console.error(`[api] ${err.message}`);
+    res.status(500).json({ error: err.message, code: "SERVER_MISCONFIGURED" });
+    return;
+  }
+  console.error("[api] Unhandled error:", err);
+  res.status(500).json({
+    error: err instanceof Error ? err.message : "Something went wrong.",
+    code: "SERVER_ERROR",
+  });
 }
