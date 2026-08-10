@@ -2,7 +2,8 @@ import { useStageChain } from "../../../hooks/useProductionChain";
 import { buildRequirementFlow } from "../../../lib/chain";
 import { Loader } from "../../ui/Loader";
 import { MaterialLedger } from "./MaterialLedger";
-import { StageActions, useStageEntryBuilder } from "./shared";
+import { StageActions } from "./shared";
+import { useStageEntryBuilder } from "../../../hooks/useStageEntryBuilder";
 import { QtyBox, Section } from "./chainShared";
 import type { StageFormProps } from "./types";
 

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabaseClient";
+import { useDemoStore } from "../context/DemoModeContext";
 import type { StageEntry } from "../lib/types";
 
 export function useRecentStageEntries(orderId?: string, sectionId?: string) {
@@ -37,13 +38,18 @@ function invalidateAfterEntry(
 
 export function useCreateStageEntry() {
   const queryClient = useQueryClient();
+  const demo = useDemoStore();
   return useMutation({
     mutationFn: async (input: CreateStageEntryInput) => {
+      if (demo) {
+        demo.addStageEntry(input);
+        return;
+      }
       const { error } = await supabase.from("stage_entries").insert(input);
       if (error) throw error;
     },
     onSuccess: (_data, variables) =>
-      invalidateAfterEntry(queryClient, variables.order_id, variables.section_id),
+      !demo && invalidateAfterEntry(queryClient, variables.order_id, variables.section_id),
   });
 }
 

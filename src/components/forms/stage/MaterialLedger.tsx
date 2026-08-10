@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useAuth } from "../../../context/AuthContext";
+import { useEntryUser } from "../../../hooks/useEntryUser";
 import { useConfirm } from "../../../context/ConfirmContext";
 import { useToast } from "../../../context/ToastContext";
 import {
@@ -114,7 +114,7 @@ function CategoryBlock({
   entryTypes: MaterialEntryType[];
   onSaved: () => void;
 }) {
-  const { appUser } = useAuth();
+  const appUser = useEntryUser();
   const toast = useToast();
   const saveRequirement = useSaveRequirement();
   const recordAudit = useRecordAudit();
@@ -275,7 +275,7 @@ function RequirementRow({
   onSaved: () => void;
 }) {
   const { requirement: req, totals, balance } = flow;
-  const { appUser } = useAuth();
+  const appUser = useEntryUser();
   const toast = useToast();
   const confirm = useConfirm();
   const saveRequirement = useSaveRequirement();
@@ -481,7 +481,7 @@ function EntryLedger({
   sectionId: string;
   onSaved: () => void;
 }) {
-  const { appUser } = useAuth();
+  const appUser = useEntryUser();
   const toast = useToast();
   const confirm = useConfirm();
   const saveEntry = useSaveMaterialEntry();

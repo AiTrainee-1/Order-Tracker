@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabaseClient";
+import { useDemoStore } from "../context/DemoModeContext";
 import { useWorkflowStages } from "./useWorkflowStages";
 import { buildProductionChain, type ProductionChain } from "../lib/chain";
 import { effectiveSizes, sortSizes } from "../lib/sizes";
@@ -75,12 +76,34 @@ async function fetchBundle(orderId: string, poIds: string[]): Promise<Production
 
 export function useProductionBundle(orderId: string | undefined, purchaseOrders: PurchaseOrder[]) {
   const poIds = useMemo(() => purchaseOrders.map((p) => p.id), [purchaseOrders]);
+  const demo = useDemoStore();
 
-  return useQuery({
+  const query = useQuery({
     queryKey: [KEY, orderId, poIds],
-    enabled: !!orderId,
+    // Disabled outright in the sandbox — the Preview must not so much as read
+    // the real order, let alone write to it.
+    enabled: !!orderId && !demo,
     queryFn: () => fetchBundle(orderId!, poIds),
   });
+
+  const demoBundle = useMemo<ProductionBundle | undefined>(
+    () =>
+      demo
+        ? {
+            sizes: demo.sizes,
+            lots: demo.lots,
+            requirements: demo.requirements,
+            materialEntries: demo.materialEntries,
+            txns: demo.txns,
+          }
+        : undefined,
+    [demo],
+  );
+
+  if (demo) {
+    return { ...query, data: demoBundle, isLoading: false, isError: false } as typeof query;
+  }
+  return query;
 }
 
 /**
@@ -141,15 +164,22 @@ export function useProductionChain({
 /** The order's POs on their own — stage forms are handed an assignment, not an
  * order bundle, so they need to resolve the PO list themselves. */
 export function useOrderPurchaseOrders(orderId: string | undefined) {
-  return useQuery({
+  const demo = useDemoStore();
+
+  const query = useQuery({
     queryKey: ["order_pos", orderId],
-    enabled: !!orderId,
+    enabled: !!orderId && !demo,
     queryFn: async () => {
       const { data, error } = await supabase.from("purchase_orders").select("*").eq("order_id", orderId);
       if (error) throw error;
       return (data ?? []) as PurchaseOrder[];
     },
   });
+
+  if (demo) {
+    return { ...query, data: demo.purchaseOrders, isLoading: false, isError: false } as typeof query;
+  }
+  return query;
 }
 
 /**
@@ -231,20 +261,26 @@ export type NewTxn = Omit<ProductionTxn, "id" | "created_at" | "updated_at" | "u
 
 export function useCreateTxns() {
   const queryClient = useQueryClient();
+  const demo = useDemoStore();
   return useMutation({
     mutationFn: async (rows: NewTxn[]) => {
       const usable = rows.filter((r) => r.qty_in || r.qty_out || r.qty_rejected || r.qty_rework);
       if (usable.length === 0) return [] as ProductionTxn[];
+      if (demo) {
+        demo.addTxns(usable);
+        return [] as ProductionTxn[];
+      }
       const { data, error } = await supabase.from("production_txns").insert(usable).select("*");
       if (error) throw error;
       return (data ?? []) as ProductionTxn[];
     },
-    onSuccess: (_d, rows) => rows[0] && invalidateChain(queryClient, rows[0].order_id),
+    onSuccess: (_d, rows) => !demo && rows[0] && invalidateChain(queryClient, rows[0].order_id),
   });
 }
 
 export function useUpdateTxn() {
   const queryClient = useQueryClient();
+  const demo = useDemoStore();
   return useMutation({
     mutationFn: async ({
       id,
@@ -257,18 +293,23 @@ export function useUpdateTxn() {
       patch: Partial<ProductionTxn>;
       userId: string;
     }) => {
+      if (demo) {
+        demo.patchTxn(id, patch);
+        return;
+      }
       const { error } = await supabase
         .from("production_txns")
         .update({ ...patch, updated_by: userId })
         .eq("id", id);
       if (error) throw error;
     },
-    onSuccess: (_d, v) => invalidateChain(queryClient, v.orderId),
+    onSuccess: (_d, v) => !demo && invalidateChain(queryClient, v.orderId),
   });
 }
 
 export function useCreateLot() {
   const queryClient = useQueryClient();
+  const demo = useDemoStore();
   return useMutation({
     mutationFn: async (input: {
       order_id: string;
@@ -278,22 +319,28 @@ export function useCreateLot() {
       notes?: string | null;
       created_by: string;
     }) => {
+      if (demo) return demo.addLot({ lot_no: input.lot_no, po_id: input.po_id });
       const { data, error } = await supabase.from("production_lots").insert(input).select("*").single();
       if (error) throw error;
       return data as ProductionLot;
     },
-    onSuccess: (_d, v) => invalidateChain(queryClient, v.order_id),
+    onSuccess: (_d, v) => !demo && invalidateChain(queryClient, v.order_id),
   });
 }
 
 export function useDeleteLot() {
   const queryClient = useQueryClient();
+  const demo = useDemoStore();
   return useMutation({
     mutationFn: async ({ id, orderId: _orderId }: { id: string; orderId: string }) => {
+      if (demo) {
+        demo.removeLot(id);
+        return;
+      }
       const { error } = await supabase.from("production_lots").delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: (_d, v) => invalidateChain(queryClient, v.orderId),
+    onSuccess: (_d, v) => !demo && invalidateChain(queryClient, v.orderId),
   });
 }
 
@@ -304,6 +351,7 @@ export type NewRequirement = Omit<
 
 export function useSaveRequirement() {
   const queryClient = useQueryClient();
+  const demo = useDemoStore();
   return useMutation({
     mutationFn: async ({
       id,
@@ -314,6 +362,7 @@ export function useSaveRequirement() {
       input: Partial<NewRequirement> & { order_id: string };
       userId: string;
     }) => {
+      if (demo) return demo.saveRequirement(id, input as Partial<MaterialRequirement>);
       if (id) {
         const { error } = await supabase
           .from("material_requirements")
@@ -330,18 +379,23 @@ export function useSaveRequirement() {
       if (error) throw error;
       return (data as { id: string }).id;
     },
-    onSuccess: (_d, v) => invalidateChain(queryClient, v.input.order_id),
+    onSuccess: (_d, v) => !demo && invalidateChain(queryClient, v.input.order_id),
   });
 }
 
 export function useDeleteRequirement() {
   const queryClient = useQueryClient();
+  const demo = useDemoStore();
   return useMutation({
     mutationFn: async ({ id, orderId: _orderId }: { id: string; orderId: string }) => {
+      if (demo) {
+        demo.removeRequirement(id);
+        return;
+      }
       const { error } = await supabase.from("material_requirements").delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: (_d, v) => invalidateChain(queryClient, v.orderId),
+    onSuccess: (_d, v) => !demo && invalidateChain(queryClient, v.orderId),
   });
 }
 
@@ -352,6 +406,7 @@ export type NewMaterialEntry = Omit<
 
 export function useSaveMaterialEntry() {
   const queryClient = useQueryClient();
+  const demo = useDemoStore();
   return useMutation({
     mutationFn: async ({
       id,
@@ -364,6 +419,10 @@ export function useSaveMaterialEntry() {
       userId: string;
       orderId: string;
     }) => {
+      if (demo) {
+        demo.saveMaterialEntry(id, input as Partial<MaterialEntry>);
+        return;
+      }
       if (id) {
         const { error } = await supabase
           .from("material_entries")
@@ -375,18 +434,23 @@ export function useSaveMaterialEntry() {
       const { error } = await supabase.from("material_entries").insert(input);
       if (error) throw error;
     },
-    onSuccess: (_d, v) => invalidateChain(queryClient, v.orderId),
+    onSuccess: (_d, v) => !demo && invalidateChain(queryClient, v.orderId),
   });
 }
 
 export function useDeleteMaterialEntry() {
   const queryClient = useQueryClient();
+  const demo = useDemoStore();
   return useMutation({
     mutationFn: async ({ id, orderId: _orderId }: { id: string; orderId: string }) => {
+      if (demo) {
+        demo.removeMaterialEntry(id);
+        return;
+      }
       const { error } = await supabase.from("material_entries").delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: (_d, v) => invalidateChain(queryClient, v.orderId),
+    onSuccess: (_d, v) => !demo && invalidateChain(queryClient, v.orderId),
   });
 }
 
@@ -397,9 +461,10 @@ export function useDeleteMaterialEntry() {
 export type NewAuditRow = Omit<AuditLogRow, "id" | "created_at">;
 
 export function useAuditLog(orderId: string | undefined, entityId?: string) {
+  const demo = useDemoStore();
   return useQuery({
     queryKey: ["audit_log", orderId, entityId],
-    enabled: !!orderId,
+    enabled: !!orderId && !demo,
     queryFn: async () => {
       let q = supabase
         .from("audit_log")
@@ -424,12 +489,16 @@ export function useAuditLog(orderId: string | undefined, entityId?: string) {
  */
 export function useRecordAudit() {
   const queryClient = useQueryClient();
+  const demo = useDemoStore();
   return useMutation({
     mutationFn: async (row: NewAuditRow) => {
+      // The sandbox has no history to keep — and an audit row is the one thing
+      // that must never be fabricated.
+      if (demo) return;
       const { error } = await supabase.from("audit_log").insert(row);
       if (error) console.warn("Audit log write failed:", error.message);
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["audit_log"] }),
+    onSuccess: () => !demo && queryClient.invalidateQueries({ queryKey: ["audit_log"] }),
   });
 }
 

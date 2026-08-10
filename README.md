@@ -419,6 +419,27 @@ Stages that are genuinely different keep their own component: order confirmation
 procurement screens, and Embroidery — which renders two ledgers over one stage, dispatch and return,
 each with its own running total.
 
+### Preview runs the real form against memory
+
+Stage Roles → **Preview** renders the genuine stage form — the same
+`<StageFormRouter/>` the floor uses — on a sample order that exists only in
+memory, so anyone can practise before touching a live order.
+
+The guarantee that nothing is saved is enforced **at each write**, not around
+it. `DemoModeProvider` supplies a store; every mutation in
+`useProductionChain.ts` and `useStageEntries.ts` calls `useDemoStore()` first and
+updates that store instead of Supabase. Reads are disabled the same way, so a
+Preview doesn't even fetch the real order. Outside the provider `useDemoStore()`
+returns `null` and every hook behaves exactly as before.
+
+Putting the check inside the mutation means anyone reading `useCreateTxns` can
+see the protection. A wrapper further out would be one refactor away from being
+bypassed in silence.
+
+`useEntryUser()` gives the sandbox a fixed practice identity, so a Preview never
+depends on who is signed in — and, on real pages, replaces an `appUser?.id ?? ""`
+fallback that would have sent an empty string where a uuid was expected.
+
 ### Progress is computed client-side
 
 There are no database triggers or materialised views. `buildProductionChain()` and

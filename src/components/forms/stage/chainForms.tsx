@@ -4,7 +4,8 @@ import { useStageChain } from "../../../hooks/useProductionChain";
 import { STAGE, type ChainStage } from "../../../lib/chain";
 import { Loader } from "../../ui/Loader";
 import { Badge } from "../../ui/Badge";
-import { StageActions, useStageEntryBuilder } from "./shared";
+import { StageActions } from "./shared";
+import { useStageEntryBuilder } from "../../../hooks/useStageEntryBuilder";
 import {
   ChainStrip,
   LotSummaryTable,

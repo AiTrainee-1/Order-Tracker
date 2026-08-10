@@ -3,7 +3,8 @@ import { useToast } from "../../../context/ToastContext";
 import { useStageChain } from "../../../hooks/useProductionChain";
 import { Checkbox, Textarea } from "../../ui/FormControls";
 import { Loader } from "../../ui/Loader";
-import { StageActions, useStageEntryBuilder } from "./shared";
+import { StageActions } from "./shared";
+import { useStageEntryBuilder } from "../../../hooks/useStageEntryBuilder";
 import { QtyBox, Section } from "./chainShared";
 import type { StageFormProps } from "./types";
 

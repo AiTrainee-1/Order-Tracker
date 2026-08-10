@@ -10,7 +10,9 @@
     "lint": "eslint .",
     "check:gating": "tsx scripts/check-gating.ts",
     "seed:admin": "tsx scripts/seed-admin.ts",
-    "seed:demo": "tsx scripts/seed-demo.ts"
+    "seed:demo": "tsx scripts/seed-demo.ts",
+    "check:guides": "tsx scripts/check-stage-guides.ts",
+    "check": "npm run check:gating && npm run check:guides"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

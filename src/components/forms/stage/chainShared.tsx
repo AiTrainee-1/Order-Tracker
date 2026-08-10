@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, useMemo, useState } from "react";
-import { useAuth } from "../../../context/AuthContext";
+import { useEntryUser } from "../../../hooks/useEntryUser";
 import { useConfirm } from "../../../context/ConfirmContext";
 import { useToast } from "../../../context/ToastContext";
 import {
@@ -205,7 +205,7 @@ export function LotSelect({
   allowCreate?: boolean;
   label?: string;
 }) {
-  const { appUser } = useAuth();
+  const appUser = useEntryUser();
   const createLot = useCreateLot();
   const toast = useToast();
   const [adding, setAdding] = useState(false);
@@ -326,7 +326,7 @@ export interface DraftRow {
 
 let draftSeq = 0;
 
-export function blankDraft(overrides: Partial<DraftRow> = {}): DraftRow {
+function blankDraft(overrides: Partial<DraftRow> = {}): DraftRow {
   draftSeq += 1;
   return {
     key: `draft-${draftSeq}`,
@@ -388,7 +388,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
   { orderId, poId, sectionId, unit, cs, lots, sizes, config, onSaved, children },
   ref,
 ) {
-  const { appUser } = useAuth();
+  const appUser = useEntryUser();
   const toast = useToast();
   const confirm = useConfirm();
   const createTxns = useCreateTxns();
