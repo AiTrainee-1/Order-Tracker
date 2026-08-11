@@ -43,6 +43,10 @@ export function SimpleConfirmForm({
   async function handleForward(isFinal: boolean) {
     if (!appUser) return;
     setError(null);
+    if (!notes.trim()) {
+      toast.error("Add a note before continuing.");
+      return;
+    }
     try {
       const alreadyLogged = stageProgress?.qtyForwarded ?? 0;
       await submitMovement({
@@ -50,7 +54,7 @@ export function SimpleConfirmForm({
           qty_received: cs!.input,
           qty_completed_today: Math.max(cs!.input - alreadyLogged, 0),
           qty_forwarded: Math.max(cs!.input - alreadyLogged, 0),
-          notes: notes || (isFinal ? "Pattern / marker ready." : "Part of the pattern set ready."),
+          notes: notes.trim(),
         },
         action: isFinal ? "complete" : "forward",
       });
@@ -71,12 +75,16 @@ export function SimpleConfirmForm({
   async function savePlan() {
     if (!appUser) return;
     setError(null);
+    if (!notes.trim()) {
+      toast.error("Add a note before continuing.");
+      return;
+    }
     try {
       await submitMovement({
         base: {
           qty_received: cs!.input,
           qty_forwarded: 0,
-          notes: notes || (confirmed ? "Marker ready -  not yet released to Cutting." : "Marker in progress."),
+          notes: notes.trim(),
         },
         action: "plan",
       });
@@ -137,7 +145,8 @@ export function SimpleConfirmForm({
       <Checkbox checked={confirmed} onChange={setConfirmed} label="Pattern / marker is ready" />
 
       <Textarea
-        label="Notes (optional)"
+        label="Notes"
+        required
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
         placeholder="e.g. Marker planned at 1:2:3:3:2:1 -  82% efficiency"

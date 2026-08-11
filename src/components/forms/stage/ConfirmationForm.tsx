@@ -34,13 +34,17 @@ export function ConfirmationForm({ order, assignment, onForwarded, showDetails }
   async function handleForward(isFinal: boolean) {
     if (!appUser) return;
     setError(null);
+    if (!notes.trim()) {
+      toast.error("Add a note before continuing.");
+      return;
+    }
     try {
       await submitMovement({
         base: {
           qty_received: total,
           qty_completed_today: total,
           qty_forwarded: total,
-          notes: notes || (isFinal ? "Order confirmed." : "Order confirmed -  awaiting paperwork."),
+          notes: notes.trim(),
         },
         action: isFinal ? "complete" : "forward",
       });
@@ -57,17 +61,21 @@ export function ConfirmationForm({ order, assignment, onForwarded, showDetails }
     }
   }
 
-  /** Records the note against the order without releasing it to planning - 
+  /** Records the note against the order without releasing it to planning -
    * used when the sizes need checking with the buyer first. */
   async function savePlan() {
     if (!appUser) return;
     setError(null);
+    if (!notes.trim()) {
+      toast.error("Add a note before continuing.");
+      return;
+    }
     try {
       await submitMovement({
         base: {
           qty_received: total,
           qty_forwarded: 0,
-          notes: notes || "Reviewed -  not yet confirmed.",
+          notes: notes.trim(),
         },
         action: "plan",
       });
@@ -148,7 +156,8 @@ export function ConfirmationForm({ order, assignment, onForwarded, showDetails }
       )}
 
       <Textarea
-        label="Notes (optional)"
+        label="Notes"
+        required
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
         placeholder="Anything the planning team should know before material is committed…"

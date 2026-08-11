@@ -1,4 +1,14 @@
 import type { AssignmentWithDetails, Order, PurchaseOrder } from "./types";
+import { applyExtraPercent } from "./sizes";
+
+/** Order-wide production quantity, extra% included -  the sum of every PO's
+ * buyer quantity plus its own configured extra%. Data entry is never split by
+ * PO now (one order → one data-entry form per stage), so this is the number
+ * every order-level assignment measures against, from Order Confirmation
+ * through Packing. */
+export function getOrderProductionQty(purchaseOrders: PurchaseOrder[]): number {
+  return purchaseOrders.reduce((sum, po) => sum + applyExtraPercent(po.quantity, po.extra_percent), 0);
+}
 
 /** The fixed reference quantity every post-Cutting stage compares against.
  * Before Cutting completes there's no fixed PCS number yet, so this falls

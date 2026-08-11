@@ -7,12 +7,14 @@ import {
   useCreateTxns,
   useUpdateTxn,
   useRecordAudit,
+  useOrderPurchaseOrders,
   diffFields,
   type NewTxn,
 } from "../../../hooks/useProductionChain";
 import type { ChainStage } from "../../../lib/chain";
 import { formatDisplayDate } from "../../../lib/workflow";
 import { applyExtraPercent } from "../../../lib/sizes";
+import { getOrderProductionQty } from "../../../lib/orderQty";
 import { Button } from "../../ui/Button";
 import { Badge } from "../../ui/Badge";
 import { Input, Select, Textarea } from "../../ui/FormControls";
@@ -115,18 +117,28 @@ export function ChainStrip({ cs, inputHint }: { cs: ChainStage; inputHint?: stri
  * already comes from effectiveSizes(), which applies the PO's extra_percent
  * before anything downstream ever sees the number. This banner doesn't change
  * that math -  it just makes visible what was previously implicit.
+ *
+ * Data entry is order-wide now (never split by PO), so the numbers here are
+ * summed across every PO under the order: each PO's buyer quantity plus its
+ * own configured extra%, combined into one order-level total. "Extra %"
+ * becomes the blended, effective rate across the whole order -  exact when
+ * there's one PO, a true weighted average when there are several.
  */
 export function OrderQtyBanner({ order, assignment }: { order: Order; assignment: AssignmentWithDetails }) {
+  const posQuery = useOrderPurchaseOrders(order.id);
   const po = assignment.po;
+
   const buyerQty = po ? po.quantity : order.total_qty;
-  const extraPercent = po?.extra_percent ?? 0;
-  const productionQty = applyExtraPercent(buyerQty, extraPercent);
+  const productionQty = po
+    ? applyExtraPercent(po.quantity, po.extra_percent)
+    : getOrderProductionQty(posQuery.data ?? []) || buyerQty;
   const extraQty = productionQty - buyerQty;
+  const extraPercent = buyerQty > 0 ? Math.round((extraQty / buyerQty) * 1000) / 10 : 0;
 
   return (
     <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/70 bg-white/70 p-2.5 sm:grid-cols-4">
       <QtyBox label="Buyer Order Quantity" value={buyerQty} unit="PCS" hint="reference / comparison only" />
-      <QtyBox label="Extra %" value={extraPercent} hint="configured for this PO -  e.g. 2 means +2%" />
+      <QtyBox label="Extra %" value={extraPercent} hint="effective rate across every PO in this order" />
       <QtyBox label="Extra Quantity" value={extraQty} unit="PCS" hint="added on top of buyer order qty" />
       <QtyBox
         label="Final Production Quantity"
@@ -523,6 +535,10 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
       toast.show("Every entry needs a size.", "error");
       return false;
     }
+    if (usable.some((d) => !d.notes.trim())) {
+      toast.show("Add a note for every entry.", "error");
+      return false;
+    }
 
     try {
       const rows = usable.map(toTxn);
@@ -563,6 +579,10 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
     if (!typed) return true;
     if (!gridLotId) {
       toast.show("Select a lot first.", "error");
+      return false;
+    }
+    if (!gridNotes.trim()) {
+      toast.show("Add a note for this entry.", "error");
       return false;
     }
     const rows: NewTxn[] = sizes
@@ -850,6 +870,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                             </div>
                             <Textarea
                               label="Reason for the correction (required)"
+                              required
                               rows={2}
                               value={editDraft.notes}
                               onChange={(e) => setEditDraft({ ...editDraft, notes: e.target.value })}
@@ -955,6 +976,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
             </div>
             <Textarea
               label="Notes"
+              required
               rows={2}
               value={gridNotes}
               onChange={(e) => setGridNotes(e.target.value)}
@@ -1078,9 +1100,10 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                 <div className="mt-2">
                   <Input
                     label="Notes"
+                    required
                     value={d.notes}
                     onChange={(e) => patchDraft(d.key, { notes: e.target.value })}
-                    placeholder="Optional -  kept with this entry in the history"
+                    placeholder="Kept with this entry in the history"
                   />
                 </div>
               </div>

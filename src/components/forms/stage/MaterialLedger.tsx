@@ -571,6 +571,10 @@ function EntryLedger({
       toast.show("Enter a quantity.", "error");
       return;
     }
+    if (!form.notes.trim()) {
+      toast.show("Add a note before saving.", "error");
+      return;
+    }
 
     const input = {
       requirement_id: requirementId,
@@ -788,6 +792,7 @@ function EntryLedger({
           </div>
           <Textarea
             label="Notes"
+            required
             rows={2}
             value={form.notes}
             onChange={(e) => setForm({ ...form, notes: e.target.value })}

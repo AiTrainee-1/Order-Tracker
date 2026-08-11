@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { DemoModeProvider, useDemoStore } from "../../../context/DemoModeContext";
 import { buildOrderProgress } from "../../../lib/progress";
+import { getOrderProductionQty } from "../../../lib/orderQty";
 import { DEMO_ORDER, DEMO_PO } from "../../../lib/demoData";
 import { Button } from "../../ui/Button";
 import { StageFormRouter } from "./StageFormRouter";
@@ -37,19 +38,20 @@ export function StagePreviewSandbox({
 function SandboxBody({ stage, allStages }: { stage: WorkflowStage; allStages: WorkflowStage[] }) {
   const demo = useDemoStore()!;
 
-  /** A stand-in assignment so the form believes it's scoped to a real PO. */
+  /** A stand-in assignment, order-wide like every real one -  data entry is
+   * never scoped to a single PO. */
   const assignment = useMemo<AssignmentWithDetails>(
     () => ({
       id: "demo-assignment",
       user_id: "demo-user",
       order_id: DEMO_ORDER.id,
-      po_id: DEMO_PO.id,
+      po_id: null,
       section_id: stage.id,
       unit_name: null,
       can_enter_data: true,
       created_at: new Date().toISOString(),
       order: DEMO_ORDER,
-      po: DEMO_PO,
+      po: null,
       section: stage,
     }),
     [stage],
@@ -59,8 +61,8 @@ function SandboxBody({ stage, allStages }: { stage: WorkflowStage; allStages: Wo
    * pressing Move Forward visibly changes the stage's state. */
   const stageProgress = useMemo(() => {
     const progress = buildOrderProgress(DEMO_ORDER, allStages, demo.stageEntries, {
-      totalQty: DEMO_PO.quantity,
-      cutQuantity: DEMO_PO.cut_quantity,
+      totalQty: getOrderProductionQty([DEMO_PO]) || DEMO_ORDER.total_qty,
+      cutQuantity: DEMO_ORDER.cut_quantity,
     });
     return progress.stages.find((s) => s.stage.id === stage.id);
   }, [allStages, demo.stageEntries, stage.id]);

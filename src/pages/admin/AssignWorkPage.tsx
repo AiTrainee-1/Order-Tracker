@@ -9,7 +9,7 @@ import {
 } from "../../hooks/useAssignments";
 import { useStageAssignments } from "../../hooks/useStageAssignments";
 import { Card, CardBody, CardHeader } from "../../components/ui/Card";
-import { Select, Input, Toggle, Checkbox } from "../../components/ui/FormControls";
+import { Select, Input, Toggle } from "../../components/ui/FormControls";
 import { Button } from "../../components/ui/Button";
 import { Table } from "../../components/ui/Table";
 import { Badge } from "../../components/ui/Badge";
@@ -31,7 +31,6 @@ export function AssignWorkPage() {
   const [userId, setUserId] = useState("");
   const [ioNo, setIoNo] = useState("");
   const [orderId, setOrderId] = useState("");
-  const [poIds, setPoIds] = useState<Set<string>>(new Set()); // empty = all POs
   const [sectionIds, setSectionIds] = useState<Set<string>>(new Set());
   const [unitName, setUnitName] = useState("");
   const [canEnterData, setCanEnterData] = useState(true);
@@ -39,14 +38,9 @@ export function AssignWorkPage() {
   const [success, setSuccess] = useState<string | null>(null);
 
   const orders = useMemo(() => ordersData?.orders ?? [], [ordersData]);
-  const purchaseOrders = useMemo(() => ordersData?.purchaseOrders ?? [], [ordersData]);
 
   const ioNumbers = useMemo(() => Array.from(new Set(orders.map((o) => o.io_no))), [orders]);
   const ordersForIo = useMemo(() => orders.filter((o) => o.io_no === ioNo), [orders, ioNo]);
-  const posForOrder = useMemo(
-    () => purchaseOrders.filter((p) => p.order_id === orderId),
-    [purchaseOrders, orderId],
-  );
 
   // Sections this exact user is already assigned to on this order -  pre-checked
   // (and locked) so the admin never re-assigns the same scope.
@@ -105,7 +99,6 @@ export function AssignWorkPage() {
     if (!order) return;
     setIoNo(order.io_no);
     setOrderId(order.id);
-    setPoIds(new Set());
   }
 
   const isLoading = usersLoading || ordersLoading || stagesLoading || assignmentsLoading;
@@ -120,15 +113,6 @@ export function AssignWorkPage() {
     });
   }
 
-  function togglePo(id: string) {
-    setPoIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
   async function handleSubmit() {
     setError(null);
     setSuccess(null);
@@ -136,32 +120,24 @@ export function AssignWorkPage() {
       setError("Select a user, an order, and at least one new section.");
       return;
     }
-    // Empty selection means "every PO" -  represented by a single po_id: null row.
-    const poTargets: (string | null)[] = poIds.size > 0 ? Array.from(poIds) : [null];
-    // Exact (section, po) rows this user already has -  skip them so we never
-    // duplicate an assignment (which would also trip the DB unique constraint).
-    const existingKeys = new Set(
-      existingForUserOrder.map((a) => `${a.section_id}::${a.po_id ?? "all"}`),
-    );
+    // Data entry is order-wide, never PO-scoped -  every assignment covers the
+    // whole order (po_id: null). Skip sections this user already has, or
+    // covers via a global stage-role default.
+    const existingSectionIds = new Set(existingForUserOrder.map((a) => a.section_id));
     const jobs = Array.from(sectionIds)
-      // Skip sections the user already covers via a global stage-role default.
-      .filter((sectionId) => !userDefaultSectionIds.has(sectionId))
-      .flatMap((sectionId) =>
-        poTargets
-          .filter((poId) => !existingKeys.has(`${sectionId}::${poId ?? "all"}`))
-          .map((poId) =>
-            createAssignment.mutateAsync({
-              user_id: userId,
-              order_id: orderId,
-              po_id: poId,
-              section_id: sectionId,
-              unit_name: unitName || null,
-              can_enter_data: canEnterData,
-            }),
-          ),
+      .filter((sectionId) => !userDefaultSectionIds.has(sectionId) && !existingSectionIds.has(sectionId))
+      .map((sectionId) =>
+        createAssignment.mutateAsync({
+          user_id: userId,
+          order_id: orderId,
+          po_id: null,
+          section_id: sectionId,
+          unit_name: unitName || null,
+          can_enter_data: canEnterData,
+        }),
       );
     if (jobs.length === 0) {
-      setError("Every selected section is already assigned to this user for that PO scope.");
+      setError("Every selected section is already assigned to this user.");
       return;
     }
     try {
@@ -182,7 +158,8 @@ export function AssignWorkPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-ink-900">Assign Work</h1>
         <p className="text-sm text-ink-500">
-          Scope exactly which order, PO, and section a user is responsible for.
+          Scope exactly which order and section a user is responsible for. Data entry always covers
+          the whole order -  every PO under it combined -  not a single PO.
         </p>
       </div>
 
@@ -218,7 +195,6 @@ export function AssignWorkPage() {
               onChange={(e) => {
                 setIoNo(e.target.value);
                 setOrderId("");
-                setPoIds(new Set());
               }}
             >
               <option value="">Select IO/No…</option>
@@ -232,10 +208,7 @@ export function AssignWorkPage() {
             <Select
               label="Style / Color"
               value={orderId}
-              onChange={(e) => {
-                setOrderId(e.target.value);
-                setPoIds(new Set());
-              }}
+              onChange={(e) => setOrderId(e.target.value)}
               disabled={!ioNo}
             >
               <option value="">Select style/color…</option>
@@ -245,37 +218,6 @@ export function AssignWorkPage() {
                 </option>
               ))}
             </Select>
-          </div>
-
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-xs font-medium text-ink-700">
-                PO(s) -  leave all unchecked to cover every PO (tracked separately, one work item per PO)
-              </p>
-              {posForOrder.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setPoIds(new Set())}
-                  className="text-xs font-medium text-brand hover:text-brand-dark"
-                >
-                  Clear (All POs)
-                </button>
-              )}
-            </div>
-            {!orderId ? (
-              <p className="text-xs text-ink-400">Select an order above to see its POs.</p>
-            ) : (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {posForOrder.map((po) => (
-                  <Checkbox
-                    key={po.id}
-                    checked={poIds.has(po.id)}
-                    onChange={() => togglePo(po.id)}
-                    label={`${po.po_number} (${po.quantity.toLocaleString()} pcs)`}
-                  />
-                ))}
-              </div>
-            )}
           </div>
 
           <div>

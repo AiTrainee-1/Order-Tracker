@@ -7,6 +7,7 @@ import { useWorkflowStages } from "./useWorkflowStages";
 import { useStageAssignments } from "./useStageAssignments";
 import { useOrdersList } from "./useOrdersList";
 import { buildOrderProgress, type OrderProgress, type StageProgress } from "../lib/progress";
+import { getOrderProductionQty } from "../lib/orderQty";
 import type { AssignmentWithDetails } from "../lib/types";
 
 export type GateStatus = "active" | "locked" | "completed";
@@ -45,27 +46,17 @@ export function workBadge(item: WorkItem): WorkBadge {
 }
 
 /**
- * Every work item is scoped to (order, PO, section) -  never just (order,
- * section). Tracking is PO-first: an assignment that covers "every PO" (no
- * po_id set, whether explicit or a stage-role default) is expanded here into
- * one item per purchase order, each with its own progress/quantities against
- * that PO's own numbers. An assignment already scoped to a specific PO passes
- * through unchanged. Orders with no POs yet fall back to a single order-level
- * item so nothing disappears from the work list.
+ * Every work item is scoped to (order, section) -  never (order, PO, section).
+ * Data entry is never split by PO: one order can carry several purchase
+ * orders, but there's exactly one data-entry form per stage, measuring
+ * against the order's total quantity (every PO's buyer quantity plus its own
+ * extra%, summed -  see getOrderProductionQty). An assignment row that still
+ * carries a specific po_id, from before this changed, is forced back to
+ * order-wide here rather than fragmenting the work list.
  */
-function expandAcrossPOs(
-  base: Omit<AssignmentWithDetails, "po" | "po_id"> & { po_id: string | null; po?: AssignmentWithDetails["po"] },
-  purchaseOrders: PurchaseOrder[],
-): AssignmentWithDetails[] {
-  if (base.po_id) return [base as AssignmentWithDetails]; // already scoped to a real PO
-  if (purchaseOrders.length === 0) return [{ ...base, po_id: null, po: null } as AssignmentWithDetails];
-
-  return purchaseOrders.map((po) => ({
-    ...base,
-    id: `${base.id}::po:${po.id}`,
-    po_id: po.id,
-    po,
-  })) as AssignmentWithDetails[];
+function toOrderWide<T extends { po_id: string | null; po?: AssignmentWithDetails["po"] }>(base: T): T {
+  if (!base.po_id) return base;
+  return { ...base, po_id: null, po: null };
 }
 
 export function useMyWork(userId: string | undefined) {
@@ -83,52 +74,53 @@ export function useMyWork(userId: string | undefined) {
   }, [ordersQuery.data]);
 
   // Effective assignments = explicit per-order rows PLUS global stage-role
-  // defaults, both expanded across every PO of their order (see
-  // expandAcrossPOs) -  skipping any (order, PO, section) an explicit row
-  // already covers, so a default never duplicates a more specific assignment.
+  // defaults, all forced order-wide (see toOrderWide). A legacy assignment row
+  // still scoped to a specific PO collapses onto the same order-wide item as
+  // any other row for that (order, section, unit) -  duplicates are dropped,
+  // not fanned out. A default never duplicates an explicit assignment either.
   const effectiveAssignments = useMemo<AssignmentWithDetails[]>(() => {
     const explicitBase = (assignmentsQuery.data ?? []).filter((a) => !!a.order);
-    const explicit = explicitBase.flatMap((a) =>
-      expandAcrossPOs(a, purchaseOrdersByOrderId.get(a.order_id) ?? []),
-    );
+    const seen = new Set<string>();
+    const explicit: AssignmentWithDetails[] = [];
+    for (const a of explicitBase) {
+      const wide = toOrderWide(a);
+      const key = `${wide.order_id}::${wide.section_id}::${wide.unit_name ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      explicit.push(wide);
+    }
     if (!userId) return explicit;
 
     const stages = stagesQuery.data ?? [];
     const orders = ordersQuery.data?.orders ?? [];
     const stagesById = new Map(stages.map((s) => [s.id, s]));
     const myDefaults = (stageDefaultsQuery.data ?? []).filter((sa) => sa.user_id === userId);
-    const explicitKeys = new Set(explicit.map((a) => `${a.order_id}::${a.po_id ?? "none"}::${a.section_id}`));
+    const explicitKeys = new Set(explicit.map((a) => `${a.order_id}::${a.section_id}`));
 
     const synthetic: AssignmentWithDetails[] = [];
     for (const sa of myDefaults) {
       const section = stagesById.get(sa.section_id);
       if (!section) continue;
       for (const order of orders) {
-        const expanded = expandAcrossPOs(
-          {
-            id: `default:${sa.section_id}:${order.id}`,
-            user_id: userId,
-            order_id: order.id,
-            po_id: null,
-            section_id: sa.section_id,
-            unit_name: null,
-            can_enter_data: sa.can_enter_data,
-            created_at: sa.created_at,
-            order,
-            po: null,
-            section,
-          },
-          purchaseOrdersByOrderId.get(order.id) ?? [],
-        );
-        for (const item of expanded) {
-          const key = `${item.order_id}::${item.po_id ?? "none"}::${item.section_id}`;
-          if (explicitKeys.has(key)) continue;
-          synthetic.push(item);
-        }
+        const key = `${order.id}::${sa.section_id}`;
+        if (explicitKeys.has(key)) continue;
+        synthetic.push({
+          id: `default:${sa.section_id}:${order.id}`,
+          user_id: userId,
+          order_id: order.id,
+          po_id: null,
+          section_id: sa.section_id,
+          unit_name: null,
+          can_enter_data: sa.can_enter_data,
+          created_at: sa.created_at,
+          order,
+          po: null,
+          section,
+        });
       }
     }
     return [...explicit, ...synthetic];
-  }, [assignmentsQuery.data, stageDefaultsQuery.data, ordersQuery.data, stagesQuery.data, userId, purchaseOrdersByOrderId]);
+  }, [assignmentsQuery.data, stageDefaultsQuery.data, ordersQuery.data, stagesQuery.data, userId]);
 
   const orderIds = useMemo(
     () => Array.from(new Set(effectiveAssignments.map((a) => a.order_id))),
@@ -153,15 +145,17 @@ export function useMyWork(userId: string | undefined) {
     const entries = entriesQuery.data ?? [];
 
     return effectiveAssignments.map((a) => {
-      // Every item is PO-scoped now (or order-level only when the order truly
-      // has no POs yet) -  only that PO's movement counts toward its progress.
-      const orderEntries = entries.filter(
-        (e) => e.order_id === a.order_id && (a.po_id ? e.po_id === a.po_id : true),
-      );
-      const qtyBaseline = a.po
-        ? { totalQty: a.po.quantity, cutQuantity: a.po.cut_quantity }
-        : undefined;
-      const orderProgress = buildOrderProgress(a.order as Order, stagesQuery.data!, orderEntries, qtyBaseline);
+      // Order-wide now: every entry for the order counts, regardless of
+      // whatever po_id a row happens to carry (old PO-scoped entries included).
+      const orderEntries = entries.filter((e) => e.order_id === a.order_id);
+      // Extra%-inclusive production total across every PO of the order -  the
+      // same number ConfirmationForm/OrderQtyBanner/the chain forms already
+      // measure against. Falls back to the order's own total_qty when it has
+      // no POs configured yet.
+      const productionQty = getOrderProductionQty(purchaseOrdersByOrderId.get(a.order_id) ?? []);
+      const order = a.order as Order;
+      const qtyBaseline = { totalQty: productionQty || order.total_qty, cutQuantity: order.cut_quantity };
+      const orderProgress = buildOrderProgress(order, stagesQuery.data!, orderEntries, qtyBaseline);
       const stageProgress = orderProgress.stages.find((s) => s.stage.id === a.section_id);
 
       // A stage opens once every earlier stage has moved goods on -  completed
@@ -184,7 +178,7 @@ export function useMyWork(userId: string | undefined) {
         isDefault: a.id.startsWith("default:"),
       };
     });
-  }, [effectiveAssignments, stagesQuery.data, entriesQuery.data]);
+  }, [effectiveAssignments, stagesQuery.data, entriesQuery.data, purchaseOrdersByOrderId]);
 
   return {
     workItems,
