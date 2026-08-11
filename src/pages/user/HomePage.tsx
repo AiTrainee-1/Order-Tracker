@@ -13,6 +13,13 @@ import { Input } from "../../components/ui/FormControls";
 import { FilterTabs } from "../../components/ui/FilterTabs";
 import { Button } from "../../components/ui/Button";
 import { NextStagesStrip } from "../../components/dashboard/NextStagesStrip";
+import {
+  cardStatusAccent,
+  cardStatusBorder,
+  cardStatusShadow,
+  cardStatusSoftBg,
+  type CardStatusTone,
+} from "../../lib/theme";
 
 const PAGE_SIZE = 9;
 
@@ -42,6 +49,15 @@ function matchesStatus(item: WorkItem, status: StatusFilter): boolean {
   if (status === "all") return true;
   if (status === "monitor") return !item.assignment.can_enter_data;
   return item.gateStatus === status;
+}
+
+/** Completed → green, Your Turn → orange, Waiting → grey -  the same three
+ * colours as the status tabs above, so a card's colour always matches
+ * whichever tab it would sit under. */
+function homeCardTone(item: WorkItem): CardStatusTone {
+  if (item.gateStatus === "active") return "yourTurn";
+  if (item.gateStatus === "completed") return "completed";
+  return "notStarted";
 }
 
 export function HomePage() {
@@ -206,60 +222,67 @@ function WorkItemCard({ item, onOpen }: { item: WorkItem; onOpen: () => void }) 
           ? `Waiting -  order is at "${currentStageLabel}"`
           : "Your turn -  tap to enter today's production data";
 
+  const tone = homeCardTone(item);
+
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="w-full appearance-none border-0 bg-transparent p-0 text-left"
+      style={cardStatusSoftBg[tone]}
+      className={`group relative flex h-full w-full flex-col gap-3 overflow-hidden rounded-2xl border ${cardStatusBorder[tone]} p-4 text-left transition-transform duration-150 hover:-translate-y-0.5 ${cardStatusShadow[tone]}`}
     >
-      <Card className="h-full transition-shadow hover:shadow-[0_18px_44px_-16px_rgba(30,41,90,0.45)]">
-        <CardBody className="flex h-full flex-col gap-3">
-          <div className="flex gap-3">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/80 bg-white/70">
-              {imageUrl ? (
-                <img src={imageUrl} alt={order.style} className="h-full w-full object-cover" />
-              ) : (
-                <GarmentPlaceholder className="h-7 w-7 text-ink-500" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between gap-2">
-                <p className="truncate text-sm font-semibold text-ink-900">{order.style}</p>
-                {!assignment.can_enter_data && <Badge tone="info">Monitor</Badge>}
-              </div>
-              <p className="truncate text-xs text-ink-500">
-                IO {order.io_no} · {order.color} {assignment.po ? `· PO ${assignment.po.po_number}` : ""}
-              </p>
-              <p className="mt-1 truncate text-xs font-medium text-ink-700">
-                Section: {assignment.section?.label}
-                {assignment.unit_name ? ` (${assignment.unit_name})` : ""}
-              </p>
-            </div>
+      <span className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: cardStatusAccent[tone] }} />
+
+      <div className="flex gap-3">
+        <div
+          className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white ring-2 ring-inset"
+          style={{ boxShadow: `inset 0 0 0 2px ${cardStatusAccent[tone]}33` }}
+        >
+          {imageUrl ? (
+            <img src={imageUrl} alt={order.style} className="h-full w-full object-cover" />
+          ) : (
+            <GarmentPlaceholder className="h-7 w-7 text-ink-500" />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-sm font-bold text-ink-900">{order.style}</p>
+            {!assignment.can_enter_data && <Badge tone="info">Monitor</Badge>}
           </div>
-
-          <ProgressBar value={orderProgress.overallProgressPct} showLabel />
-
-          <NextStagesStrip
-            stages={orderProgress.stages}
-            currentStageIndex={orderProgress.currentStageIndex}
-          />
-
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-ink-500">Delivery {formatDisplayDate(order.delivery_date)}</span>
-            <Badge tone={gate.tone}>{gate.label}</Badge>
-          </div>
-
-          <p
-            className={`mt-auto rounded-md border px-2 py-1.5 text-xs font-medium ${
-              isPartial
-                ? "border-amber-300 bg-amber-50 text-amber-800"
-                : "border-blue-200 bg-blue-50 text-blue-700"
-            }`}
-          >
-            {requiredAction}
+          <p className="truncate text-xs text-ink-600">
+            IO {order.io_no} · {order.color} {assignment.po ? `· PO ${assignment.po.po_number}` : ""}
           </p>
-        </CardBody>
-      </Card>
+          <p className="mt-1 truncate text-xs font-semibold text-ink-800">
+            Section: {assignment.section?.label}
+            {assignment.unit_name ? ` (${assignment.unit_name})` : ""}
+          </p>
+        </div>
+      </div>
+
+      <ProgressBar value={orderProgress.overallProgressPct} showLabel />
+
+      <NextStagesStrip
+        stages={orderProgress.stages}
+        currentStageIndex={orderProgress.currentStageIndex}
+      />
+
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-ink-600">Delivery {formatDisplayDate(order.delivery_date)}</span>
+        <span
+          className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold text-white"
+          style={{ backgroundColor: cardStatusAccent[tone] }}
+        >
+          {gate.label}
+        </span>
+      </div>
+
+      <p
+        className={`mt-auto rounded-md border bg-white/80 px-2 py-1.5 text-xs font-medium ${
+          isPartial ? "border-amber-300 text-amber-800" : "border-black/10 text-ink-700"
+        }`}
+      >
+        {requiredAction}
+      </p>
     </button>
   );
 }

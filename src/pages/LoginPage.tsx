@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Loader } from "../components/ui/Loader";
 import { BrandMark } from "../components/ui/BrandMark";
+import { FluidGlassBackground } from "../components/ui/FluidGlassBackground";
 import {
   authBackground,
   brandGradient,
@@ -47,6 +48,8 @@ export function LoginPage() {
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute inset-0 opacity-[0.5]" style={dotTexture} />
       </div>
+
+      <FluidGlassBackground />
 
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center justify-center gap-10 px-5 py-12 lg:flex-row lg:justify-between lg:gap-16 lg:px-8">
         {/* Brand side -  dark text on the light mesh. */}
