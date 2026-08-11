@@ -99,11 +99,13 @@ export function Toggle({
         onClick={() => onChange(!checked)}
         style={checked ? brandGradient : undefined}
         className={`relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 ${
-          checked ? "shadow-[0_4px_12px_-4px_rgba(21,94,239,0.6)]" : "bg-ink-200"
+          checked
+            ? "shadow-[0_4px_12px_-4px_rgba(21,94,239,0.6)]"
+            : "bg-ink-200 shadow-[inset_2px_2px_5px_-2px_rgba(30,41,90,0.3),inset_-2px_-2px_5px_-2px_rgba(255,255,255,0.8)]"
         }`}
       >
         <span
-          className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+          className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-[2px_2px_4px_-1px_rgba(30,41,90,0.35)] transition-transform duration-200 ${
             checked ? "translate-x-5" : "translate-x-0"
           }`}
         />
@@ -122,13 +124,36 @@ export function Checkbox({
   label: ReactNode;
 }) {
   return (
-    <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-700">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 shrink-0 rounded border border-ink-300 text-brand focus:ring-brand"
-      />
+    <label className="group flex cursor-pointer items-center gap-2.5 text-sm text-ink-700">
+      <span className="relative inline-flex h-5 w-5 shrink-0">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="peer sr-only"
+        />
+        <span
+          className={`flex h-5 w-5 items-center justify-center rounded-md border transition-all duration-150 ${
+            checked
+              ? "border-brand shadow-[0_3px_8px_-2px_rgba(21,94,239,0.5)]"
+              : "border-ink-300 bg-white shadow-[inset_1px_1px_3px_rgba(30,41,90,0.12)] group-hover:border-brand/60"
+          }`}
+          style={checked ? brandGradient : undefined}
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="white"
+            strokeWidth="3.2"
+            className={`transition-opacity duration-150 ${checked ? "opacity-100" : "opacity-0"}`}
+          >
+            <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+        <span className="pointer-events-none absolute inset-0 rounded-md ring-2 ring-brand/40 ring-offset-1 opacity-0 peer-focus-visible:opacity-100" />
+      </span>
       <span className="leading-tight">{label}</span>
     </label>
   );

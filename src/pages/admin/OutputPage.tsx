@@ -6,6 +6,8 @@ import {
   CartesianGrid,
   Cell,
   Legend,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -23,7 +25,7 @@ import { Button } from "../../components/ui/Button";
 import { Loader } from "../../components/ui/Loader";
 import { FilterTabs } from "../../components/ui/FilterTabs";
 import { BackButton } from "../../components/ui/BackButton";
-import { ProgressBar } from "../../components/ui/ProgressBar";
+import { iconGradient, type IconTone } from "../../lib/theme";
 
 /**
  * OUTPUT -  the whole order in one place.
@@ -38,9 +40,12 @@ import { ProgressBar } from "../../components/ui/ProgressBar";
 const ALL_POS = "all";
 
 const CHART_BLUE = "#155EEF";
+const CHART_BLUE_LIGHT = "#7CA6FF";
 const CHART_GREEN = "#12B76A";
+const CHART_GREEN_LIGHT = "#6EE7B7";
 const CHART_RED = "#F04438";
 const CHART_AMBER = "#F79009";
+const CHART_SLATE = "#CBD5E1";
 
 export function OutputPage() {
   const { orderId } = useParams<{ orderId: string }>();
@@ -149,31 +154,74 @@ export function OutputPage() {
 
       {/* ------------------------- Headline ------------------------- */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <HeadlineCard label="Ordered" value={summary.orderedPcs} unit="PCS" />
-        <HeadlineCard label="Cut" value={summary.cutPcs} unit="PCS" tone="brand" />
-        <HeadlineCard label="Packed" value={summary.packedPcs} unit="PCS" tone="good" />
+        <HeadlineCard label="Ordered" value={summary.orderedPcs} unit="PCS" icon="📋" tone="sky" />
+        <HeadlineCard label="Cut" value={summary.cutPcs} unit="PCS" icon="✂️" tone="violet" />
+        <HeadlineCard label="Packed" value={summary.packedPcs} unit="PCS" icon="📦" tone="emerald" />
         <HeadlineCard
           label="Short of order"
           value={summary.shortfallPcs}
           unit="PCS"
-          tone={summary.shortfallPcs > 0 ? "bad" : "good"}
+          icon={summary.shortfallPcs > 0 ? "⚠️" : "✅"}
+          tone={summary.shortfallPcs > 0 ? "rose" : "emerald"}
         />
       </div>
 
+      {/* ------------------------- Fulfillment donut ------------------------- */}
       <Card>
-        <CardBody className="space-y-3">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-sm font-semibold text-ink-800">Overall production efficiency</p>
-            <p className="text-2xl font-bold tabular-nums text-ink-900">
-              {summary.overallEfficiencyPct != null ? `${summary.overallEfficiencyPct}%` : "- "}
-            </p>
+        <CardHeader
+          title="Order fulfillment"
+          subtitle="Packed pieces as a share of the order, with what's still owed alongside."
+        />
+        <CardBody>
+          <div className="grid grid-cols-1 items-center gap-6 sm:grid-cols-[220px_1fr]">
+            <div className="relative mx-auto h-52 w-52">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <defs>
+                    <linearGradient id="gradPacked" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor={CHART_GREEN_LIGHT} />
+                      <stop offset="100%" stopColor={CHART_GREEN} />
+                    </linearGradient>
+                  </defs>
+                  <Pie
+                    data={[
+                      { name: "Packed", value: summary.packedPcs },
+                      { name: "Remaining", value: summary.shortfallPcs },
+                    ]}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius="72%"
+                    outerRadius="100%"
+                    startAngle={90}
+                    endAngle={-270}
+                    stroke="none"
+                    cornerRadius={8}
+                    paddingAngle={summary.shortfallPcs > 0 && summary.packedPcs > 0 ? 3 : 0}
+                  >
+                    <Cell fill="url(#gradPacked)" />
+                    <Cell fill={CHART_SLATE} />
+                  </Pie>
+                  <Tooltip
+                    formatter={(value: number, key: string) => [`${value.toLocaleString()} PCS`, key]}
+                    contentStyle={{ borderRadius: 12, border: "1px solid #EAECF0", fontSize: 12 }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                <p className="text-3xl font-extrabold tabular-nums text-ink-900">
+                  {summary.overallEfficiencyPct != null ? `${summary.overallEfficiencyPct}%` : "- "}
+                </p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">Packed</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <StatRow dotColor={CHART_GREEN} label="Packed" value={summary.packedPcs} unit="PCS" />
+              <StatRow dotColor={CHART_SLATE} label="Remaining against order" value={summary.shortfallPcs} unit="PCS" />
+              <StatRow dotColor={CHART_RED} label="Rejected across garment stages" value={summary.totalRejectedPcs} unit="PCS" />
+              <StatRow dotColor={CHART_AMBER} label="Fabric lost in processing" value={summary.fabricLossKg} unit="KG" />
+            </div>
           </div>
-          <ProgressBar value={summary.overallEfficiencyPct ?? 0} />
-          <p className="text-xs text-ink-500">
-            Packed pieces as a share of the order. {summary.totalRejectedPcs.toLocaleString()} PCS
-            rejected across garment stages; {summary.fabricLossKg.toLocaleString()} KG lost in fabric
-            processing.
-          </p>
         </CardBody>
       </Card>
 
@@ -187,6 +235,16 @@ export function OutputPage() {
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={flowRows} margin={{ top: 8, right: 8, left: 0, bottom: 60 }}>
+                <defs>
+                  <linearGradient id="gradInput" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={CHART_BLUE_LIGHT} />
+                    <stop offset="100%" stopColor={CHART_BLUE} />
+                  </linearGradient>
+                  <linearGradient id="gradOutput" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={CHART_GREEN_LIGHT} />
+                    <stop offset="100%" stopColor={CHART_GREEN} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#EAECF0" vertical={false} />
                 <XAxis
                   dataKey="name"
@@ -205,8 +263,8 @@ export function OutputPage() {
                   contentStyle={{ borderRadius: 12, border: "1px solid #EAECF0", fontSize: 12 }}
                 />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="Input" fill={CHART_BLUE} radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Output" fill={CHART_GREEN} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Input" fill="url(#gradInput)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Output" fill="url(#gradOutput)" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -263,14 +321,28 @@ export function OutputPage() {
             <div className="h-72 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={sizeRows} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                  <defs>
+                    <linearGradient id="gradOrderedBar" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={CHART_BLUE_LIGHT} />
+                      <stop offset="100%" stopColor={CHART_BLUE} />
+                    </linearGradient>
+                    <linearGradient id="gradCutBar" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#FCD34D" />
+                      <stop offset="100%" stopColor={CHART_AMBER} />
+                    </linearGradient>
+                    <linearGradient id="gradPackedBar" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={CHART_GREEN_LIGHT} />
+                      <stop offset="100%" stopColor={CHART_GREEN} />
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#EAECF0" vertical={false} />
                   <XAxis dataKey="sizeCode" tick={{ fontSize: 11, fill: "#667085" }} />
                   <YAxis tick={{ fontSize: 11, fill: "#667085" }} />
                   <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #EAECF0", fontSize: 12 }} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="ordered" name="Ordered" fill={CHART_BLUE} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="cut" name="Cut" fill={CHART_AMBER} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="packed" name="Packed" fill={CHART_GREEN} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="ordered" name="Ordered" fill="url(#gradOrderedBar)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="cut" name="Cut" fill="url(#gradCutBar)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="packed" name="Packed" fill="url(#gradPackedBar)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -495,28 +567,54 @@ function HeadlineCard({
   label,
   value,
   unit,
+  icon,
   tone,
 }: {
   label: string;
   value: number;
   unit: string;
-  tone?: "good" | "bad" | "brand";
+  icon: string;
+  tone: IconTone;
 }) {
-  const color =
-    tone === "good"
-      ? "text-status-good"
-      : tone === "bad"
-        ? "text-status-bad"
-        : tone === "brand"
-          ? "text-brand"
-          : "text-ink-900";
   return (
     <Card>
-      <CardBody className="text-center">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">{label}</p>
-        <p className={`mt-1 text-3xl font-bold tabular-nums ${color}`}>{value.toLocaleString()}</p>
-        <p className="text-[11px] font-medium text-ink-400">{unit}</p>
+      <CardBody className="flex items-center gap-3">
+        <span
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-lg shadow-md"
+          style={iconGradient[tone]}
+        >
+          {icon}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-ink-400">{label}</p>
+          <p className="text-2xl font-extrabold tabular-nums text-ink-900">{value.toLocaleString()}</p>
+          <p className="text-[11px] font-medium text-ink-400">{unit}</p>
+        </div>
       </CardBody>
     </Card>
+  );
+}
+
+function StatRow({
+  dotColor,
+  label,
+  value,
+  unit,
+}: {
+  dotColor: string;
+  label: string;
+  value: number;
+  unit: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-ink-100 pb-2.5 last:border-0 last:pb-0">
+      <span className="flex min-w-0 items-center gap-2 text-sm text-ink-600">
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: dotColor }} />
+        <span className="truncate">{label}</span>
+      </span>
+      <span className="shrink-0 text-sm font-bold tabular-nums text-ink-900">
+        {value.toLocaleString()} <span className="text-xs font-medium text-ink-400">{unit}</span>
+      </span>
+    </div>
   );
 }

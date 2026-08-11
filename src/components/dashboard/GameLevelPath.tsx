@@ -1,11 +1,13 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { StageProgress } from "../../lib/progress";
 import { formatDisplayDate } from "../../lib/workflow";
+import { bubbleGradient, bubbleGradientSelected } from "../../lib/theme";
 
-const COLS = 7;
-const NODE = 34; // px -  compact circle size
-const NODE_ROW = 64; // px -  node + label
-const LINE_ROW = 18; // px -  vertical connector between rows
+const COLS = 5;
+const NODE = 46; // px -  bubbly circle size
+const NODE_ROW = 92; // px -  node + two-line label
+const LINE_ROW = 20; // px -  vertical connector between rows
 
 /** Completed, moved-on-but-unfinished (orange), or still to do. */
 type StageTone = "good" | "partial" | "current" | "idle";
@@ -89,7 +91,13 @@ export function GameLevelPath({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-xl border border-ink-100 bg-blue-50/40 p-3">
+      <div
+        className="rounded-[1.75rem] border border-white/70 p-4 shadow-[inset_0_2px_10px_-4px_rgba(30,41,90,0.12)] sm:p-5"
+        style={{
+          backgroundImage:
+            "radial-gradient(at 10% 15%, rgba(99,102,241,0.10) 0px, transparent 45%), radial-gradient(at 90% 85%, rgba(45,212,191,0.10) 0px, transparent 45%), linear-gradient(180deg, #F6F8FE 0%, #EEF2FB 100%)",
+        }}
+      >
         {/* Desktop / tablet: snake grid */}
         <div
           className="hidden md:grid"
@@ -227,49 +235,103 @@ function LevelNode({
   userNameById?: (id: string) => string;
   compact?: boolean;
 }) {
-  const nodeClasses: Record<StageTone, string> = {
-    good: "bg-good-gradient text-white border-2 border-white",
-    partial: "bg-warn-gradient text-white border-2 border-white",
-    current: "bg-brand-gradient text-white border-2 border-white animate-pulseSoft",
-    idle: "bg-white text-ink-600 border-2 border-ink-200",
+  const textClasses: Record<StageTone, string> = {
+    good: "text-white",
+    partial: "text-white",
+    current: "text-white",
+    idle: "text-ink-500",
   };
 
+  const nodeRef = useRef<HTMLSpanElement>(null);
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
+
+  // Portalled to document.body and positioned in fixed (viewport) coordinates
+  // instead of a CSS-absolute popover inside the card. The card this pipeline
+  // sits in is a frosted glass panel with backdrop-blur, and *any* ancestor
+  // with a backdrop-filter/transform/filter establishes its own stacking
+  // context (and containing block) -  no z-index inside it can ever out-rank
+  // the fixed sidebar sitting outside it. Escaping to body sidesteps that
+  // entirely rather than trying to out-number it.
+  function showTooltip() {
+    if (compact || !nodeRef.current) return;
+    const rect = nodeRef.current.getBoundingClientRect();
+    setAnchor({ top: rect.top - 10, left: rect.left + rect.width / 2 });
+  }
+  function hideTooltip() {
+    setAnchor(null);
+  }
+
+  useEffect(() => {
+    if (!anchor) return;
+    const close = () => setAnchor(null);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [anchor]);
+
   return (
-    <button type="button" onClick={onClick} className="group relative flex flex-col items-center gap-1">
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={showTooltip}
+      onMouseLeave={hideTooltip}
+      className="group relative flex flex-col items-center gap-1.5"
+    >
       <span
-        className={`relative flex ${compact ? "h-9 w-9" : ""} shrink-0 items-center justify-center rounded-full text-xs font-bold shadow-card transition-transform group-hover:-translate-y-0.5 ${nodeClasses[tone]} ${
-          isSelected ? "ring-2 ring-brand/40 ring-offset-1" : ""
-        }`}
-        style={!compact ? { height: NODE, width: NODE } : undefined}
+        ref={nodeRef}
+        className={`relative flex ${compact ? "h-9 w-9" : ""} shrink-0 items-center justify-center rounded-full text-xs font-bold ring-2 ring-white transition-transform duration-200 ease-out group-hover:-translate-y-1 group-hover:scale-110 ${textClasses[tone]} ${
+          tone === "current" ? "animate-pulseSoft" : ""
+        } ${isSelected ? "scale-110" : ""}`}
+        style={{
+          ...(compact ? undefined : { height: NODE, width: NODE }),
+          backgroundImage: isSelected ? bubbleGradientSelected[tone] : bubbleGradient[tone],
+          boxShadow: isSelected
+            ? "0 0 0 4px rgba(21,94,239,0.4), 8px 10px 22px -6px rgba(30,41,90,0.55), inset -3px -4px 8px -2px rgba(0,0,0,0.3), inset 3px 4px 8px -2px rgba(255,255,255,0.4)"
+            : "6px 8px 14px -6px rgba(30,41,90,0.35), inset -3px -4px 8px -2px rgba(0,0,0,0.18), inset 3px 4px 8px -2px rgba(255,255,255,0.55)",
+        }}
       >
-        {tone === "good" ? (
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2">
-            <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        ) : (
-          index + 1
-        )}
+        {/* Glossy highlight — the thing that reads "bubble" instead of "flat dot". */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute left-[18%] top-[14%] h-[35%] w-[35%] rounded-full bg-white/70 blur-[2px]"
+        />
+        <span className="relative">
+          {tone === "good" ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4">
+              <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          ) : (
+            index + 1
+          )}
+        </span>
         {/* Half-filled marker: goods went on, but this stage isn't closed. */}
         {tone === "partial" && (
-          <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white bg-amber-600 text-[8px] font-bold text-white shadow-card">
+          <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-white bg-amber-600 text-[9px] font-bold text-white shadow-[2px_2px_5px_-1px_rgba(30,41,90,0.4)]">
             !
           </span>
         )}
         {tone === "current" && (
-          <span className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full border border-white bg-amber-400 shadow-card" />
+          <span className="absolute -right-1 -top-1 h-4 w-4 rounded-full border-2 border-white bg-amber-400 shadow-[2px_2px_5px_-1px_rgba(30,41,90,0.4)]" />
         )}
       </span>
       {!compact && (
         <span
-          className={`w-16 truncate text-center text-[10px] font-medium leading-tight ${
-            isSelected ? "text-brand" : "text-ink-600"
+          className={`w-[5.5rem] text-center text-[10.5px] font-semibold leading-tight ${
+            isSelected ? "text-brand" : "text-ink-700"
           }`}
         >
           {stage.stage.label}
         </span>
       )}
 
-      <StageTooltip stage={stage} tone={tone} userNameById={userNameById} />
+      {anchor &&
+        createPortal(
+          <StageTooltip stage={stage} tone={tone} userNameById={userNameById} anchor={anchor} />,
+          document.body,
+        )}
     </button>
   );
 }
@@ -278,15 +340,20 @@ function StageTooltip({
   stage,
   tone,
   userNameById,
+  anchor,
 }: {
   stage: StageProgress;
   tone: StageTone;
   userNameById?: (id: string) => string;
+  anchor: { top: number; left: number };
 }) {
   const unit = stage.stage.unit_type;
 
   return (
-    <div className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 hidden w-60 -translate-x-1/2 rounded-lg border border-ink-100 bg-white p-3 text-left opacity-0 shadow-popover transition-opacity duration-100 group-hover:opacity-100 md:block">
+    <div
+      style={{ top: anchor.top, left: anchor.left }}
+      className="pointer-events-none fixed z-[999] w-60 -translate-x-1/2 -translate-y-full rounded-xl border border-ink-200 bg-white p-3 text-left shadow-[0_24px_50px_-14px_rgba(30,41,90,0.55),0_4px_14px_-4px_rgba(30,41,90,0.35)] ring-1 ring-black/[0.04]"
+    >
       <p className="text-xs font-semibold text-ink-900">{stage.stage.label}</p>
       <p
         className={`mt-0.5 text-[11px] font-medium ${
@@ -327,7 +394,7 @@ function StageTooltip({
         </div>
       )}
 
-      <div className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-ink-100 bg-white" />
+      <div className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-ink-200 bg-white" />
     </div>
   );
 }

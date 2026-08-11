@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import { GooeyDefs } from "./components/ui/Button";
 import { ProtectedRoute } from "./components/layout/ProtectedRoute";
 import { AdminLayout } from "./components/layout/AdminLayout";
 import { UserLayout } from "./components/layout/UserLayout";
@@ -15,40 +16,45 @@ import { DataInputPage } from "./pages/user/DataInputPage";
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Navigate to="/login" replace />} />
-      <Route path="/login" element={<LoginPage />} />
+    <>
+      {/* Mounted once, referenced by every primary/danger Button's gooey
+          hover effect — an SVG filter id must be unique document-wide. */}
+      <GooeyDefs />
+      <Routes>
+        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/login" element={<LoginPage />} />
 
-      <Route
-        path="/admin"
-        element={
-          <ProtectedRoute requireAdmin>
-            <AdminLayout />
-          </ProtectedRoute>
-        }
-      >
-        <Route path="dashboard" element={<DashboardPage />} />
-        <Route path="orders" element={<OrdersPage />} />
-        <Route path="orders/:orderId" element={<OrderDetailPage />} />
-        <Route path="output/:orderId" element={<OutputPage />} />
-        <Route path="users" element={<UsersPage />} />
-        <Route path="assign" element={<AssignWorkPage />} />
-        <Route path="stage-roles" element={<StageRolesPage />} />
-      </Route>
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute requireAdmin>
+              <AdminLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="orders" element={<OrdersPage />} />
+          <Route path="orders/:orderId" element={<OrderDetailPage />} />
+          <Route path="output/:orderId" element={<OutputPage />} />
+          <Route path="users" element={<UsersPage />} />
+          <Route path="assign" element={<AssignWorkPage />} />
+          <Route path="stage-roles" element={<StageRolesPage />} />
+        </Route>
 
-      <Route
-        path="/user"
-        element={
-          <ProtectedRoute>
-            <UserLayout />
-          </ProtectedRoute>
-        }
-      >
-        <Route path="home" element={<HomePage />} />
-        <Route path="data-input" element={<DataInputPage />} />
-      </Route>
+        <Route
+          path="/user"
+          element={
+            <ProtectedRoute>
+              <UserLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="home" element={<HomePage />} />
+          <Route path="data-input" element={<DataInputPage />} />
+        </Route>
 
-      <Route path="*" element={<Navigate to="/login" replace />} />
-    </Routes>
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </>
   );
 }

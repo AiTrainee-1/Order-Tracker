@@ -2,14 +2,14 @@ import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { BrandMark } from "../ui/BrandMark";
-import { appBackground, brandGradient, sidebarBackground, SHADOW_BRAND } from "../../lib/theme";
+import { brandGradient, iconGradient, sidebarBackground, spatialBackground, SHADOW_BRAND, type IconTone } from "../../lib/theme";
 
-const navItems = [
-  { to: "/admin/dashboard", label: "Dashboard", icon: "📊" },
-  { to: "/admin/orders", label: "Orders", icon: "📦" },
-  { to: "/admin/users", label: "Users", icon: "👥" },
-  { to: "/admin/assign", label: "Assign Work", icon: "📝" },
-  { to: "/admin/stage-roles", label: "Stage Roles", icon: "🎯" },
+const navItems: { to: string; label: string; icon: string; tone: IconTone }[] = [
+  { to: "/admin/dashboard", label: "Dashboard", icon: "📊", tone: "sky" },
+  { to: "/admin/orders", label: "Orders", icon: "📦", tone: "violet" },
+  { to: "/admin/users", label: "Users", icon: "👥", tone: "emerald" },
+  { to: "/admin/assign", label: "Assign Work", icon: "📝", tone: "amber" },
+  { to: "/admin/stage-roles", label: "Stage Roles", icon: "🎯", tone: "rose" },
 ];
 
 export function AdminLayout() {
@@ -23,7 +23,7 @@ export function AdminLayout() {
   }
 
   return (
-    <div className="min-h-screen" style={appBackground}>
+    <div className="min-h-screen" style={spatialBackground}>
       {mobileOpen && (
         <div
           className="fixed inset-0 z-20 bg-ink-950/40 backdrop-blur-sm md:hidden"
@@ -41,10 +41,11 @@ export function AdminLayout() {
 
       <aside
         style={sidebarBackground}
-        className={`fixed inset-y-0 left-0 z-30 flex w-64 shrink-0 flex-col border-r border-white/70 backdrop-blur-2xl transition-transform duration-200 ${
+        className={`fixed inset-y-0 left-0 z-30 flex w-64 shrink-0 flex-col border-r border-white/70 shadow-[10px_0_36px_-18px_rgba(30,41,90,0.35)] backdrop-blur-2xl transition-transform duration-200 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         } md:translate-x-0`}
       >
+        <div className="h-1 shrink-0" style={brandGradient} />
         <div className="flex shrink-0 items-center gap-2.5 border-b border-white/70 px-5 py-5">
           <span className="flex items-center justify-center rounded-xl border border-white/80 bg-white px-2 py-1.5 shadow-[0_8px_20px_-12px_rgba(30,41,90,0.5)]">
             <BrandMark size={26} />
@@ -64,7 +65,7 @@ export function AdminLayout() {
               to={item.to}
               onClick={() => setMobileOpen(false)}
               className={({ isActive }) =>
-                `flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all ${
+                `flex items-center gap-2.5 rounded-xl py-2 pl-2 pr-3 text-sm font-semibold transition-all ${
                   isActive
                     ? `text-white ${SHADOW_BRAND}`
                     : "text-ink-600 hover:bg-white/70 hover:text-ink-900"
@@ -72,8 +73,17 @@ export function AdminLayout() {
               }
               style={({ isActive }) => (isActive ? brandGradient : undefined)}
             >
-              <span className="text-base">{item.icon}</span>
-              {item.label}
+              {({ isActive }) => (
+                <>
+                  <span
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sm shadow-sm"
+                    style={isActive ? { backgroundColor: "rgba(255,255,255,0.22)" } : iconGradient[item.tone]}
+                  >
+                    {item.icon}
+                  </span>
+                  {item.label}
+                </>
+              )}
             </NavLink>
           ))}
         </nav>

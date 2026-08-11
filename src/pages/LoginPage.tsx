@@ -8,9 +8,9 @@ import {
   brandGradient,
   dotTexture,
   glassSheen,
-  headingGradient,
+  headingGradientStrong,
   iconGradient,
-  SHADOW_PANEL,
+  SHADOW_NEO_RAISED_LG,
   type IconTone,
 } from "../lib/theme";
 
@@ -63,7 +63,7 @@ export function LoginPage() {
 
           <h1 className="mt-10 text-4xl font-bold leading-[1.1] tracking-tight text-ink-900 sm:text-5xl">
             Garment order tracking,{" "}
-            <span className="bg-clip-text text-transparent" style={headingGradient}>
+            <span className="bg-clip-text text-transparent" style={headingGradientStrong}>
               simplified.
             </span>
           </h1>
@@ -85,7 +85,7 @@ export function LoginPage() {
 
         {/* Frosted sign-in panel */}
         <div className="w-full max-w-md">
-          <div className={`relative overflow-hidden rounded-3xl border border-white/70 bg-white/60 p-7 backdrop-blur-2xl sm:p-9 ${SHADOW_PANEL}`}>
+          <div className={`relative overflow-hidden rounded-[2rem] border border-white/70 bg-white/65 p-7 backdrop-blur-2xl sm:p-9 ${SHADOW_NEO_RAISED_LG}`}>
             <div className="pointer-events-none absolute inset-0 opacity-70" style={glassSheen} />
             <span className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-violet-400/25 blur-2xl" />
             <span className="pointer-events-none absolute -bottom-16 -left-12 h-36 w-36 rounded-full bg-sky-400/25 blur-2xl" />
@@ -141,11 +141,21 @@ export function LoginPage() {
                   style={brandGradient}
                   className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl px-5 py-3.5 text-base font-semibold text-white shadow-[0_12px_30px_-8px_rgba(21,94,239,0.65)] transition-all hover:brightness-110 hover:shadow-[0_16px_40px_-8px_rgba(21,94,239,0.75)] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/30 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-                  {submitting && (
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" />
-                  )}
-                  <span className="relative">{submitting ? "Signing in…" : "Sign In"}</span>
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
+                    style={{ filter: "url(#uk-goo)" }}
+                  >
+                    <span className="absolute bottom-0 left-[-6%] h-full w-[38%] origin-bottom scale-125 translate-y-[130%] rounded-full bg-[#2F7BFF] transition-transform duration-500 ease-out group-hover:translate-y-0" />
+                    <span className="absolute bottom-0 left-[32%] h-full w-[38%] origin-bottom scale-125 translate-y-[130%] rounded-full bg-[#2F7BFF] transition-transform duration-500 ease-out [transition-delay:60ms] group-hover:translate-y-0" />
+                    <span className="absolute bottom-0 left-[68%] h-full w-[38%] origin-bottom scale-125 translate-y-[130%] rounded-full bg-[#2F7BFF] transition-transform duration-500 ease-out [transition-delay:25ms] group-hover:translate-y-0" />
+                  </span>
+                  <span className="relative z-10 flex items-center justify-center gap-2">
+                    {submitting && (
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" />
+                    )}
+                    {submitting ? "Signing in…" : "Sign In"}
+                  </span>
                 </button>
               </form>
             </div>

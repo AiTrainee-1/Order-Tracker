@@ -16,7 +16,16 @@ import { GameLevelPath } from "../../components/dashboard/GameLevelPath";
 import { NextStagesStrip } from "../../components/dashboard/NextStagesStrip";
 import { BackButton } from "../../components/ui/BackButton";
 import { FilterTabs } from "../../components/ui/FilterTabs";
+import { Tabs } from "../../components/ui/Tabs";
 import { StageFormRouter } from "../../components/forms/stage/StageFormRouter";
+import {
+  cardStatusAccent,
+  cardStatusBorder,
+  cardStatusLabel,
+  cardStatusShadow,
+  cardStatusSoftBg,
+  type CardStatusTone,
+} from "../../lib/theme";
 
 /** Ordering priority for work lists: actionable first, done last. */
 const GATE_PRIORITY: Record<GateStatus, number> = { active: 0, locked: 1, completed: 2 };
@@ -43,6 +52,15 @@ function matchesQuery(item: WorkItem, query: string): boolean {
 function matchesStatus(item: WorkItem, status: StatusFilter): boolean {
   if (status === "all") return true;
   return item.gateStatus === status;
+}
+
+/** Orange wins outright -  it's the one state that means "act now." Otherwise
+ * the same grey/blue/green ladder as the order cards: not started, started,
+ * completed. */
+function assignmentCardTone(item: WorkItem): CardStatusTone {
+  if (item.gateStatus === "active") return "yourTurn";
+  if (item.gateStatus === "completed") return "completed";
+  return item.orderProgress.completedStagesCount > 0 ? "started" : "notStarted";
 }
 
 const PAGE_SIZE = 8;
@@ -147,7 +165,6 @@ export function DataInputPage() {
 
           <div className="space-y-3">
             {pageItems.map((item) => {
-              const gate = workBadge(item);
               const { assignment, orderProgress } = item;
               const order = assignment.order;
               const imageUrl = publicImageUrl(order?.image_path);
@@ -162,14 +179,22 @@ export function DataInputPage() {
                       ? `Waiting -  order is currently at "${currentStageLabel}"`
                       : "Your turn -  tap to enter today's production data";
 
+              const tone = assignmentCardTone(item);
+
               return (
                 <button
                   key={item.assignment.id}
                   type="button"
                   onClick={() => selectAssignment(item.assignment.id)}
-                  className="flex w-full items-center gap-4 rounded-2xl border border-white/70 bg-white/80 p-4 text-left backdrop-blur-xl shadow-[0_10px_30px_-14px_rgba(30,41,90,0.35)] transition-shadow hover:shadow-[0_18px_44px_-16px_rgba(30,41,90,0.45)]"
+                  style={cardStatusSoftBg[tone]}
+                  className={`group relative flex w-full items-center gap-4 overflow-hidden rounded-2xl border ${cardStatusBorder[tone]} p-4 text-left transition-transform duration-150 hover:-translate-y-0.5 ${cardStatusShadow[tone]}`}
                 >
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/80 bg-white/70">
+                  <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: cardStatusAccent[tone] }} />
+
+                  <div
+                    className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white ring-2 ring-inset"
+                    style={{ boxShadow: `inset 0 0 0 2px ${cardStatusAccent[tone]}33` }}
+                  >
                     {imageUrl ? (
                       <img src={imageUrl} alt={order?.style} className="h-full w-full object-cover" />
                     ) : (
@@ -178,12 +203,17 @@ export function DataInputPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="truncate text-sm font-semibold text-ink-900">
+                      <p className="truncate text-sm font-bold text-ink-900">
                         {order?.style} -  {assignment.section?.label}
                       </p>
-                      <Badge tone={gate.tone}>{gate.label}</Badge>
+                      <span
+                        className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold text-white"
+                        style={{ backgroundColor: cardStatusAccent[tone] }}
+                      >
+                        {cardStatusLabel[tone]}
+                      </span>
                     </div>
-                    <p className="truncate text-xs text-ink-500">
+                    <p className="truncate text-xs text-ink-600">
                       IO {order?.io_no} · {order?.color}
                       {assignment.po ? ` · PO ${assignment.po.po_number}` : ""}
                     </p>
@@ -197,8 +227,8 @@ export function DataInputPage() {
                       />
                     </div>
                     <p
-                      className={`mt-1.5 text-xs font-medium ${
-                        item.stageProgress?.isPartial ? "text-amber-700" : "text-blue-700"
+                      className={`mt-1.5 text-xs font-semibold ${
+                        item.stageProgress?.isPartial ? "text-amber-700" : "text-ink-800"
                       }`}
                     >
                       {nextAction}
@@ -250,15 +280,16 @@ function SelectedAssignmentView({
   const gate = workBadge(item);
   const isPartial = item.stageProgress?.isPartial ?? false;
   const currentStage = orderProgress.stages[orderProgress.currentStageIndex]?.stage;
-  const [showDetails, setShowDetails] = useState(false);
+  const [activeTab, setActiveTab] = useState<"entry" | "details">("entry");
+  const showDetails = activeTab === "details";
 
   return (
     <div className="space-y-6">
       <BackButton onClick={onChangeOrder} label="Change Order" />
 
       {/* Compact, always-visible orientation strip. Everything else about the
-          order is one click away -  the data-entry form below is the point of
-          this page, not a recap of what's already on file. */}
+          order lives one tab away -  the data-entry form is the point of this
+          page, not a recap of what's already on file. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-base font-semibold text-ink-900">
@@ -269,13 +300,71 @@ function SelectedAssignmentView({
             {assignment.po ? ` · PO ${assignment.po.po_number}` : ""}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Badge tone={gate.tone}>{gate.label}</Badge>
-          <Button variant="secondary" size="sm" onClick={() => setShowDetails((v) => !v)}>
-            {showDetails ? "Hide Details" : "View Details"}
-          </Button>
-        </div>
+        <Badge tone={gate.tone}>{gate.label}</Badge>
       </div>
+
+      <Tabs
+        value={activeTab}
+        onChange={setActiveTab}
+        tabs={[
+          { key: "entry", label: "Data Entry" },
+          { key: "details", label: "Order Details" },
+        ]}
+      />
+
+      {/* Order Details tab surfaces the reference material -  order info,
+          this stage's running totals, and (via showDetails on the form
+          below) each form's own summary/reference content. Data Entry stays
+          on the compact view. Either way the work itself -  the entries
+          history and add-entry row inside StageFormRouter -  stays reachable
+          on both tabs; only the surrounding reference content toggles. */}
+      {activeTab === "details" && (
+        <>
+          <Card>
+            <CardBody className="flex flex-col gap-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/80 bg-white/70">
+                  {imageUrl ? (
+                    <img src={imageUrl} alt={order.style} className="h-full w-full object-cover" />
+                  ) : (
+                    <GarmentPlaceholder className="h-7 w-7 text-ink-500" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-base font-semibold text-ink-900">{order.style}</p>
+                  <p className="truncate text-xs text-ink-500">
+                    IO {order.io_no} · {order.color}
+                    {assignment.po ? ` · PO ${assignment.po.po_number}` : ""} · Delivery{" "}
+                    {formatDisplayDate(order.delivery_date)}
+                  </p>
+                </div>
+              </div>
+              <ProgressBar value={orderProgress.overallProgressPct} showLabel />
+            </CardBody>
+          </Card>
+
+          {gateStatus === "completed" && item.stageProgress && (
+            <Card>
+              <CardHeader title="Your Stage Summary" subtitle={assignment.section?.label} />
+              <CardBody>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <Stat
+                    label={`Qty (${item.stageProgress.stage.unit_type})`}
+                    value={item.stageProgress.qtyReceived}
+                  />
+                  <Stat label="Forwarded" value={item.stageProgress.qtyForwarded} />
+                  <Stat
+                    label="Shortage"
+                    value={item.stageProgress.qtyShortage}
+                    tone={item.stageProgress.qtyShortage > 0 ? "bad" : undefined}
+                  />
+                  <Stat label="Last Update" value={formatDisplayDate(item.stageProgress.lastEntryDate)} />
+                </div>
+              </CardBody>
+            </Card>
+          )}
+        </>
+      )}
 
       {isPartial && item.stageProgress && (
         <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
@@ -286,31 +375,6 @@ function SelectedAssignmentView({
           is still owed here. The next stage has already started; record the balance below and use{" "}
           <b>Completed – Move Forward</b> when it's finished.
         </p>
-      )}
-
-      {showDetails && (
-        <Card>
-          <CardBody className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/80 bg-white/70">
-                {imageUrl ? (
-                  <img src={imageUrl} alt={order.style} className="h-full w-full object-cover" />
-                ) : (
-                  <GarmentPlaceholder className="h-7 w-7 text-ink-500" />
-                )}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-base font-semibold text-ink-900">{order.style}</p>
-                <p className="truncate text-xs text-ink-500">
-                  IO {order.io_no} · {order.color}
-                  {assignment.po ? ` · PO ${assignment.po.po_number}` : ""} · Delivery{" "}
-                  {formatDisplayDate(order.delivery_date)}
-                </p>
-              </div>
-            </div>
-            <ProgressBar value={orderProgress.overallProgressPct} showLabel />
-          </CardBody>
-        </Card>
       )}
 
       {/* Data entry stays available after a stage is completed. Marking a stage
@@ -334,18 +398,6 @@ function SelectedAssignmentView({
             }
           />
           <CardBody className="space-y-4">
-            {showDetails && gateStatus === "completed" && item.stageProgress && (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Stat label={`Qty (${item.stageProgress.stage.unit_type})`} value={item.stageProgress.qtyReceived} />
-                <Stat label="Forwarded" value={item.stageProgress.qtyForwarded} />
-                <Stat
-                  label="Shortage"
-                  value={item.stageProgress.qtyShortage}
-                  tone={item.stageProgress.qtyShortage > 0 ? "bad" : undefined}
-                />
-                <Stat label="Last Update" value={formatDisplayDate(item.stageProgress.lastEntryDate)} />
-              </div>
-            )}
             <StageFormRouter
               order={order}
               assignment={assignment}
