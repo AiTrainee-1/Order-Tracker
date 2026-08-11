@@ -2,9 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { useMyWork, workBadge, type GateStatus, type WorkItem } from "../../hooks/useMyWork";
-import { useOrderAssignments } from "../../hooks/useAssignments";
-import { useStageAssignments } from "../../hooks/useStageAssignments";
-import { useUserContacts } from "../../hooks/useUserContacts";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardBody, CardHeader } from "../../components/ui/Card";
 import { Input } from "../../components/ui/FormControls";
@@ -20,7 +17,6 @@ import { NextStagesStrip } from "../../components/dashboard/NextStagesStrip";
 import { BackButton } from "../../components/ui/BackButton";
 import { FilterTabs } from "../../components/ui/FilterTabs";
 import { StageFormRouter } from "../../components/forms/stage/StageFormRouter";
-import type { UserContact } from "../../lib/types";
 
 /** Ordering priority for work lists: actionable first, done last. */
 const GATE_PRIORITY: Record<GateStatus, number> = { active: 0, locked: 1, completed: 2 };
@@ -157,14 +153,14 @@ export function DataInputPage() {
               const imageUrl = publicImageUrl(order?.image_path);
               const currentStageLabel = orderProgress.stages[orderProgress.currentStageIndex]?.stage.label;
               const nextAction = !assignment.can_enter_data
-                ? "Monitor only — tap to view status"
+                ? "Monitor only -  tap to view status"
                 : item.stageProgress?.isPartial
-                  ? `Moved on without completing — ${item.stageProgress.qtyPending.toLocaleString()} ${item.stageProgress.stage.unit_type} still owed here`
+                  ? `Moved on without completing -  ${item.stageProgress.qtyPending.toLocaleString()} ${item.stageProgress.stage.unit_type} still owed here`
                   : item.gateStatus === "completed"
-                    ? "Your part is done — you can still record late entries"
+                    ? "Your part is done -  you can still record late entries"
                     : item.gateStatus === "locked"
-                      ? `Waiting — order is currently at "${currentStageLabel}"`
-                      : "Your turn — tap to enter today's production data";
+                      ? `Waiting -  order is currently at "${currentStageLabel}"`
+                      : "Your turn -  tap to enter today's production data";
 
               return (
                 <button
@@ -183,7 +179,7 @@ export function DataInputPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="truncate text-sm font-semibold text-ink-900">
-                        {order?.style} — {assignment.section?.label}
+                        {order?.style} -  {assignment.section?.label}
                       </p>
                       <Badge tone={gate.tone}>{gate.label}</Badge>
                     </div>
@@ -254,15 +250,48 @@ function SelectedAssignmentView({
   const gate = workBadge(item);
   const isPartial = item.stageProgress?.isPartial ?? false;
   const currentStage = orderProgress.stages[orderProgress.currentStageIndex]?.stage;
+  const [showDetails, setShowDetails] = useState(false);
 
   return (
     <div className="space-y-6">
       <BackButton onClick={onChangeOrder} label="Change Order" />
 
-      <Card>
-        <CardBody className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
+      {/* Compact, always-visible orientation strip. Everything else about the
+          order is one click away -  the data-entry form below is the point of
+          this page, not a recap of what's already on file. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-base font-semibold text-ink-900">
+            {order.style} -  {assignment.section?.label}
+          </p>
+          <p className="truncate text-xs text-ink-500">
+            IO {order.io_no}
+            {assignment.po ? ` · PO ${assignment.po.po_number}` : ""}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge tone={gate.tone}>{gate.label}</Badge>
+          <Button variant="secondary" size="sm" onClick={() => setShowDetails((v) => !v)}>
+            {showDetails ? "Hide Details" : "View Details"}
+          </Button>
+        </div>
+      </div>
+
+      {isPartial && item.stageProgress && (
+        <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+          This stage was moved on without being completed - {" "}
+          <b>
+            {item.stageProgress.qtyPending.toLocaleString()} {item.stageProgress.stage.unit_type}
+          </b>{" "}
+          is still owed here. The next stage has already started; record the balance below and use{" "}
+          <b>Completed – Move Forward</b> when it's finished.
+        </p>
+      )}
+
+      {showDetails && (
+        <Card>
+          <CardBody className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center gap-3">
               <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/80 bg-white/70">
                 {imageUrl ? (
                   <img src={imageUrl} alt={order.style} className="h-full w-full object-cover" />
@@ -279,28 +308,13 @@ function SelectedAssignmentView({
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Badge tone="brand">Your stage: {assignment.section?.label}</Badge>
-              <Badge tone={gate.tone}>{gate.label}</Badge>
-            </div>
-          </div>
-          <ProgressBar value={orderProgress.overallProgressPct} showLabel />
-
-          {isPartial && item.stageProgress && (
-            <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-              This stage was moved on without being completed —{" "}
-              <b>
-                {item.stageProgress.qtyPending.toLocaleString()} {item.stageProgress.stage.unit_type}
-              </b>{" "}
-              is still owed here. The next stage has already started; record the balance below and
-              use <b>Completed – Move Forward</b> when it's finished.
-            </p>
-          )}
-        </CardBody>
-      </Card>
+            <ProgressBar value={orderProgress.overallProgressPct} showLabel />
+          </CardBody>
+        </Card>
+      )}
 
       {/* Data entry stays available after a stage is completed. Marking a stage
-          done is a statement about the handoff, not a lock — a late balance, a
+          done is a statement about the handoff, not a lock -  a late balance, a
           recount or a correction still has to be recordable, and the entries
           below are what the Output reconciliation is built from. */}
       {(gateStatus === "active" || gateStatus === "completed") && (
@@ -310,7 +324,7 @@ function SelectedAssignmentView({
             subtitle={
               gateStatus === "completed"
                 ? "This stage is marked complete. You can still record late entries or corrections."
-                : "This is the order's current stage — you can enter data now."
+                : "This is the order's current stage -  you can enter data now."
             }
             action={
               <div className="flex items-center gap-2">
@@ -320,7 +334,7 @@ function SelectedAssignmentView({
             }
           />
           <CardBody className="space-y-4">
-            {gateStatus === "completed" && item.stageProgress && (
+            {showDetails && gateStatus === "completed" && item.stageProgress && (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <Stat label={`Qty (${item.stageProgress.stage.unit_type})`} value={item.stageProgress.qtyReceived} />
                 <Stat label="Forwarded" value={item.stageProgress.qtyForwarded} />
@@ -337,6 +351,7 @@ function SelectedAssignmentView({
               assignment={assignment}
               stageProgress={item.stageProgress}
               onForwarded={onForwarded}
+              showDetails={showDetails}
             />
           </CardBody>
         </Card>
@@ -351,7 +366,7 @@ function SelectedAssignmentView({
               <p className="max-w-sm text-sm text-ink-500">
                 This order is currently at <span className="font-medium text-ink-700">{currentStage?.label}</span>.
                 Your assigned stage, <span className="font-medium text-ink-700">{assignment.section?.label}</span>,
-                hasn't been reached yet — it'll unlock as soon as the stage before it moves anything
+                hasn't been reached yet -  it'll unlock as soon as the stage before it moves anything
                 on, whether or not that stage is finished.
               </p>
             </div>
@@ -359,11 +374,10 @@ function SelectedAssignmentView({
         </Card>
       )}
 
-      {/* Detailed workflow & stage info — kept below the data entry */}
       <Card>
         <CardHeader
           title="Complete Order Workflow"
-          subtitle={`Currently at: ${currentStage?.label ?? "—"} · ${orderProgress.completedStagesCount}/${orderProgress.stages.length} stages completed`}
+          subtitle={`Currently at: ${currentStage?.label ?? "- "} · ${orderProgress.completedStagesCount}/${orderProgress.stages.length} stages completed`}
         />
         <CardBody>
           <GameLevelPath
@@ -374,173 +388,6 @@ function SelectedAssignmentView({
           />
         </CardBody>
       </Card>
-
-      <UpcomingStages orderProgress={orderProgress} />
-
-      <StageHistoryAndContacts item={item} />
-    </div>
-  );
-}
-
-function UpcomingStages({ orderProgress }: { orderProgress: WorkItem["orderProgress"] }) {
-  const { stages, currentStageIndex } = orderProgress;
-  const upcoming = stages.slice(currentStageIndex);
-  if (upcoming.length === 0) return null;
-
-  return (
-    <Card>
-      <CardHeader
-        title="Upcoming Stages"
-        subtitle="The remaining production steps for this order, in sequence"
-      />
-      <CardBody>
-        <ol className="divide-y divide-ink-100">
-          {upcoming.map((s, i) => {
-            const isNow = i === 0;
-            return (
-              <li key={s.stage.id} className="flex items-center gap-3 py-2.5">
-                <span
-                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                    isNow ? "bg-brand-gradient text-white" : "bg-ink-100 text-ink-500"
-                  }`}
-                >
-                  {s.stage.sequence_no}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-ink-800">{s.stage.label}</p>
-                  <p className="text-xs text-ink-400">
-                    {s.stage.unit_type} · typically {s.stage.typical_duration_days} day
-                    {s.stage.typical_duration_days === 1 ? "" : "s"}
-                  </p>
-                </div>
-                <Badge tone={isNow ? "brand" : "neutral"}>{isNow ? "Current" : "Upcoming"}</Badge>
-              </li>
-            );
-          })}
-        </ol>
-      </CardBody>
-    </Card>
-  );
-}
-
-function StageHistoryAndContacts({ item }: { item: WorkItem }) {
-  const { assignment, orderProgress } = item;
-  const order = assignment.order!;
-  const mySequence = assignment.section?.sequence_no ?? 0;
-
-  const previousStages = orderProgress.stages.filter((s) => s.stage.sequence_no < mySequence);
-  const nextStageProgress = orderProgress.stages.find((s) => s.stage.sequence_no === mySequence + 1);
-
-  const orderAssignmentsQuery = useOrderAssignments(order.id);
-  const stageDefaultsQuery = useStageAssignments();
-  const nextStageAssignees = useMemo(
-    () => (orderAssignmentsQuery.data ?? []).filter((a) => a.section_id === nextStageProgress?.stage.id),
-    [orderAssignmentsQuery.data, nextStageProgress],
-  );
-
-  // Whoever's next in line includes both explicit per-order assignees and the
-  // stage's global default users, so handoff contacts are always populated.
-  const nextStageUserIds = useMemo(() => {
-    const defaults = (stageDefaultsQuery.data ?? [])
-      .filter((sa) => sa.section_id === nextStageProgress?.stage.id)
-      .map((sa) => sa.user_id);
-    return Array.from(new Set([...nextStageAssignees.map((a) => a.user_id), ...defaults]));
-  }, [stageDefaultsQuery.data, nextStageAssignees, nextStageProgress]);
-
-  const contactIds = useMemo(() => {
-    const ids = previousStages.flatMap((s) => s.responsibleUserIds);
-    ids.push(...nextStageUserIds);
-    return ids;
-  }, [previousStages, nextStageUserIds]);
-
-  const { contactsById, isLoading: contactsLoading } = useUserContacts(contactIds);
-
-  return (
-    <Card>
-      <CardHeader
-        title="Stage History & Contacts"
-        subtitle="Who handled earlier stages, and who's next in line — with phone numbers for handoff"
-      />
-      <CardBody className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div>
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
-            Previous Stages
-          </h4>
-          {previousStages.length === 0 ? (
-            <p className="text-sm text-ink-400">This is the first stage — nothing precedes it.</p>
-          ) : (
-            <ul className="space-y-2">
-              {previousStages.map((s) => (
-                <li key={s.stage.id} className="rounded-lg border border-ink-100 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-ink-900">{s.stage.label}</p>
-                    <Badge tone={s.isCompleted ? "good" : "warn"}>
-                      {s.isCompleted ? "Completed" : "In Progress"}
-                    </Badge>
-                  </div>
-                  <p className="mt-0.5 text-xs text-ink-500">
-                    {s.lastEntryDate ? formatDisplayDate(s.lastEntryDate) : "Not started yet"}
-                  </p>
-                  <ContactList
-                    userIds={s.responsibleUserIds}
-                    contactsById={contactsById}
-                    isLoading={contactsLoading}
-                    emptyLabel="Not yet actioned"
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div>
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
-            Next Stage Contact
-          </h4>
-          {!nextStageProgress ? (
-            <p className="text-sm text-ink-400">This is the final stage — nothing follows.</p>
-          ) : (
-            <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-3">
-              <p className="text-sm font-medium text-ink-900">{nextStageProgress.stage.label}</p>
-              <ContactList
-                userIds={nextStageUserIds}
-                contactsById={contactsById}
-                isLoading={contactsLoading}
-                emptyLabel="No one assigned to this stage yet"
-              />
-            </div>
-          )}
-        </div>
-      </CardBody>
-    </Card>
-  );
-}
-
-function ContactList({
-  userIds,
-  contactsById,
-  isLoading,
-  emptyLabel,
-}: {
-  userIds: string[];
-  contactsById: Map<string, UserContact>;
-  isLoading: boolean;
-  emptyLabel: string;
-}) {
-  const uniqueIds = Array.from(new Set(userIds));
-  if (isLoading) return <p className="mt-1.5 text-xs text-ink-400">Loading contact…</p>;
-  if (uniqueIds.length === 0) return <p className="mt-1.5 text-xs text-ink-400">{emptyLabel}</p>;
-  return (
-    <div className="mt-1.5 space-y-1">
-      {uniqueIds.map((id) => {
-        const contact = contactsById.get(id);
-        return (
-          <p key={id} className="text-xs text-ink-700">
-            <span className="font-medium">{contact?.name ?? "Unknown"}</span>
-            {contact?.phone && <span className="text-ink-500"> · {contact.phone}</span>}
-          </p>
-        );
-      })}
     </div>
   );
 }

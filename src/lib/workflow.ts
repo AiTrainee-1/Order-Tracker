@@ -5,7 +5,7 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
  *
  * `delivery_date` / `entry_date` are Postgres `date` columns, so they arrive as
  * plain "YYYY-MM-DD". Passing those straight to `new Date()` parses them as
- * UTC midnight per the ES spec — which, read back with local getters, lands on
+ * UTC midnight per the ES spec -  which, read back with local getters, lands on
  * the PREVIOUS day for anyone west of UTC and shifts every countdown by one.
  * Splitting the parts and building a local date keeps the calendar day intact.
  * Full timestamps (created_at/updated_at) already carry a zone, so they're left
@@ -35,14 +35,14 @@ export function daysRemaining(deliveryDate: string | null): number | null {
 export function addDays(dateStr: string, days: number): string {
   const d = parseDbDate(dateStr);
   d.setDate(d.getDate() + days);
-  // Build the string from local parts — toISOString() would re-shift the day.
+  // Build the string from local parts -  toISOString() would re-shift the day.
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${month}-${day}`;
 }
 
 export function formatDisplayDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return "—";
+  if (!dateStr) return "- ";
   return parseDbDate(dateStr).toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",

@@ -8,8 +8,8 @@ export function getFixedOrderQty(order: Pick<Order, "cut_quantity" | "total_qty"
 }
 
 /** The quantity an assignment is actually responsible for. When the assignment
- * is scoped to a single PO, that's the PO's quantity — not the whole order's
- * total — so a user sees only the quantity for the order/style/PO they were
+ * is scoped to a single PO, that's the PO's quantity -  not the whole order's
+ * total -  so a user sees only the quantity for the order/style/PO they were
  * given. An order-wide assignment (po_id null) falls back to the order total. */
 export function getAssignmentQty(order: Pick<Order, "total_qty">, assignment: AssignmentWithDetails): number {
   return assignment.po?.quantity ?? order.total_qty;
@@ -28,7 +28,7 @@ export function getAssignmentFixedQty(
 }
 
 /** The whole-order fixed baseline for a combined ("all POs") view, now that
- * Cutting is normally completed per PO rather than order-wide — orders.cut_quantity
+ * Cutting is normally completed per PO rather than order-wide -  orders.cut_quantity
  * stays null once every PO has been cut individually. Sums each PO's own fixed
  * quantity so the combined view still shows a real post-cut PCS number instead
  * of silently falling back to the pre-cut planned total. Falls back to the

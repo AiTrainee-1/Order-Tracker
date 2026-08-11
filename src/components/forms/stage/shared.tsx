@@ -6,13 +6,13 @@ import type { UnitType } from "../../../lib/types";
  * The three buttons that close every stage form.
  *
  * This module exports components only. The hook that writes the gating row
- * moved to hooks/useStageEntryBuilder.ts — React Fast Refresh cannot hot-swap a
+ * moved to hooks/useStageEntryBuilder.ts -  React Fast Refresh cannot hot-swap a
  * module that mixes components with other exports, and every edit here was
  * forcing a full page reload during development.
  */
 
 // ---------------------------------------------------------------------------
-// Confirmations — both actions change what other people can do, so both ask.
+// Confirmations -  both actions change what other people can do, so both ask.
 // ---------------------------------------------------------------------------
 
 /** Completing a stage unlocks the ones after it and can't be undone. */
@@ -29,7 +29,7 @@ function useForwardConfirm() {
           </p>
           {balance && balance.qty > 0 ? (
             <p className="mt-2 font-medium text-status-bad">
-              {balance.qty.toLocaleString()} {balance.unit} balance remains — it will be recorded as
+              {balance.qty.toLocaleString()} {balance.unit} balance remains -  it will be recorded as
               a shortage.
             </p>
           ) : null}
@@ -40,7 +40,7 @@ function useForwardConfirm() {
     });
 }
 
-/** Moving on WITHOUT finishing — the orange handoff. Goods that have arrived go
+/** Moving on WITHOUT finishing -  the orange handoff. Goods that have arrived go
  * forward so the next stage isn't blocked, but this stage stays open so the
  * balance can be entered later when the rest turns up. */
 function usePartialConfirm() {
@@ -77,7 +77,7 @@ function usePartialConfirm() {
 //   Not Complete – Move Forward ... send it on; this stage stays OPEN (orange)
 //   Completed – Move Forward ...... send it on and close this stage (green)
 //
-// Completing is never a prerequisite for the next stage — "Not Complete – Move
+// Completing is never a prerequisite for the next stage -  "Not Complete – Move
 // Forward" unlocks it just the same. That's the point: a stage waiting on a
 // balance must never hold up the line. All three stay enabled at all times, so
 // the choice is always the operator's rather than the form's.
@@ -139,7 +139,7 @@ export function StageActions({
           onClick={handleMoveForward}
           isLoading={isLoading}
           disabled={disabled}
-          // Inline so the amber wins outright — `bg-*` and `text-*` utilities
+          // Inline so the amber wins outright -  `bg-*` and `text-*` utilities
           // passed through className race the variant's own rules on stylesheet
           // order and lose, leaving the orange only half-applied.
           style={{
@@ -163,7 +163,7 @@ export function StageActions({
       </Button>
       <p className="text-center text-[11px] text-ink-500">
         <b>Save Plan</b> keeps your entries here without moving anything on.{" "}
-        <b>Not Complete</b> sends what's ready and leaves this stage open — shown in orange, with the
+        <b>Not Complete</b> sends what's ready and leaves this stage open -  shown in orange, with the
         balance still owed. The next stage unlocks either way.
       </p>
     </div>

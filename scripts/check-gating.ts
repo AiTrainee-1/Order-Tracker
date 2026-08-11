@@ -5,7 +5,7 @@
  *
  * Guards the rule the whole workflow depends on: "Not Complete – Move Forward"
  * must unlock the next stage even when the stage forwards no quantity. That
- * broke once — Raw Material Planning forwards the material RECEIVED, which is
+ * broke once -  Raw Material Planning forwards the material RECEIVED, which is
  * legitimately zero while you're still planning, so the partial state was
  * inferred as false and Purchase Order to Suppliers stayed locked. See
  * migration 012.

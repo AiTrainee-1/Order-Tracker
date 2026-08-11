@@ -12,16 +12,24 @@ import {
 } from "../../../hooks/useProductionChain";
 import type { ChainStage } from "../../../lib/chain";
 import { formatDisplayDate } from "../../../lib/workflow";
+import { applyExtraPercent } from "../../../lib/sizes";
 import { Button } from "../../ui/Button";
 import { Badge } from "../../ui/Badge";
 import { Input, Select, Textarea } from "../../ui/FormControls";
-import type { ProductionLot, ProductionTxn, TxnType, UnitType } from "../../../lib/types";
+import type {
+  AssignmentWithDetails,
+  Order,
+  ProductionLot,
+  ProductionTxn,
+  TxnType,
+  UnitType,
+} from "../../../lib/types";
 
 /**
  * Shared machinery for every quantity-recording stage.
  *
- * The rules in §33–35 of the spec — never overwrite, always allow editing,
- * always record who/when/why, always show the running cumulative — are
+ * The rules in §33–35 of the spec -  never overwrite, always allow editing,
+ * always record who/when/why, always show the running cumulative -  are
  * implemented once, here, rather than sixteen times across sixteen forms. A
  * stage form supplies a LedgerConfig describing which columns it needs and
  * <StageLedger/> does the rest, so the stages stay consistent by construction
@@ -29,7 +37,7 @@ import type { ProductionLot, ProductionTxn, TxnType, UnitType } from "../../../l
  */
 
 // ---------------------------------------------------------------------------
-// Chain strip — the same four numbers at the top of every stage
+// Chain strip -  the same four numbers at the top of every stage
 // ---------------------------------------------------------------------------
 
 export function QtyBox({
@@ -88,11 +96,45 @@ export function ChainStrip({ cs, inputHint }: { cs: ChainStage; inputHint?: stri
       {cs.hasMismatch && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           The previous stage sent on <b>{cs.inherited.toLocaleString()} {cs.unit}</b> but{" "}
-          <b>{cs.recordedIn.toLocaleString()} {cs.unit}</b> was counted in here — a difference of{" "}
+          <b>{cs.recordedIn.toLocaleString()} {cs.unit}</b> was counted in here -  a difference of{" "}
           {Math.abs(cs.recordedIn - cs.inherited).toLocaleString()} {cs.unit}. Both figures are kept;
           reconcile before completing this stage.
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * Buyer Order Quantity -> Excess % -> Extra Quantity -> Final Production
+ * Quantity, shown at the top of every stage form via StageFormRouter.
+ *
+ * The buyer figure is reference only -  what production actually runs against
+ * is the Final Production Quantity, and it always has been: every PCS number
+ * in chain.ts (SizeFlow.poQty, ChainStage totals, the Output dashboard)
+ * already comes from effectiveSizes(), which applies the PO's extra_percent
+ * before anything downstream ever sees the number. This banner doesn't change
+ * that math -  it just makes visible what was previously implicit.
+ */
+export function OrderQtyBanner({ order, assignment }: { order: Order; assignment: AssignmentWithDetails }) {
+  const po = assignment.po;
+  const buyerQty = po ? po.quantity : order.total_qty;
+  const extraPercent = po?.extra_percent ?? 0;
+  const productionQty = applyExtraPercent(buyerQty, extraPercent);
+  const extraQty = productionQty - buyerQty;
+
+  return (
+    <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/70 bg-white/70 p-2.5 sm:grid-cols-4">
+      <QtyBox label="Buyer Order Quantity" value={buyerQty} unit="PCS" hint="reference / comparison only" />
+      <QtyBox label="Extra %" value={extraPercent} hint="configured for this PO -  e.g. 2 means +2%" />
+      <QtyBox label="Extra Quantity" value={extraQty} unit="PCS" hint="added on top of buyer order qty" />
+      <QtyBox
+        label="Final Production Quantity"
+        value={productionQty}
+        unit="PCS"
+        tone="good"
+        hint="what production actually runs against"
+      />
     </div>
   );
 }
@@ -263,7 +305,7 @@ export function LotSelect({
   return (
     <div className="flex items-end gap-2">
       <Select label={label} value={value} onChange={(e) => onChange(e.target.value)} className="min-w-[9rem]">
-        <option value="">— Select lot —</option>
+        <option value="">-  Select lot - </option>
         {lots.map((l) => (
           <option key={l.id} value={l.id}>
             {l.lot_no}
@@ -300,7 +342,7 @@ export interface LedgerConfig {
   /** Fixed txn_type for rows this stage writes. */
   txnType?: TxnType;
   /** Show only rows of that txn_type in the history. Lets Embroidery render two
-   * ledgers over one stage — dispatch and return — each with its own running
+   * ledgers over one stage -  dispatch and return -  each with its own running
    * total, without either seeing the other's rows. */
   filterByTxnType?: boolean;
   /** Render size entry as one row per size against a chosen lot, instead of a
@@ -365,13 +407,18 @@ export interface StageLedgerProps {
   onSaved: () => void;
   /** Extra content rendered between the summary and the entry area. */
   children?: React.ReactNode;
+  /** Hides the chain strip, extra content and lot/size position tables - 
+   * reference summaries, not entry controls. The entries table and the add-row
+   * form stay visible regardless, since editing/adding a row IS the data entry
+   * this page exists for. */
+  showDetails: boolean;
 }
 
 /**
  * Committing the ledger is exposed rather than fired from a button of its own.
  *
- * All three stage actions need to write pending entries first — "Save Plan"
- * writes and stops, the two Move Forward actions write and then hand off — so
+ * All three stage actions need to write pending entries first -  "Save Plan"
+ * writes and stops, the two Move Forward actions write and then hand off -  so
  * a second save button inside the ledger would either duplicate the first
  * action or, worse, let someone forward a stage while a half-typed row sat
  * unsaved above it.
@@ -385,7 +432,7 @@ export interface StageLedgerHandle {
 }
 
 export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(function StageLedger(
-  { orderId, poId, sectionId, unit, cs, lots, sizes, config, onSaved, children },
+  { orderId, poId, sectionId, unit, cs, lots, sizes, config, onSaved, children, showDetails },
   ref,
 ) {
   const appUser = useEntryUser();
@@ -465,11 +512,11 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
   async function saveDrafts(): Promise<boolean> {
     if (!appUser) return false;
     const usable = drafts.filter(draftHasValue);
-    // Nothing typed is not an error — the operator may simply be forwarding
+    // Nothing typed is not an error -  the operator may simply be forwarding
     // what earlier entries already recorded.
     if (usable.length === 0) return true;
     if (config.lot === "required" && usable.some((d) => !d.lotId)) {
-      toast.show("Every entry needs a lot — select one or create a new lot.", "error");
+      toast.show("Every entry needs a lot -  select one or create a new lot.", "error");
       return false;
     }
     if (config.size === "required" && usable.some((d) => !d.sizeCode)) {
@@ -487,7 +534,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
         entity: "production_txn",
         entity_id: null,
         action: "create",
-        summary: `${usable.length} entr${usable.length === 1 ? "y" : "ies"} added — ${rows
+        summary: `${usable.length} entr${usable.length === 1 ? "y" : "ies"} added -  ${rows
           .reduce((total, r) => total + r.qty_out + r.qty_in, 0)
           .toLocaleString()} ${unit}`,
         changes: null,
@@ -512,7 +559,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
   async function saveGrid(): Promise<boolean> {
     if (!appUser) return false;
     const typed = sizes.some((s) => Number(gridQty[s.size_code]) > 0);
-    // Nothing typed is not an error — see saveDrafts.
+    // Nothing typed is not an error -  see saveDrafts.
     if (!typed) return true;
     if (!gridLotId) {
       toast.show("Select a lot first.", "error");
@@ -559,7 +606,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
       setGridQty({});
       setGridNotes("");
       onSaved();
-      toast.show(`Lot ${lotNo} recorded — ${total.toLocaleString()} ${unit}.`, "success");
+      toast.show(`Lot ${lotNo} recorded -  ${total.toLocaleString()} ${unit}.`, "success");
       return true;
     } catch (e) {
       toast.show(e instanceof Error ? e.message : "Could not save the entry.", "error");
@@ -605,7 +652,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
   async function saveEdit(original: ProductionTxn) {
     if (!editDraft || !appUser) return;
     if (!editDraft.notes.trim()) {
-      toast.show("Add a note explaining the correction — it's kept in the audit trail.", "error");
+      toast.show("Add a note explaining the correction -  it's kept in the audit trail.", "error");
       return;
     }
 
@@ -635,7 +682,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
           <ul className="mt-2 space-y-0.5 text-xs">
             {Object.entries(changes).map(([field, c]) => (
               <li key={field}>
-                <b>{field.replace(/_/g, " ")}</b>: {String(c.from ?? "—")} → {String(c.to ?? "—")}
+                <b>{field.replace(/_/g, " ")}</b>: {String(c.from ?? "- ")} → {String(c.to ?? "- ")}
               </li>
             ))}
           </ul>
@@ -671,26 +718,30 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
 
   // --- Render --------------------------------------------------------------
 
-  const lotName = (id: string | null) => lots.find((l) => l.id === id)?.lot_no ?? "—";
+  const lotName = (id: string | null) => lots.find((l) => l.id === id)?.lot_no ?? "- ";
   const showLot = config.lot !== "none";
   const showSize = config.size !== "none" && !config.sizeGrid;
 
   return (
     <div className="space-y-5">
-      <ChainStrip cs={cs} />
+      {showDetails && (
+        <>
+          <ChainStrip cs={cs} />
 
-      {children}
+          {children}
 
-      {showLot && cs.byLot.length > 0 && (
-        <Section title="Lot-wise position">
-          <LotSummaryTable cs={cs} />
-        </Section>
-      )}
+          {showLot && cs.byLot.length > 0 && (
+            <Section title="Lot-wise position">
+              <LotSummaryTable cs={cs} />
+            </Section>
+          )}
 
-      {config.size !== "none" && cs.bySize.length > 0 && (
-        <Section title="Size-wise position">
-          <SizeSummaryTable cs={cs} />
-        </Section>
+          {config.size !== "none" && cs.bySize.length > 0 && (
+            <Section title="Size-wise position">
+              <SizeSummaryTable cs={cs} />
+            </Section>
+          )}
+        </>
       )}
 
       {/* ---------------- Entry history ---------------- */}
@@ -741,7 +792,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                                   value={editDraft.lotId}
                                   onChange={(e) => setEditDraft({ ...editDraft, lotId: e.target.value })}
                                 >
-                                  <option value="">—</option>
+                                  <option value="">- </option>
                                   {lots.map((l) => (
                                     <option key={l.id} value={l.id}>
                                       {l.lot_no}
@@ -755,7 +806,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                                   value={editDraft.sizeCode}
                                   onChange={(e) => setEditDraft({ ...editDraft, sizeCode: e.target.value })}
                                 >
-                                  <option value="">—</option>
+                                  <option value="">- </option>
                                   {sizes.map((s) => (
                                     <option key={s.size_code} value={s.size_code}>
                                       {s.size_code}
@@ -802,7 +853,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                               rows={2}
                               value={editDraft.notes}
                               onChange={(e) => setEditDraft({ ...editDraft, notes: e.target.value })}
-                              placeholder="e.g. Recount after weighbridge — 12 KG more than first recorded"
+                              placeholder="e.g. Recount after weighbridge -  12 KG more than first recorded"
                             />
                             <div className="flex gap-2">
                               <Button type="button" size="sm" onClick={() => saveEdit(t)} isLoading={isSaving}>
@@ -822,9 +873,9 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                     <tr key={t.id} className="bg-white">
                       <td className="whitespace-nowrap px-3 py-2 text-ink-500">{formatDisplayDate(t.entry_date)}</td>
                       {showLot && <td className="px-3 py-2 font-medium text-ink-900">{lotName(t.lot_id)}</td>}
-                      {config.size !== "none" && <td className="px-3 py-2 font-medium">{t.size_code ?? "—"}</td>}
-                      {config.ref && <td className="px-3 py-2">{t.ref_name ?? "—"}</td>}
-                      {config.docLabel && <td className="px-3 py-2">{t.doc_no ?? "—"}</td>}
+                      {config.size !== "none" && <td className="px-3 py-2 font-medium">{t.size_code ?? "- "}</td>}
+                      {config.ref && <td className="px-3 py-2">{t.ref_name ?? "- "}</td>}
+                      {config.docLabel && <td className="px-3 py-2">{t.doc_no ?? "- "}</td>}
                       {config.inLabel && <td className="px-3 py-2 text-right tabular-nums">{t.qty_in.toLocaleString()}</td>}
                       {config.outLabel && (
                         <td className="px-3 py-2 text-right tabular-nums text-status-good">{t.qty_out.toLocaleString()}</td>
@@ -916,7 +967,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
           </div>
         </Section>
       ) : (
-        <Section title="Add new entry" subtitle="Each row is saved as its own record — nothing above is replaced.">
+        <Section title="Add new entry" subtitle="Each row is saved as its own record -  nothing above is replaced.">
           <div className="space-y-3 rounded-xl border border-ink-100 bg-ink-50/60 p-3">
             {drafts.map((d, i) => (
               <div key={d.key} className="rounded-lg border border-ink-100 bg-white p-3">
@@ -950,7 +1001,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                       value={d.sizeCode}
                       onChange={(e) => patchDraft(d.key, { sizeCode: e.target.value })}
                     >
-                      <option value="">— Select —</option>
+                      <option value="">-  Select - </option>
                       {sizes.map((s) => (
                         <option key={s.size_code} value={s.size_code}>
                           {s.size_code}
@@ -1029,7 +1080,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                     label="Notes"
                     value={d.notes}
                     onChange={(e) => patchDraft(d.key, { notes: e.target.value })}
-                    placeholder="Optional — kept with this entry in the history"
+                    placeholder="Optional -  kept with this entry in the history"
                   />
                 </div>
               </div>

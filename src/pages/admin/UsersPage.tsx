@@ -185,7 +185,7 @@ export function UsersPage() {
                 ),
               },
               { header: "Role", render: (u) => u.role },
-              { header: "Phone", render: (u) => u.phone || <span className="text-ink-300">—</span> },
+              { header: "Phone", render: (u) => u.phone || <span className="text-ink-300">- </span> },
               {
                 header: "Sections",
                 render: (u) => (
@@ -335,7 +335,7 @@ export function UsersPage() {
           </p>
           <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
             If this user has ever submitted production entries, deletion will be blocked to protect
-            the order history — deactivate them instead in that case.
+            the order history -  deactivate them instead in that case.
           </p>
           {deleteError && <p className="text-sm font-medium text-status-bad">{deleteError}</p>}
           <div className="flex justify-end gap-2">

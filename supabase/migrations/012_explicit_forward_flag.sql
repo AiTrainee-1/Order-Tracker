@@ -10,7 +10,7 @@
 -- "Not Complete – Move Forward" and "Save Plan" wrote identical rows whenever
 -- the stage had no quantity to forward yet (is_completed = false,
 -- qty_forwarded = 0). progress.ts inferred the partial state from the
--- quantity — `isPartial = !isCompleted && qtyForwarded > 0` — so a stage moved
+-- quantity -  `isPartial = !isCompleted && qtyForwarded > 0` -  so a stage moved
 -- on with nothing counted yet never went orange and never unlocked the stage
 -- after it.
 --
@@ -33,7 +33,7 @@ alter table public.stage_entries
   add column if not exists is_forwarded boolean not null default false;
 
 -- Backfill. Every row written before this column existed came from a forward
--- action — Save Plan wrote nothing to stage_entries until the three-button
+-- action -  Save Plan wrote nothing to stage_entries until the three-button
 -- rework, and any row that moved quantity or closed a stage was a forward by
 -- definition. Reconstruct that rather than leaving history looking unforwarded.
 update public.stage_entries

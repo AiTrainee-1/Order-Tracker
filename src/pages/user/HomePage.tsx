@@ -197,14 +197,14 @@ function WorkItemCard({ item, onOpen }: { item: WorkItem; onOpen: () => void }) 
   const currentStageLabel = orderProgress.stages[orderProgress.currentStageIndex]?.stage.label;
 
   const requiredAction = !assignment.can_enter_data
-    ? "Monitor only — tap to view status"
+    ? "Monitor only -  tap to view status"
     : isPartial && item.stageProgress
-      ? `Not complete — ${item.stageProgress.qtyPending.toLocaleString()} ${item.stageProgress.stage.unit_type} still owed here`
+      ? `Not complete -  ${item.stageProgress.qtyPending.toLocaleString()} ${item.stageProgress.stage.unit_type} still owed here`
       : gateStatus === "completed"
-        ? "Your part is done — awaiting later stages"
+        ? "Your part is done -  awaiting later stages"
         : gateStatus === "locked"
-          ? `Waiting — order is at "${currentStageLabel}"`
-          : "Your turn — tap to enter today's production data";
+          ? `Waiting -  order is at "${currentStageLabel}"`
+          : "Your turn -  tap to enter today's production data";
 
   return (
     <button

@@ -5,7 +5,7 @@
 -- ⚠ DESTRUCTIVE AND IRREVERSIBLE. Take a backup first
 --   (Supabase → Database → Backups, or `pg_dump`).
 --
--- Not a migration — it lives outside supabase/migrations/ deliberately so it is
+-- Not a migration -  it lives outside supabase/migrations/ deliberately so it is
 -- never picked up by a "run everything in order" pass. Run it by hand, when you
 -- mean to.
 --
@@ -14,7 +14,7 @@
 --   orders               every order
 --   purchase_orders      their POs
 --   po_size_quantities   the size breakdown of each PO
---   workflow_stages      the 20 stages — reference data, NOT records.
+--   workflow_stages      the 20 stages -  reference data, NOT records.
 --                        Deleting these breaks the whole app and can only be
 --                        restored by re-running migrations 011 and 012.
 --   storage order-images garment photos belong to the orders

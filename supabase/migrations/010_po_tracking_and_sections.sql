@@ -1,33 +1,33 @@
 -- ============================================================================
 -- PO-first tracking + section restructure.
 --
--- ⚠ THIS MIGRATION CLEARS MOVEMENT/ASSIGNMENT DATA — but NOT your orders.
+-- ⚠ THIS MIGRATION CLEARS MOVEMENT/ASSIGNMENT DATA -  but NOT your orders.
 -- It deletes every stage_entries, stage_sub_items, user_assignments, and
 -- stage_assignments row (all four have a foreign key into workflow_stages,
 -- and every workflow_stages row is being deleted and re-inserted below with
 -- new ids, so nothing referencing the old ones can survive). orders and
 -- purchase_orders have NO foreign key into workflow_stages, so they are left
--- completely untouched — your 4 original demo orders (and any others you've
+-- completely untouched -  your 4 original demo orders (and any others you've
 -- added) are still there afterwards. app_users is untouched too. If you have
 -- real production entries/assignments you need to keep, back them up first.
 --
 -- What changes:
 --   1. transfer_type gains an 'others' option (a custom-named destination that
 --      doesn't fit branch/unit/outside).
---   2. purchase_orders gets its own cut_quantity — Cutting now normally
+--   2. purchase_orders gets its own cut_quantity -  Cutting now normally
 --      completes per PO rather than order-wide, so each PO needs its own fixed
 --      post-cut baseline (mirrors orders.cut_quantity).
 --   3. workflow_stages goes from 13 stages to 15:
 --        - 'printing_embroidery' relabelled "Embroidery" (no Printing in this
 --          workflow).
---        - 'washing' removed — not part of this workflow.
---        - 'sewing' kept as its own stage ('stitching' — the actual garment
+--        - 'washing' removed -  not part of this workflow.
+--        - 'sewing' kept as its own stage ('stitching' -  the actual garment
 --          assembly step, still form_type sub_steps with the same Line
 --          Feeding / Inline QC / End Line QC / Measurement Check checklist),
 --          with three NEW independent stages added after it: Checking,
 --          Ironing, Packing (before the existing Finishing/Packing stages).
 --   4. Run scripts/seed-demo.ts afterwards to add example users/assignments
---      and mock movement through the new workflow — it adds 2 new sample
+--      and mock movement through the new workflow -  it adds 2 new sample
 --      orders alongside your existing ones rather than replacing anything.
 -- ============================================================================
 

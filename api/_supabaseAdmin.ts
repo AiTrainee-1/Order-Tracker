@@ -95,7 +95,7 @@ export function usernameToEmail(username: string): string {
  * Standard error responder used by every api/admin-*.ts handler.
  *
  * Anything that reaches here was THROWN, and the handlers only throw for auth
- * and configuration problems — every genuine validation failure is returned
+ * and configuration problems -  every genuine validation failure is returned
  * directly with an explicit 400. So the default here is 500, not 400.
  *
  * It used to be 400, which meant a missing SUPABASE_SERVICE_ROLE_KEY surfaced

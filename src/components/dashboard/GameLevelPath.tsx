@@ -3,9 +3,9 @@ import type { StageProgress } from "../../lib/progress";
 import { formatDisplayDate } from "../../lib/workflow";
 
 const COLS = 7;
-const NODE = 34; // px — compact circle size
-const NODE_ROW = 64; // px — node + label
-const LINE_ROW = 18; // px — vertical connector between rows
+const NODE = 34; // px -  compact circle size
+const NODE_ROW = 64; // px -  node + label
+const LINE_ROW = 18; // px -  vertical connector between rows
 
 /** Completed, moved-on-but-unfinished (orange), or still to do. */
 type StageTone = "good" | "partial" | "current" | "idle";
@@ -26,7 +26,7 @@ interface GameLevelPathProps {
 }
 
 /**
- * A compact "game level" path — stages snake left-to-right, then right-to-left
+ * A compact "game level" path -  stages snake left-to-right, then right-to-left
  * on the next row, like a board game track. Nodes sit on a CSS grid with
  * dedicated connector tracks between them, so the connecting lines always span
  * the real gap between nodes. Colour carries the status: green = completed,
@@ -59,7 +59,7 @@ export function GameLevelPath({
     for (let i = 0; i < stages.length - 1; i++) {
       const a = positions[i];
       const b = positions[i + 1];
-      // The line takes the colour of the stage it leaves — an orange line means
+      // The line takes the colour of the stage it leaves -  an orange line means
       // goods moved on from a stage that isn't finished yet.
       const tone: StageTone = stages[i].isCompleted
         ? "good"
@@ -163,14 +163,14 @@ export function GameLevelPath({
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-ink-500">
         <LegendDot className="bg-good-gradient" label="Completed" />
-        <LegendDot className="bg-warn-gradient" label="Moved on — not completed" />
+        <LegendDot className="bg-warn-gradient" label="Moved on -  not completed" />
         <LegendDot className="bg-brand-gradient" label="In progress" />
         <LegendDot className="bg-white ring-1 ring-inset ring-ink-300" label="Not reached" />
       </div>
 
       {hasPartial && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          Orange stages were forwarded before they were finished — a balance is still owed there.
+          Orange stages were forwarded before they were finished -  a balance is still owed there.
           They stay flagged until someone completes them.
         </p>
       )}

@@ -8,16 +8,20 @@ import { QtyBox, Section } from "./chainShared";
 import type { StageFormProps } from "./types";
 
 /**
- * Purchase Order to Suppliers — the two halves of procurement on one screen.
+ * Purchase Order to Suppliers -  Planned Quantity: how much yarn is planned
+ * against the requirement?
  *
- *   Dispatch   what the supplier sent, under which DC, on what date
- *   Received   what actually turned up against those dispatches
+ * One responsibility only: for each material Raw Material Planning listed,
+ * how much is being planned/ordered against it. The required figure comes
+ * straight from Planning -  nothing to re-enter -  so this screen is a single
+ * comparison:
  *
- * Both write against the requirements Raw Material Planning created, so the
- * planned figure here is never re-typed and can never drift. The gap between
- * dispatched and received is material in transit or short-supplied — worth
- * seeing on its own, which is why it's a column rather than a subtraction the
- * buyer has to do in their head.
+ *     Required Quantity → Planned Quantity
+ *
+ * No dispatch, no receipt -  those don't belong here. Raw Material Inward
+ * reads the planned quantity set here as its own input, the same way this
+ * screen reads Planning's, and is solely responsible for the actual received
+ * quantity once material arrives.
  */
 export function SupplierDcForm(props: StageFormProps) {
   const { order, assignment, stageProgress, onForwarded } = props;
@@ -28,27 +32,23 @@ export function SupplierDcForm(props: StageFormProps) {
   );
   const { submitMovement, isPending } = useStageEntryBuilder(order, assignment);
 
-  if (isLoading) return <Loader label="Loading supplier dispatches…" />;
+  if (isLoading) return <Loader label="Loading planned quantities…" />;
   if (isError || !cs) return <p className="text-sm text-status-bad">Couldn't load supplier data.</p>;
 
   const flows = requirements.map((r) => buildRequirementFlow(r, materialEntries));
   const totals = flows.reduce(
-    (acc, f) => ({
-      required: acc.required + f.totals.required,
-      dc: acc.dc + f.totals.dc,
-      received: acc.received + f.totals.received,
-    }),
-    { required: 0, dc: 0, received: 0 },
+    (acc, f) => ({ required: acc.required + f.totals.required, planned: acc.planned + f.totals.dc }),
+    { required: 0, planned: 0 },
   );
-  const inTransit = Math.max(totals.dc - totals.received, 0);
+  const balance = Math.max(totals.required - totals.planned, 0);
 
   async function forward(isFinal: boolean) {
     const alreadyLogged = stageProgress?.qtyForwarded ?? 0;
     await submitMovement({
       base: {
-        qty_received: totals.dc,
-        qty_completed_today: Math.max(totals.received - alreadyLogged, 0),
-        qty_forwarded: Math.max(totals.received - alreadyLogged, 0),
+        qty_received: totals.required,
+        qty_completed_today: Math.max(totals.planned - alreadyLogged, 0),
+        qty_forwarded: Math.max(totals.planned - alreadyLogged, 0),
         notes: null,
       },
       action: isFinal ? "complete" : "forward",
@@ -56,11 +56,11 @@ export function SupplierDcForm(props: StageFormProps) {
     onForwarded();
   }
 
-  /** DC and receipt rows are written as they're entered above, so this records
-   * that procurement progressed without handing anything to the store. */
+  /** Planned-quantity rows are written as they're entered above, so this
+   * records that procurement progressed without handing anything to the store. */
   async function savePlan() {
     await submitMovement({
-      base: { qty_received: totals.dc, qty_forwarded: 0, notes: "Plan saved — nothing forwarded." },
+      base: { qty_received: totals.required, qty_forwarded: 0, notes: "Plan saved -  nothing forwarded." },
       action: "plan",
     });
     onForwarded();
@@ -68,29 +68,26 @@ export function SupplierDcForm(props: StageFormProps) {
 
   return (
     <div className="space-y-6">
-      <p className="text-xs leading-relaxed text-ink-500">
-        Record each supplier dispatch against its DC, then confirm what was received. The planned
-        figures come straight from Raw Material Planning — nothing to re-enter.
-      </p>
+      {props.showDetails && (
+        <>
+          <p className="text-xs leading-relaxed text-ink-500">
+            Planned Quantity -  for each material, enter how much yarn is being planned against the
+            required quantity Raw Material Planning set. That's the only figure this screen owns.
+          </p>
 
-      <Section title="Procurement position">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <QtyBox label="Planned" value={totals.required} unit="KG" />
-          <QtyBox label="Dispatched" value={totals.dc} unit="KG" />
-          <QtyBox label="Received" value={totals.received} unit="KG" tone="good" />
-          <QtyBox
-            label="In transit"
-            value={inTransit}
-            unit="KG"
-            tone={inTransit > 0 ? "warn" : "good"}
-            hint="sent, not yet confirmed"
-          />
-        </div>
-      </Section>
+          <Section title="Planned Quantity">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <QtyBox label="Required" value={totals.required} unit="KG" />
+              <QtyBox label="Planned" value={totals.planned} unit="KG" tone="good" />
+              <QtyBox label="Balance" value={balance} unit="KG" tone={balance > 0 ? "warn" : "good"} />
+            </div>
+          </Section>
+        </>
+      )}
 
       {flows.length === 0 ? (
         <p className="rounded-xl border border-dashed border-ink-200 px-3 py-6 text-center text-sm text-ink-400">
-          Nothing to purchase yet — Raw Material Planning hasn't added any yarn counts or fabric.
+          Nothing to plan yet -  Raw Material Planning hasn't added any yarn counts or fabric.
         </p>
       ) : (
         <MaterialLedger
@@ -100,7 +97,7 @@ export function SupplierDcForm(props: StageFormProps) {
           flows={flows}
           categories={["yarn", "fabric"]}
           canEditRequirements={false}
-          entryTypes={["dc", "receipt"]}
+          entryTypes={["dc"]}
           onSaved={onForwarded}
         />
       )}
@@ -108,7 +105,7 @@ export function SupplierDcForm(props: StageFormProps) {
       <StageActions
         sectionLabel={assignment.section?.label ?? "Purchase Order to Suppliers"}
         unitType="KG"
-        balance={Math.max(totals.required - totals.received, 0)}
+        balance={balance}
         isLoading={isPending}
         onSavePlan={savePlan}
         onMoveForward={() => forward(false)}

@@ -42,7 +42,7 @@ export function OrderCard({ bundle }: { bundle: OrderBundle }) {
   const { order, progress } = bundle;
   const imageUrl = publicImageUrl(order.image_path);
   const urgency = deliveryUrgency(order.delivery_date);
-  const currentStage = progress.stages[progress.currentStageIndex]?.stage.label ?? "—";
+  const currentStage = progress.stages[progress.currentStageIndex]?.stage.label ?? "- ";
 
   return (
     <Link
@@ -90,7 +90,7 @@ export function OrderCard({ bundle }: { bundle: OrderBundle }) {
         {progress.partialStagesCount > 0 && (
           <p className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800">
             {progress.partialStagesCount} stage{progress.partialStagesCount === 1 ? "" : "s"} not
-            complete — balance still owed
+            complete -  balance still owed
           </p>
         )}
 

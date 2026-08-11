@@ -30,7 +30,7 @@ export interface UnitBreakdown {
 export interface StageProgress {
   stage: WorkflowStage;
   entries: StageEntry[];
-  /** What the PREVIOUS stage forwarded into this one — the automatic carry-over.
+  /** What the PREVIOUS stage forwarded into this one -  the automatic carry-over.
    * 0 when there is no comparable predecessor (first stage, or a unit-type
    * switch at Cutting where KG no longer converts 1:1 into PCS). */
   qtyInherited: number;
@@ -40,10 +40,10 @@ export interface StageProgress {
   /** The effective quantity this stage works against: what was actually counted
    * in if recorded, otherwise what the previous stage forwarded, otherwise the
    * order's baseline. This is what makes a blank middle stage stop breaking the
-   * chain — downstream stages still know the real number. */
+   * chain -  downstream stages still know the real number. */
   qtyAllotted: number;
   /** True when this stage counted in a different quantity than the previous
-   * stage forwarded — a discrepancy worth surfacing for verification. */
+   * stage forwarded -  a discrepancy worth surfacing for verification. */
   hasQtyMismatch: boolean;
   qtyCompletedToday: number;
   qtyForwarded: number;
@@ -52,7 +52,7 @@ export interface StageProgress {
   qtyReturned: number;
   qtyPending: number;
   isCompleted: boolean;
-  /** Moved forward without being finished — the "orange" state. Goods were sent
+  /** Moved forward without being finished -  the "orange" state. Goods were sent
    * on so the next stage isn't blocked, but a balance is still owed here. */
   isPartial: boolean;
   /** Every earlier stage has at least forwarded something, so work can start. */
@@ -80,7 +80,7 @@ export interface OrderProgress {
   currentStageIndex: number;
   completedStagesCount: number;
   pendingStagesCount: number;
-  /** Stages moved on without being finished — outstanding balances to chase. */
+  /** Stages moved on without being finished -  outstanding balances to chase. */
   partialStagesCount: number;
   overallProgressPct: number;
   daysRemaining: number | null;
@@ -128,19 +128,19 @@ function baselineFor(scope: QtyBaseline, stage: WorkflowStage): number {
 /**
  * Aggregates the raw stage_entries log for one order into a per-stage and
  * overall progress model. This is the single source of truth for "how far
- * has this order progressed" — computed client-side (not cached in the DB)
+ * has this order progressed" -  computed client-side (not cached in the DB)
  * so the math stays easy to inspect/adjust in one place.
  *
  * Conventions:
  * - qty_received is the quantity counted in at the stage, restated (not
- *   additive) on every entry — so we take the max across entries, not the sum.
+ *   additive) on every entry -  so we take the max across entries, not the sum.
  * - qty_forwarded/rejected/returned accumulate across entries (a stage can be
  *   forwarded in several split batches), so we sum them.
  * - Quantity CARRIES OVER: a stage that recorded nothing still inherits what
  *   the previous stage forwarded, so leaving one form blank never blanks out
  *   the stages after it.
  * - A stage completes ONLY when an entry explicitly marks is_completed. An
- *   entry that forwards without completing leaves the stage "partial" — the
+ *   entry that forwards without completing leaves the stage "partial" -  the
  *   next stage unlocks, but a balance is still owed here.
  * - Balance is derived from the running totals (allotted − forwarded −
  *   rejected), never summed from per-entry qty_shortage (which would
@@ -150,7 +150,7 @@ export function buildOrderProgress(
   order: Order,
   stages: WorkflowStage[],
   entries: StageEntry[],
-  /** Overrides the fallback baseline — pass a PO's own { quantity, cut_quantity }
+  /** Overrides the fallback baseline -  pass a PO's own { quantity, cut_quantity }
    * when `entries` has already been filtered to that PO, so a PO-scoped view
    * doesn't fall back to the whole order's numbers. Defaults to the order's own
    * total_qty/cut_quantity, unchanged from before this param existed. */
@@ -171,12 +171,12 @@ export function buildOrderProgress(
     const qtyRejected = stageEntries.reduce((sum, e) => sum + e.qty_rejected, 0);
     const qtyReturned = stageEntries.reduce((sum, e) => sum + e.qty_returned, 0);
 
-    // Complete only when an entry explicitly says so — no auto-complete.
+    // Complete only when an entry explicitly says so -  no auto-complete.
     //
     // Partial is likewise an explicit decision, not something inferred from the
     // numbers. Quantity is the wrong signal: a stage can legitimately be handed
-    // on before anything has been counted at it — Raw Material Planning forwards
-    // a plan long before a kilo of yarn arrives — and the stage after it still
+    // on before anything has been counted at it -  Raw Material Planning forwards
+    // a plan long before a kilo of yarn arrives -  and the stage after it still
     // has to unlock. The `qtyForwarded > 0` arm is the fallback for rows written
     // before is_forwarded existed (see migration 012).
     const isCompleted = stageEntries.some((e) => e.is_completed);

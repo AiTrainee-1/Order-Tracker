@@ -11,7 +11,7 @@ import type { AssignmentWithDetails, Order } from "../lib/types";
  * never diverge.
  *
  * Lives in hooks/ rather than beside StageActions so that module exports only
- * components — a file mixing components with hooks can't be hot-swapped by
+ * components -  a file mixing components with hooks can't be hot-swapped by
  * React Fast Refresh, and every edit to it forces a full reload during dev.
  */
 
@@ -19,7 +19,7 @@ import type { AssignmentWithDetails, Order } from "../lib/types";
  * Which of the three buttons was pressed.
  *
  * A single discriminator rather than two booleans, because two booleans can be
- * combined into states that don't exist — and one of those bugs shipped: "Save
+ * combined into states that don't exist -  and one of those bugs shipped: "Save
  * Plan" and "Not Complete – Move Forward" both wrote `is_completed: false` with
  * no quantity, became indistinguishable, and the next stage never unlocked.
  * Three actions, three row shapes, no fourth possibility.
@@ -64,7 +64,7 @@ export function useStageEntryBuilder(order: Order, assignment: AssignmentWithDet
   }
 
   /**
-   * Records that this stage moved. One row per forward action — the per-unit
+   * Records that this stage moved. One row per forward action -  the per-unit
    * and per-vendor split that used to live here is now `ref_name` on the
    * individual production_txns rows, where it belongs alongside the quantity it
    * describes.

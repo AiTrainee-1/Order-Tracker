@@ -3,12 +3,12 @@
 -- another branch or another production unit/vendor, and where. Surfaced on the
 -- admin dashboard (order detail entry tables + stage tooltip).
 --
--- transfer_type: 'none'   — internal, no transfer (default)
---                'branch' — moved to another company branch
---                'unit'   — moved to another production unit / subcontractor
+-- transfer_type: 'none'   -  internal, no transfer (default)
+--                'branch' -  moved to another company branch
+--                'unit'   -  moved to another production unit / subcontractor
 -- transfer_to:   free-text destination name (branch/unit), null when 'none'.
 --
--- Additive only — no data loss, existing rows default to 'none'. The existing
+-- Additive only -  no data loss, existing rows default to 'none'. The existing
 -- stage_entries RLS policies already cover these columns (row-level, not
 -- column-level), so no policy changes are needed.
 -- ============================================================================

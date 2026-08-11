@@ -2,7 +2,7 @@
  * Demo data bootstrap.
  *
  * Creates one example user per production section, then two sample orders with
- * size-wise POs and walks realistic production through the whole chain —
+ * size-wise POs and walks realistic production through the whole chain - 
  * material requirements and receipts, lots raised at knitting, kilos losing a
  * little at every fabric process, then pieces cut size by size and carried
  * through to packing.
@@ -19,14 +19,14 @@
  *
  * WHAT IT SEEDS
  *
- *   Order A — MCKTM 18001-010 Classic Crew Sweatshirt, Navy.
+ *   Order A -  MCKTM 18001-010 Classic Crew Sweatshirt, Navy.
  *     Both POs carried fully complete through all 20 stages. Losses are the
  *     ones a real run actually accumulates: a few kilos at each fabric process,
  *     ~0.5% cutting wastage, a small embroidery reject in job-work transit, and
  *     sequential QC rejects down the sewing line.
  *
- *   Order B — MCKTM 18045-022 Zip Hoodie Fleece, Charcoal.
- *     Deliberately mid-production. One PO stalls partway through Sewing — the
+ *   Order B -  MCKTM 18045-022 Zip Hoodie Fleece, Charcoal.
+ *     Deliberately mid-production. One PO stalls partway through Sewing -  the
  *     line has been fed but hasn't finished, which is the app's orange "moved
  *     on, not completed" state. The other hasn't left Order Confirmation.
  */
@@ -67,7 +67,7 @@ const SECTION_USERS: SectionUser[] = [
   { sectionKey: "packing", name: "Geeta Krishnan", username: "geeta", role: "Packing & Dispatch Manager", phone: "+91 98765 10020" },
 ];
 
-/** A second and third planner on Raw Material Planning — the spec calls for
+/** A second and third planner on Raw Material Planning -  the spec calls for
  * three people sharing that stage, and the app supports it by simply assigning
  * more than one user to the same section. */
 const EXTRA_PLANNERS: SectionUser[] = [
@@ -146,7 +146,7 @@ interface OrderSpec {
   color: string;
   fabric: string;
   delivery_date: string;
-  /** Kilos of finished fabric per garment — a crew needs less than a hoodie. */
+  /** Kilos of finished fabric per garment -  a crew needs less than a hoodie. */
   kgPerPiece: number;
   pos: PoSpec[];
 }
@@ -289,7 +289,7 @@ async function closeStage(
       qty_completed_today: Math.round(qty.forwarded),
       qty_forwarded: Math.round(qty.forwarded),
       qty_rejected: Math.round(qty.rejected ?? 0),
-      // Every seeded row is a forward — either a completion or the deliberate
+      // Every seeded row is a forward -  either a completion or the deliberate
       // "moved on, not finished" state. Nothing here is a Save Plan.
       is_forwarded: true,
       is_completed: isCompleted,
@@ -307,7 +307,7 @@ async function seedPo(ctx: SeedCtx, order: CreatedOrder, po: CreatedPo, depth: D
 
   // ---- 1. Order Confirmation --------------------------------------------
   await closeStage(ctx, order, po, "order_confirmation", cal.today(), { received: pieces, forwarded: pieces }, true,
-    `PO ${po.po_number} confirmed — ${pieces.toLocaleString()} pcs across ${po.sizes.length} sizes.`);
+    `PO ${po.po_number} confirmed -  ${pieces.toLocaleString()} pcs across ${po.sizes.length} sizes.`);
   if (depth === "confirmation_only") return;
 
   // ---- 2. Raw Material Planning ------------------------------------------
@@ -362,7 +362,7 @@ async function seedPo(ctx: SeedCtx, order: CreatedOrder, po: CreatedPo, depth: D
     .select("id, name, required_qty, category");
   if (reqError || !reqRows) throw new Error(`Failed to seed requirements: ${reqError?.message}`);
 
-  // Each requirement arrives in three batches — never one clean delivery,
+  // Each requirement arrives in three batches -  never one clean delivery,
   // which is the whole point of the multi-entry ledger.
   const entryRows: unknown[] = [];
   for (const r of reqRows as { id: string; name: string; required_qty: number; category: string }[]) {
@@ -401,7 +401,7 @@ async function seedPo(ctx: SeedCtx, order: CreatedOrder, po: CreatedPo, depth: D
         entry_date: day,
         supplier: "Sri Lakshmi Spinning Mills",
         doc_no: docNo,
-        notes: i === 1 ? "Weighed at gate — matched DC." : null,
+        notes: i === 1 ? "Weighed at gate -  matched DC." : null,
         entered_by: userFor("po_to_suppliers"),
       });
       entryRows.push({
@@ -427,7 +427,7 @@ async function seedPo(ctx: SeedCtx, order: CreatedOrder, po: CreatedPo, depth: D
     "Full quantity taken into store.");
 
   // ---- 3. Lots -----------------------------------------------------------
-  // The batch sizes a knitting floor actually runs — two lots per PO here.
+  // The batch sizes a knitting floor actually runs -  two lots per PO here.
   const { data: lotRows, error: lotError } = await admin
     .from("production_lots")
     .insert([
@@ -496,9 +496,9 @@ async function seedPo(ctx: SeedCtx, order: CreatedOrder, po: CreatedPo, depth: D
         entry_date: date,
         notes:
           stageIndex === 0
-            ? `${lot.lot_no} knitted — ${qtyOut.toLocaleString()} KG greige.`
+            ? `${lot.lot_no} knitted -  ${qtyOut.toLocaleString()} KG greige.`
             : fs.key === "fabric_inspection" && rejected > 0
-              ? `${rejected} KG held back on 4-point — barré marks on two rolls.`
+              ? `${rejected} KG held back on 4-point -  barré marks on two rolls.`
               : null,
         entered_by: userFor(fs.key),
       });
@@ -528,7 +528,7 @@ async function seedPo(ctx: SeedCtx, order: CreatedOrder, po: CreatedPo, depth: D
   ]);
   await closeStage(ctx, order, po, "fabric_store", storeDate, { received: inStoreKg, forwarded: inStoreKg }, true, null);
   await closeStage(ctx, order, po, "pattern_marker", cal.advance(2), { received: inStoreKg, forwarded: inStoreKg }, true,
-    "Marker planned — 6 sizes, 1:2:3:3:2:1 ratio.");
+    "Marker planned -  6 sizes, 1:2:3:3:2:1 ratio.");
 
   // ---- 6. Cutting onwards, in pieces --------------------------------------
   // Each lot cuts roughly half of every size. Wastage is taken off the top and
@@ -563,7 +563,7 @@ async function seedPo(ctx: SeedCtx, order: CreatedOrder, po: CreatedPo, depth: D
 
   const cutTotal = [...cutBySize.values()].reduce((a, b) => a + b, 0);
   await closeStage(ctx, order, po, "cutting", cuttingDate, { received: pieces, forwarded: cutTotal }, true,
-    `${cutTotal.toLocaleString()} pcs cut against ${pieces.toLocaleString()} ordered — 0.5% lay wastage.`);
+    `${cutTotal.toLocaleString()} pcs cut against ${pieces.toLocaleString()} ordered -  0.5% lay wastage.`);
 
   const { error: cutQtyError } = await admin
     .from("purchase_orders")
@@ -630,7 +630,7 @@ async function seedPo(ctx: SeedCtx, order: CreatedOrder, po: CreatedPo, depth: D
   }
 
   carry = await garmentStage("panel_checking", carry, 0.006, {
-    note: "Panels checked lot-wise — a handful rejected for shade variation.",
+    note: "Panels checked lot-wise -  a handful rejected for shade variation.",
   });
 
   // Embroidery goes out and comes back, so both directions are written.
@@ -661,11 +661,11 @@ async function seedPo(ctx: SeedCtx, order: CreatedOrder, po: CreatedPo, depth: D
   carry = await garmentStage("embroidery", carry, 0.002, {
     txnType: "receive",
     ref: () => "Sri Venkateswara Embroidery",
-    note: "Received back from job work — small transit reject.",
+    note: "Received back from job work -  small transit reject.",
   });
 
   if (depth === "stall_at_sewing") {
-    // The line has been fed and is producing, but the batch isn't finished —
+    // The line has been fed and is producing, but the batch isn't finished - 
     // the app's orange "moved on, not completed" state.
     const s = stage("sewing");
     const date = cal.advance(4);
@@ -702,7 +702,7 @@ async function seedPo(ctx: SeedCtx, order: CreatedOrder, po: CreatedPo, depth: D
 
   carry = await garmentStage("sewing", carry, 0.011, {
     ref: (i) => (i === 0 ? "Line 01" : "Line 02"),
-    note: "Both lines completed — sequential inline QC rejects.",
+    note: "Both lines completed -  sequential inline QC rejects.",
   });
   carry = await garmentStage("checking", carry, 0.008, { note: "Final inspection pass." });
   carry = await garmentStage("ironing", carry, 0.001, {});
@@ -762,7 +762,7 @@ async function main() {
     });
     if (error) throw new Error(`Failed to upsert app_users row for ${u.username}: ${error.message}`);
     userIdByUsername.set(u.username, userId);
-    console.log(`  ✓ ${u.name} (@${u.username}) — ${u.role}`);
+    console.log(`  ✓ ${u.name} (@${u.username}) -  ${u.role}`);
   }
 
   const userFor = (sectionKey: string): string => {
@@ -772,7 +772,7 @@ async function main() {
     return id;
   };
 
-  console.log("Wiring users to their sections (Stage Roles) — applies to every order…");
+  console.log("Wiring users to their sections (Stage Roles) -  applies to every order…");
   for (const u of ALL_USERS) {
     const s = stageByKey.get(u.sectionKey);
     const userId = userIdByUsername.get(u.username);
@@ -818,14 +818,14 @@ async function main() {
   console.log(`Walking ${orderA.spec.style} through all ${EXPECTED_STAGES} stages…`);
   for (const po of orderA.pos) {
     await seedPo(ctx, orderA, po, "complete");
-    console.log(`  ✓ PO ${po.po_number} — complete through Packing`);
+    console.log(`  ✓ PO ${po.po_number} -  complete through Packing`);
   }
 
   console.log(`Walking ${orderB.spec.style} to a realistic mid-production state…`);
   await seedPo(ctx, orderB, orderB.pos[0], "stall_at_sewing");
-  console.log(`  ✓ PO ${orderB.pos[0].po_number} — stalled partway through Sewing`);
+  console.log(`  ✓ PO ${orderB.pos[0].po_number} -  stalled partway through Sewing`);
   await seedPo(ctx, orderB, orderB.pos[1], "confirmation_only");
-  console.log(`  ✓ PO ${orderB.pos[1].po_number} — confirmed, awaiting material planning`);
+  console.log(`  ✓ PO ${orderB.pos[1].po_number} -  confirmed, awaiting material planning`);
 
   console.log("\nDone. Sign in as any example user with the password 'demo123'.");
   console.log("Admins can see the full picture at Orders → open an order → Production Output & Reports.");

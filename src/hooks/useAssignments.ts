@@ -18,7 +18,7 @@ export function useAssignments(userId?: string) {
   });
 }
 
-/** Who else (across all users) is assigned to this order's stages — deliberately
+/** Who else (across all users) is assigned to this order's stages -  deliberately
  * doesn't embed app_users (RLS would null it out for anyone but admin/self);
  * resolve names/phones separately via useUserContacts. */
 export function useOrderAssignments(orderId: string | undefined) {

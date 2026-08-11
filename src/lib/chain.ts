@@ -13,7 +13,7 @@ import type {
  *
  * One calculation, run once per (order, PO), that turns the raw ledgers into
  * every number the app shows: what each stage received, what it sent on, what
- * it lost, and what it still owes — broken down by lot and by size.
+ * it lost, and what it still owes -  broken down by lot and by size.
  *
  * The rule the whole system rests on is:
  *
@@ -21,14 +21,14 @@ import type {
  *
  * unless that stage physically counted something different in, in which case
  * what was counted wins and the difference is surfaced rather than hidden. That
- * is the only place "connect stage A to stage B" is implemented — every form,
+ * is the only place "connect stage A to stage B" is implemented -  every form,
  * header and dashboard reads the result instead of re-deriving it, which is
  * what stops two screens disagreeing about the same quantity.
  *
  * Two things deliberately do NOT live here:
- *   - whether a stage is open/partial/complete — that is stage_entries and
+ *   - whether a stage is open/partial/complete -  that is stage_entries and
  *     src/lib/progress.ts, the gating layer.
- *   - who did what and when — that is the audit log.
+ *   - who did what and when -  that is the audit log.
  */
 
 // ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@ export const STAGE = {
 } as const;
 
 /** Stages whose numbers come from the material ledger rather than
- * production_txns — procurement happens before anything is a physical batch. */
+ * production_txns -  procurement happens before anything is a physical batch. */
 const MATERIAL_STAGES: string[] = [
   STAGE.rawMaterialPlanning,
   STAGE.poToSuppliers,
@@ -72,15 +72,20 @@ const MATERIAL_STAGES: string[] = [
 // ---------------------------------------------------------------------------
 
 export interface MaterialTotals {
-  /** Planned requirement — what the order actually needs. */
+  /** Required Plan -  what Raw Material Planning says the order needs. */
   required: number;
-  /** Production plan raised against that requirement (may exceed it). */
+  /** Unused by the current three-stage flow; kept only so old "plan" rows
+   * (written before Planning was simplified to a single required_qty field)
+   * still total correctly instead of vanishing. */
   planned: number;
-  /** Dispatched by suppliers under a DC. */
+  /** Purchase Quantity -  what Purchase Order to Suppliers raised against the
+   * requirement. (Field name kept as `dc` for schema/type stability; the
+   * stage no longer distinguishes a separate "received by buyer" step.) */
   dc: number;
-  /** Confirmed received against those dispatches. */
+  /** Unused by the current three-stage flow, for the same reason as `planned`. */
   received: number;
-  /** Physically taken into store. */
+  /** Inward Confirmation -  what Raw Material Inward actually took into store
+   * against the purchase quantity. */
   inward: number;
 }
 
@@ -147,7 +152,7 @@ export interface LotFlow {
 
 export interface SizeFlow {
   sizeCode: string;
-  /** The PO's ordered quantity for this size — the yardstick every PCS stage
+  /** The PO's ordered quantity for this size -  the yardstick every PCS stage
    * is measured against. */
   poQty: number;
   qtyIn: number;
@@ -166,7 +171,7 @@ export interface ChainStage {
   /** The figure this stage actually works against: counted if recorded,
    * otherwise inherited, otherwise the stage's own baseline. */
   input: number;
-  /** Sum of qty_out — what moved on to the next stage. */
+  /** Sum of qty_out -  what moved on to the next stage. */
   output: number;
   rejected: number;
   rework: number;
@@ -174,7 +179,7 @@ export interface ChainStage {
    * is open; process loss once it closes. */
   balance: number;
   /** True when this stage counted in something different from what the previous
-   * stage sent — a discrepancy to reconcile, never silently overwritten. */
+   * stage sent -  a discrepancy to reconcile, never silently overwritten. */
   hasMismatch: boolean;
   /** Whether anything at all has been recorded here. */
   isStarted: boolean;
@@ -192,7 +197,7 @@ export interface ChainInput {
   lots: ProductionLot[];
   requirements: MaterialRequirement[];
   materialEntries: MaterialEntry[];
-  /** Ordered PCS baseline — the PO's total, or the order's when unscoped. */
+  /** Ordered PCS baseline -  the PO's total, or the order's when unscoped. */
   totalPcs: number;
   /** Ordered quantity per size, in display order. */
   sizes: { size_code: string; quantity: number }[];
@@ -232,7 +237,7 @@ function emptyStage(stage: WorkflowStage): Omit<ChainStage, "inherited" | "input
  * Order of resolution for a stage's input, highest priority first:
  *   1. what was physically counted in here (sum of qty_in)
  *   2. what the previous comparable stage sent on
- *   3. the stage's own baseline — PO pieces for PCS stages, the material plan
+ *   3. the stage's own baseline -  PO pieces for PCS stages, the material plan
  *      for the first KG stage, nothing for the rest
  *
  * Step 2 is why leaving one stage's form blank doesn't blank out the stages
@@ -288,17 +293,20 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
         base.isStarted || requirementFlows.length > 0 || totals.planned + totals.dc + totals.received + totals.inward > 0;
 
       if (stage.key === STAGE.rawMaterialPlanning) {
+        // Required Plan -  a pass-through of what's needed, so Suppliers sees
+        // it as their input the moment it's set, before any purchase happens.
         inherited = 0;
         base.recordedIn = totals.required;
-        base.output = totals.received;
+        base.output = totals.required;
       } else if (stage.key === STAGE.poToSuppliers) {
-        // Planning says what's needed; this stage dispatches and confirms it.
+        // Purchase Quantity -  what's been raised against the requirement.
         base.recordedIn = totals.dc;
-        base.output = totals.received;
+        base.output = totals.dc;
       } else {
-        // Raw Material Inward — what the store actually took in.
-        base.recordedIn = totals.received;
-        base.output = totals.inward > 0 ? totals.inward : totals.received;
+        // Inward Confirmation -  what the store actually took in against the
+        // purchase quantity.
+        base.recordedIn = totals.inward;
+        base.output = totals.inward;
       }
       base.lastEntryDate = latestDate(materialEntries.map((e) => e.entry_date), base.lastEntryDate);
     }
@@ -342,7 +350,7 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
         const qtyRejected = sum(group, (t) => t.qty_rejected);
         return {
           lotId,
-          lotNo: lotsById.get(lotId)?.lot_no ?? "—",
+          lotNo: lotsById.get(lotId)?.lot_no ?? "- ",
           qtyIn,
           qtyOut,
           qtyRejected,
@@ -390,7 +398,7 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
 }
 
 // ---------------------------------------------------------------------------
-// Lot traceability — one lot's journey across every stage that touched it.
+// Lot traceability -  one lot's journey across every stage that touched it.
 // ---------------------------------------------------------------------------
 
 export interface LotJourneyStep {
@@ -409,7 +417,7 @@ export interface LotJourney {
 }
 
 /** Follows a single lot from Knitting to Packing. This is what the lot number
- * exists for — without it a shortage can be seen but not located. */
+ * exists for -  without it a shortage can be seen but not located. */
 export function buildLotJourney(lot: ProductionLot, chain: ProductionChain): LotJourney {
   const steps: LotJourneyStep[] = [];
   let totalLoss = 0;
@@ -435,7 +443,7 @@ export function buildLotJourney(lot: ProductionLot, chain: ProductionChain): Lot
 }
 
 // ---------------------------------------------------------------------------
-// Output summary — the final planned-vs-actual comparison.
+// Output summary -  the final planned-vs-actual comparison.
 // ---------------------------------------------------------------------------
 
 export interface OutputRow {
@@ -456,7 +464,7 @@ export interface OutputSummary {
   packedPcs: number;
   cutPcs: number;
   totalRejectedPcs: number;
-  /** Packed as a percentage of ordered — the headline number. */
+  /** Packed as a percentage of ordered -  the headline number. */
   overallEfficiencyPct: number | null;
   /** Ordered − packed. */
   shortfallPcs: number;
@@ -465,7 +473,7 @@ export interface OutputSummary {
   fabricLossKg: number;
 }
 
-/** Stages worth showing in the loss analysis — planning and pass-through stages
+/** Stages worth showing in the loss analysis -  planning and pass-through stages
  * would only add rows where input always equals output. */
 const OUTPUT_STAGE_KEYS: string[] = [
   STAGE.rawMaterialPlanning,

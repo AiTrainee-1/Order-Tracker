@@ -48,7 +48,7 @@ export function AssignWorkPage() {
     [purchaseOrders, orderId],
   );
 
-  // Sections this exact user is already assigned to on this order — pre-checked
+  // Sections this exact user is already assigned to on this order -  pre-checked
   // (and locked) so the admin never re-assigns the same scope.
   const existingForUserOrder = useMemo(
     () => (assignments ?? []).filter((a) => a.user_id === userId && a.order_id === orderId),
@@ -59,7 +59,7 @@ export function AssignWorkPage() {
     [existingForUserOrder],
   );
 
-  // Everyone (any user) assigned to each section of the selected order — powers
+  // Everyone (any user) assigned to each section of the selected order -  powers
   // the per-section "who's on this" tooltip. `assignments` already embeds
   // user + po + section for the admin.
   const assigneesBySection = useMemo(() => {
@@ -78,7 +78,7 @@ export function AssignWorkPage() {
   }, [users]);
 
   // Global stage-role defaults per section (apply to all orders). Shown in the
-  // section tooltip, and — for the selected user — lock the section as covered.
+  // section tooltip, and -  for the selected user -  lock the section as covered.
   const defaultsBySection = useMemo(() => {
     const map = new Map<string, StageAssignment[]>();
     for (const sa of stageDefaults ?? []) map.set(sa.section_id, [...(map.get(sa.section_id) ?? []), sa]);
@@ -136,9 +136,9 @@ export function AssignWorkPage() {
       setError("Select a user, an order, and at least one new section.");
       return;
     }
-    // Empty selection means "every PO" — represented by a single po_id: null row.
+    // Empty selection means "every PO" -  represented by a single po_id: null row.
     const poTargets: (string | null)[] = poIds.size > 0 ? Array.from(poIds) : [null];
-    // Exact (section, po) rows this user already has — skip them so we never
+    // Exact (section, po) rows this user already has -  skip them so we never
     // duplicate an assignment (which would also trip the DB unique constraint).
     const existingKeys = new Set(
       existingForUserOrder.map((a) => `${a.section_id}::${a.po_id ?? "all"}`),
@@ -197,7 +197,7 @@ export function AssignWorkPage() {
             <option value="">Jump to an order…</option>
             {ordersInSequence.map((o, index) => (
               <option key={o.id} value={o.id}>
-                {index + 1}. IO {o.io_no} — {o.style} — {o.color}
+                {index + 1}. IO {o.io_no} -  {o.style} -  {o.color}
               </option>
             ))}
           </Select>
@@ -241,7 +241,7 @@ export function AssignWorkPage() {
               <option value="">Select style/color…</option>
               {ordersForIo.map((o) => (
                 <option key={o.id} value={o.id}>
-                  {o.style} — {o.color}
+                  {o.style} -  {o.color}
                 </option>
               ))}
             </Select>
@@ -250,7 +250,7 @@ export function AssignWorkPage() {
           <div>
             <div className="mb-2 flex items-center justify-between">
               <p className="text-xs font-medium text-ink-700">
-                PO(s) — leave all unchecked to cover every PO (tracked separately, one work item per PO)
+                PO(s) -  leave all unchecked to cover every PO (tracked separately, one work item per PO)
               </p>
               {posForOrder.length > 0 && (
                 <button
@@ -281,7 +281,7 @@ export function AssignWorkPage() {
           <div>
             <div className="mb-2 flex items-center justify-between">
               <p className="text-xs font-medium text-ink-700">
-                Section(s) — numbered in actual production sequence
+                Section(s) -  numbered in actual production sequence
               </p>
               <p className="text-xs text-ink-400">Hover a section to see who's already on it</p>
             </div>
@@ -352,7 +352,7 @@ export function AssignWorkPage() {
             keyFor={(a) => a.id}
             rows={assignments ?? []}
             columns={[
-              { header: "User", render: (a) => a.user?.name ?? "—" },
+              { header: "User", render: (a) => a.user?.name ?? "- " },
               {
                 header: "Order",
                 render: (a) => (
@@ -365,8 +365,8 @@ export function AssignWorkPage() {
                 ),
               },
               { header: "PO", render: (a) => a.po?.po_number ?? "All POs" },
-              { header: "Section", render: (a) => a.section?.label ?? "—" },
-              { header: "Unit", render: (a) => a.unit_name ?? "—" },
+              { header: "Section", render: (a) => a.section?.label ?? "- " },
+              { header: "Unit", render: (a) => a.unit_name ?? "- " },
               {
                 header: "Access",
                 render: (a) => (
@@ -446,7 +446,7 @@ function SectionRow({
           {defaults.length > 0 && (
             <div className="mb-2">
               <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-brand">
-                Default — all orders
+                Default -  all orders
               </p>
               <ul className="space-y-1">
                 {defaults.map((d) => {

@@ -1,7 +1,7 @@
 import { useAuth } from "../context/AuthContext";
 import { useDemoStore } from "../context/DemoModeContext";
 
-/** Attribution for practice entries. Never written to the database — the demo
+/** Attribution for practice entries. Never written to the database -  the demo
  * guards intercept every write long before this reaches a row. */
 export const DEMO_USER = { id: "demo-user", name: "Practice user" };
 
@@ -9,8 +9,8 @@ export const DEMO_USER = { id: "demo-user", name: "Practice user" };
  * Who is making this entry.
  *
  * Real work is attributed to the signed-in user. Inside a Preview sandbox there
- * may be no meaningful "who" — and it shouldn't matter, because nothing is
- * saved — so a fixed practice identity stands in.
+ * may be no meaningful "who" -  and it shouldn't matter, because nothing is
+ * saved -  so a fixed practice identity stands in.
  *
  * The forms previously read `appUser` directly and bailed out with a silent
  * `return` when it was null. That was fragile in two ways: a sandbox would do

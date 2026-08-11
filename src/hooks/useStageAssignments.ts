@@ -3,7 +3,7 @@ import { supabase } from "../lib/supabaseClient";
 import type { StageAssignment } from "../lib/types";
 
 /** All global stage-role defaults. Row shape is intentionally minimal (no
- * joins) so it reads correctly under every RLS role — consumers resolve
+ * joins) so it reads correctly under every RLS role -  consumers resolve
  * user/section details from useUsers()/useWorkflowStages() they already load. */
 export function useStageAssignments() {
   return useQuery({
@@ -27,7 +27,7 @@ export interface UpsertStageAssignmentInput {
 
 function invalidate(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: ["stage_assignments"] });
-  // Work lists are derived from these defaults — re-fetch them too.
+  // Work lists are derived from these defaults -  re-fetch them too.
   queryClient.invalidateQueries({ queryKey: ["my_work_entries"] });
 }
 

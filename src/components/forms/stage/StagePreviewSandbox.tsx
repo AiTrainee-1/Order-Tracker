@@ -7,7 +7,7 @@ import { StageFormRouter } from "./StageFormRouter";
 import type { AssignmentWithDetails, WorkflowStage } from "../../../lib/types";
 
 /**
- * The Preview sandbox — the real stage form, wired to memory instead of the
+ * The Preview sandbox -  the real stage form, wired to memory instead of the
  * database.
  *
  * This renders the SAME component the floor uses. Not a screenshot, not a
@@ -16,7 +16,7 @@ import type { AssignmentWithDetails, WorkflowStage } from "../../../lib/types";
  * it does in production, and the numbers move as entries are added.
  *
  * What makes it safe is DemoModeProvider. Inside it, every hook that reads or
- * writes production data finds a demo store and uses that instead of Supabase —
+ * writes production data finds a demo store and uses that instead of Supabase - 
  * the guards live in the mutations themselves (useProductionChain.ts,
  * useStageEntries.ts), so nothing here has to remember to be careful.
  */
@@ -71,10 +71,10 @@ function SandboxBody({ stage, allStages }: { stage: WorkflowStage; allStages: Wo
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-300 bg-blue-50 px-4 py-3">
         <div className="min-w-0">
-          <p className="text-xs font-bold text-blue-900">Practice mode — nothing here is saved</p>
+          <p className="text-xs font-bold text-blue-900">Practice mode -  nothing here is saved</p>
           <p className="text-[11px] leading-relaxed text-blue-800">
             This is the real {stage.label} form running on a sample order. Type in it, add entries,
-            press the buttons — none of it touches your orders or reaches the database.
+            press the buttons -  none of it touches your orders or reaches the database.
           </p>
         </div>
         <Button variant="secondary" size="sm" onClick={demo.reset}>
@@ -90,7 +90,9 @@ function SandboxBody({ stage, allStages }: { stage: WorkflowStage; allStages: Wo
         </p>
       )}
 
-      {/* The genuine article. Same component, same props shape, same behaviour. */}
+      {/* The genuine article. Same component, same props shape, same behaviour.
+          Always shown in full -  the Preview exists to demonstrate the form,
+          so there's nothing to collapse behind a "View Details" toggle here. */}
       <StageFormRouter
         order={DEMO_ORDER}
         assignment={assignment}
@@ -98,6 +100,7 @@ function SandboxBody({ stage, allStages }: { stage: WorkflowStage; allStages: Wo
         onForwarded={() => {
           /* The demo store re-renders on its own; there's nothing to refetch. */
         }}
+        showDetails
       />
     </div>
   );

@@ -4,18 +4,16 @@ import { Loader } from "../../ui/Loader";
 import { MaterialLedger } from "./MaterialLedger";
 import { StageActions } from "./shared";
 import { useStageEntryBuilder } from "../../../hooks/useStageEntryBuilder";
-import { ChainStrip } from "./chainShared";
 import type { StageFormProps } from "./types";
 
 /**
- * Raw Material Planning — the first KG stage, and the origin of every fabric
- * number downstream.
+ * Raw Material Planning -  Required Plan: what quantity is required?
  *
- * It owns the yarn counts and fabric types themselves (add / rename / remove),
- * their required kilos, and the actual receipts against them. Purchase Order to
- * Suppliers and Raw Material Inward then write further entries against these
- * same rows rather than starting their own lists — which is what keeps
- * "required 500, received 350, balance 150" true on all three screens at once.
+ * One responsibility only: the yarn counts and fabric types this order needs
+ * (add / rename / remove) and how many kilos of each. Nothing about purchasing
+ * or receiving is entered here -  Purchase Order to Suppliers reads this
+ * required figure as its own input, and Raw Material Inward reads theirs in
+ * turn, so the same "required 500" number is never re-typed downstream.
  *
  * Trims and accessories are deliberately absent: they were removed from this
  * stage as not part of the fabric chain.
@@ -48,11 +46,11 @@ export function MaterialPlanningForm(props: StageFormProps) {
     onForwarded();
   }
 
-  /** Requirements and receipts are written as they're entered above, so this
-   * records that planning progressed without handing anything to procurement. */
+  /** The plan itself is written as it's entered above, so this records that
+   * planning progressed without handing anything to procurement yet. */
   async function savePlan() {
     await submitMovement({
-      base: { qty_received: cs!.input, qty_forwarded: 0, notes: "Plan saved — nothing forwarded." },
+      base: { qty_received: cs!.input, qty_forwarded: 0, notes: "Plan saved -  nothing forwarded." },
       action: "plan",
     });
     onForwarded();
@@ -60,12 +58,13 @@ export function MaterialPlanningForm(props: StageFormProps) {
 
   return (
     <div className="space-y-6">
-      <p className="text-xs leading-relaxed text-ink-500">
-        Plan what this order needs, then record what actually arrives. Three planners can work here
-        at once — each marks their own lines complete as they finish.
-      </p>
-
-      <ChainStrip cs={cs} inputHint="total required" />
+      {props.showDetails && (
+        <p className="text-xs leading-relaxed text-ink-500">
+          Required Plan -  say what this order needs: a name, a required quantity in KG, and a reason
+          whenever that quantity changes. Purchasing and receiving happen on the next two screens, not
+          here. Three planners can work at once -  each marks their own lines complete as they finish.
+        </p>
+      )}
 
       <MaterialLedger
         orderId={order.id}
@@ -74,7 +73,7 @@ export function MaterialPlanningForm(props: StageFormProps) {
         flows={flows}
         categories={["yarn", "fabric"]}
         canEditRequirements
-        entryTypes={["plan", "receipt"]}
+        entryTypes={[]}
         onSaved={onForwarded}
       />
 
@@ -89,7 +88,7 @@ export function MaterialPlanningForm(props: StageFormProps) {
       />
       {flows.length === 0 && (
         <p className="text-center text-[11px] text-amber-700">
-          No yarn counts or fabric added yet — procurement will have nothing to buy against.
+          No yarn counts or fabric added yet -  procurement will have nothing to buy against.
         </p>
       )}
     </div>

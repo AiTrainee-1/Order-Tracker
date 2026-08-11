@@ -109,7 +109,7 @@ export function UserForm({
         </div>
       </div>
       <p className="-mt-2 text-xs text-ink-400">
-        Minimum 6 characters. The username becomes their login — it can't be changed later.
+        Minimum 6 characters. The username becomes their login -  it can't be changed later.
       </p>
       <Input
         label="Phone Number"

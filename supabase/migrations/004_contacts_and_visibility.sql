@@ -1,7 +1,7 @@
 -- ============================================================================
 -- Adds phone numbers and the ability for a regular user to see who handled
 -- earlier/later stages of an order they're working on (name + phone), for
--- handoff purposes — without exposing the full user directory or passwords.
+-- handoff purposes -  without exposing the full user directory or passwords.
 -- ============================================================================
 
 alter table public.app_users add column if not exists phone text;
@@ -24,7 +24,7 @@ $$;
 -- order currently at" gating for anyone not assigned to every stage). Anyone
 -- with at least one assignment on an order can now read that whole order's
 -- movement history (writing remains restricted to their own assigned
--- section — only the read policy changes).
+-- section -  only the read policy changes).
 drop policy if exists "stage_entries_select" on public.stage_entries;
 create policy "stage_entries_select" on public.stage_entries
   for select using (
@@ -41,12 +41,12 @@ create policy "stage_entries_select" on public.stage_entries
 --
 -- The "do I have another assignment on this order" check has to go through a
 -- SECURITY DEFINER function rather than a plain subquery on user_assignments
--- itself — a policy that queries its own table directly makes Postgres
+-- itself -  a policy that queries its own table directly makes Postgres
 -- re-evaluate that same policy for the subquery's rows, which re-runs the
 -- subquery, forever ("infinite recursion detected in policy for relation
 -- user_assignments", surfaced by PostgREST as a 500 on any query that touches
 -- this table). The function's body runs as its owner and so bypasses RLS
--- instead of re-triggering it — the same trick public.is_admin() already uses.
+-- instead of re-triggering it -  the same trick public.is_admin() already uses.
 create or replace function public.has_order_assignment(p_order_id uuid)
 returns boolean
 language sql

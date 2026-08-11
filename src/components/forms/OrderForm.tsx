@@ -1,8 +1,8 @@
-import { useRef, useState, type FormEvent } from "react";
+import { Fragment, useRef, useState, type FormEvent } from "react";
 import { Button } from "../ui/Button";
 import { Input, Textarea } from "../ui/FormControls";
 import { GarmentPlaceholder } from "../ui/GarmentPlaceholder";
-import { DEFAULT_SIZE_TEMPLATE, sortSizes } from "../../lib/sizes";
+import { applyExtraPercent, DEFAULT_SIZE_TEMPLATE, sortSizes } from "../../lib/sizes";
 import type { Order, PoSizeQuantity, PurchaseOrder } from "../../lib/types";
 import type { OrderFormInput, OrderPoInput } from "../../hooks/useOrderMutations";
 
@@ -10,13 +10,13 @@ import type { OrderFormInput, OrderPoInput } from "../../hooks/useOrderMutations
  * Order creation, laid out the way the buying sheet is: sizes across the top,
  * one row per PO, quantities in the grid.
  *
- * The size columns belong to the ORDER, not to each PO — a style is cut in one
+ * The size columns belong to the ORDER, not to each PO -  a style is cut in one
  * size set, and every PO of it ships some of each. That keeps the grid
  * rectangular (so it reads like the paper sheet) and means adding a size is one
  * action rather than one per PO. A PO that doesn't ship a given size just
  * leaves that cell empty.
  *
- * PO totals and the order total are computed, never typed — the number and its
+ * PO totals and the order total are computed, never typed -  the number and its
  * breakdown then cannot drift apart.
  */
 
@@ -29,15 +29,26 @@ interface PoRow {
   /** size code → quantity, held as strings so a cleared cell stays cleared
    * instead of snapping back to 0 while being typed. */
   qty: Record<string, string>;
+  /** % added on top of the buyer's quantity to get the production quantity.
+   * Held as a string for the same reason `qty` is. */
+  extraPercent: string;
 }
 
 function emptyRow(): PoRow {
   rowSeq += 1;
-  return { key: `new-${rowSeq}`, po_number: "", delivery_date: "", qty: {} };
+  return { key: `new-${rowSeq}`, po_number: "", delivery_date: "", qty: {}, extraPercent: "0" };
 }
 
 function rowTotal(row: PoRow, sizes: string[]): number {
   return sizes.reduce((total, code) => total + (Number(row.qty[code]) || 0), 0);
+}
+
+function productionQty(row: PoRow, code: string): number {
+  return applyExtraPercent(Number(row.qty[code]) || 0, Number(row.extraPercent) || 0);
+}
+
+function rowProductionTotal(row: PoRow, sizes: string[]): number {
+  return sizes.reduce((total, code) => total + productionQty(row, code), 0);
 }
 
 export function OrderForm({
@@ -87,6 +98,7 @@ export function OrderForm({
         po_number: po.po_number,
         delivery_date: po.delivery_date,
         qty,
+        extraPercent: String(po.extra_percent ?? 0),
       };
     });
   });
@@ -94,6 +106,7 @@ export function OrderForm({
   const [newSize, setNewSize] = useState("");
 
   const orderTotal = poRows.reduce((total, r) => total + rowTotal(r, sizes), 0);
+  const orderProductionTotal = poRows.reduce((total, r) => total + rowProductionTotal(r, sizes), 0);
 
   function updateRow(key: string, patch: Partial<Omit<PoRow, "qty">>) {
     setPoRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -138,6 +151,7 @@ export function OrderForm({
         quantity: rowTotal(r, sizes),
         delivery_date: r.delivery_date || null,
         sizes: sizeRows,
+        extra_percent: Number(r.extraPercent) || 0,
       };
     });
 
@@ -215,7 +229,7 @@ export function OrderForm({
             <p className="text-xs font-semibold text-ink-800">Size set</p>
             <p className="text-[11px] text-ink-500">
               The sizes this style is made in. Every PO below is broken down across these, and every
-              later stage — Cutting, Panel Checking, Sewing, Packing — tracks against them.
+              later stage -  Cutting, Panel Checking, Sewing, Packing -  tracks against them.
             </p>
           </div>
           <div className="flex items-end gap-2">
@@ -261,11 +275,23 @@ export function OrderForm({
       {/* PO × size grid                                                    */}
       {/* ---------------------------------------------------------------- */}
       <div>
-        <div className="mb-2 flex items-center justify-between">
-          <p className="text-xs font-semibold text-ink-700">Purchase Orders — size-wise quantity</p>
-          <span className="text-xs font-semibold text-ink-700">
-            Order total: {orderTotal.toLocaleString()} PCS
-          </span>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-xs font-semibold text-ink-700">Purchase Orders -  size-wise quantity</p>
+            <p className="text-[11px] text-ink-500">
+              Enter the buyer's ordered quantity per size. Extra % adds the factory's production
+              margin on top -  the bold row below each PO shows the resulting production quantity,
+              which is what Cutting and every stage after it work against.
+            </p>
+          </div>
+          <div className="text-right text-xs">
+            <p className="font-semibold text-ink-700">
+              Buyer order total: {orderTotal.toLocaleString()} PCS
+            </p>
+            <p className="font-semibold text-brand">
+              Production total: {orderProductionTotal.toLocaleString()} PCS
+            </p>
+          </div>
         </div>
 
         <div className="overflow-x-auto rounded-xl border border-ink-100">
@@ -279,62 +305,87 @@ export function OrderForm({
                   </th>
                 ))}
                 <th className="whitespace-nowrap px-2 py-2 text-right font-semibold">Total</th>
+                <th className="whitespace-nowrap px-2 py-2 text-center font-semibold">Extra %</th>
                 <th className="whitespace-nowrap px-2 py-2 text-left font-semibold">Delivery</th>
                 <th className="px-2 py-2" />
               </tr>
             </thead>
             <tbody className="divide-y divide-ink-100">
               {poRows.map((row) => (
-                <tr key={row.key} className="bg-white">
-                  <td className="px-2 py-1.5">
-                    <input
-                      value={row.po_number}
-                      onChange={(e) => updateRow(row.key, { po_number: e.target.value })}
-                      placeholder="01669678"
-                      className="w-32 rounded-lg border border-ink-200 px-2 py-1.5 text-sm outline-none focus:border-brand"
-                    />
-                  </td>
-                  {sizes.map((code) => (
-                    <td key={code} className="px-1 py-1.5">
+                <Fragment key={row.key}>
+                  <tr className="bg-white">
+                    <td className="px-2 py-1.5">
+                      <input
+                        value={row.po_number}
+                        onChange={(e) => updateRow(row.key, { po_number: e.target.value })}
+                        placeholder="01669678"
+                        className="w-32 rounded-lg border border-ink-200 px-2 py-1.5 text-sm outline-none focus:border-brand"
+                      />
+                    </td>
+                    {sizes.map((code) => (
+                      <td key={code} className="px-1 py-1.5">
+                        <input
+                          type="number"
+                          min={0}
+                          value={row.qty[code] ?? ""}
+                          onChange={(e) => updateQty(row.key, code, e.target.value)}
+                          className="w-20 rounded-lg border border-ink-200 px-2 py-1.5 text-center text-sm outline-none focus:border-brand"
+                        />
+                      </td>
+                    ))}
+                    <td className="px-2 py-1.5 text-right text-sm font-bold tabular-nums text-ink-900">
+                      {rowTotal(row, sizes).toLocaleString()}
+                    </td>
+                    <td className="px-1 py-1.5">
                       <input
                         type="number"
                         min={0}
-                        value={row.qty[code] ?? ""}
-                        onChange={(e) => updateQty(row.key, code, e.target.value)}
-                        className="w-20 rounded-lg border border-ink-200 px-2 py-1.5 text-center text-sm outline-none focus:border-brand"
+                        step="0.1"
+                        value={row.extraPercent}
+                        onChange={(e) => updateRow(row.key, { extraPercent: e.target.value })}
+                        className="w-16 rounded-lg border border-ink-200 px-2 py-1.5 text-center text-sm outline-none focus:border-brand"
                       />
                     </td>
-                  ))}
-                  <td className="px-2 py-1.5 text-right text-sm font-bold tabular-nums text-ink-900">
-                    {rowTotal(row, sizes).toLocaleString()}
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <input
-                      type="date"
-                      value={row.delivery_date ?? ""}
-                      onChange={(e) => updateRow(row.key, { delivery_date: e.target.value })}
-                      className="rounded-lg border border-ink-200 px-2 py-1.5 text-sm outline-none focus:border-brand"
-                    />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-status-bad hover:bg-red-50"
-                      onClick={() =>
-                        setPoRows((prev) => (prev.length > 1 ? prev.filter((r) => r.key !== row.key) : prev))
-                      }
-                    >
-                      Remove
-                    </Button>
-                  </td>
-                </tr>
+                    <td className="px-2 py-1.5">
+                      <input
+                        type="date"
+                        value={row.delivery_date ?? ""}
+                        onChange={(e) => updateRow(row.key, { delivery_date: e.target.value })}
+                        className="rounded-lg border border-ink-200 px-2 py-1.5 text-sm outline-none focus:border-brand"
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-status-bad hover:bg-red-50"
+                        onClick={() =>
+                          setPoRows((prev) => (prev.length > 1 ? prev.filter((r) => r.key !== row.key) : prev))
+                        }
+                      >
+                        Remove
+                      </Button>
+                    </td>
+                  </tr>
+                  <tr key={`${row.key}-production`} className="bg-blue-50/70">
+                    <td className="px-2 py-1 text-xs font-bold text-brand">+{Number(row.extraPercent) || 0}%</td>
+                    {sizes.map((code) => (
+                      <td key={code} className="px-2 py-1 text-center text-xs font-bold tabular-nums text-brand">
+                        {productionQty(row, code).toLocaleString()}
+                      </td>
+                    ))}
+                    <td className="px-2 py-1 text-right text-xs font-bold tabular-nums text-brand">
+                      {rowProductionTotal(row, sizes).toLocaleString()}
+                    </td>
+                    <td colSpan={3} />
+                  </tr>
+                </Fragment>
               ))}
             </tbody>
             <tfoot>
               <tr className="bg-ink-50 text-xs font-bold text-ink-800">
-                <td className="px-2 py-2">Total</td>
+                <td className="px-2 py-2">Buyer Total</td>
                 {sizes.map((code) => (
                   <td key={code} className="px-2 py-2 text-center tabular-nums">
                     {poRows
@@ -343,7 +394,19 @@ export function OrderForm({
                   </td>
                 ))}
                 <td className="px-2 py-2 text-right tabular-nums">{orderTotal.toLocaleString()}</td>
-                <td colSpan={2} />
+                <td colSpan={3} />
+              </tr>
+              <tr className="bg-blue-50/70 text-xs font-bold text-brand">
+                <td className="px-2 py-2">Production Total</td>
+                {sizes.map((code) => (
+                  <td key={code} className="px-2 py-2 text-center tabular-nums">
+                    {poRows
+                      .reduce((total, r) => total + productionQty(r, code), 0)
+                      .toLocaleString()}
+                  </td>
+                ))}
+                <td className="px-2 py-2 text-right tabular-nums">{orderProductionTotal.toLocaleString()}</td>
+                <td colSpan={3} />
               </tr>
             </tfoot>
           </table>

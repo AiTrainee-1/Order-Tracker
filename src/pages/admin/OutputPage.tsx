@@ -26,7 +26,7 @@ import { BackButton } from "../../components/ui/BackButton";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 
 /**
- * OUTPUT — the whole order in one place.
+ * OUTPUT -  the whole order in one place.
  *
  * Everything here is derived, nothing is entered. It answers the two questions
  * the floor and the office actually argue about: how much did we ship against
@@ -72,7 +72,7 @@ export function OutputPage() {
   const ctx = { order, po: selectedPo, chain, usersById };
 
   /** The export libraries are fetched on demand, so a download can take a
-   * moment on a slow connection — the button reports that rather than looking
+   * moment on a slow connection -  the button reports that rather than looking
    * like it did nothing. */
   async function download(kind: "csv" | "pdf" | "excel") {
     setDownloading(kind);
@@ -165,7 +165,7 @@ export function OutputPage() {
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <p className="text-sm font-semibold text-ink-800">Overall production efficiency</p>
             <p className="text-2xl font-bold tabular-nums text-ink-900">
-              {summary.overallEfficiencyPct != null ? `${summary.overallEfficiencyPct}%` : "—"}
+              {summary.overallEfficiencyPct != null ? `${summary.overallEfficiencyPct}%` : "- "}
             </p>
           </div>
           <ProgressBar value={summary.overallEfficiencyPct ?? 0} />
@@ -220,7 +220,7 @@ export function OutputPage() {
           <CardBody>
             {shortageRows.length === 0 ? (
               <p className="py-10 text-center text-sm text-ink-400">
-                No shortage recorded — every stage passed on what it received.
+                No shortage recorded -  every stage passed on what it received.
               </p>
             ) : (
               <div className="h-72 w-full">
@@ -310,17 +310,17 @@ export function OutputPage() {
                       {r.output.toLocaleString()}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-status-bad">
-                      {r.rejected ? r.rejected.toLocaleString() : "—"}
+                      {r.rejected ? r.rejected.toLocaleString() : "- "}
                     </td>
                     <td
                       className={`px-3 py-2.5 text-right font-semibold tabular-nums ${
                         r.shortage > 0 ? "text-amber-600" : "text-ink-400"
                       }`}
                     >
-                      {r.shortage ? r.shortage.toLocaleString() : "—"}
+                      {r.shortage ? r.shortage.toLocaleString() : "- "}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums">
-                      {r.efficiencyPct != null ? `${r.efficiencyPct}%` : "—"}
+                      {r.efficiencyPct != null ? `${r.efficiencyPct}%` : "- "}
                     </td>
                   </tr>
                 ))}
@@ -447,7 +447,7 @@ export function OutputPage() {
       <Card>
         <CardHeader
           title="Activity & audit trail"
-          subtitle="Every create, update and deletion — who, when, and why."
+          subtitle="Every create, update and deletion -  who, when, and why."
         />
         <CardBody>
           {(auditQuery.data?.length ?? 0) === 0 ? (
@@ -466,14 +466,14 @@ export function OutputPage() {
                     {row.changes && (
                       <p className="text-xs text-ink-500">
                         {Object.entries(row.changes)
-                          .map(([f, c]) => `${f.replace(/_/g, " ")}: ${String(c.from ?? "—")} → ${String(c.to ?? "—")}`)
+                          .map(([f, c]) => `${f.replace(/_/g, " ")}: ${String(c.from ?? "- ")} → ${String(c.to ?? "- ")}`)
                           .join(" · ")}
                       </p>
                     )}
                     {row.notes && <p className="text-xs italic text-ink-500">"{row.notes}"</p>}
                   </div>
                   <p className="whitespace-nowrap text-xs text-ink-400">
-                    {usersById.get(row.user_id)?.name ?? "—"} ·{" "}
+                    {usersById.get(row.user_id)?.name ?? "- "} ·{" "}
                     {new Date(row.created_at).toLocaleString()}
                   </p>
                 </li>

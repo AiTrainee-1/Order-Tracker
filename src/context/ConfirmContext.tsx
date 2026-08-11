@@ -15,7 +15,7 @@ type ConfirmFn = (options: ConfirmOptions) => Promise<boolean>;
 const ConfirmContext = createContext<ConfirmFn | undefined>(undefined);
 
 /** App-wide confirmation dialog. `await confirm({...})` resolves true if the
- * user accepts, false if they cancel/dismiss — used to gate irreversible
+ * user accepts, false if they cancel/dismiss -  used to gate irreversible
  * actions like forwarding a stage to completion (which unlocks later stages). */
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);

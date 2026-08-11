@@ -1,7 +1,7 @@
 -- ============================================================================
 -- Global stage-role defaults: assign a user to a production stage once, and
 -- they become the default assignee for that stage across EVERY order (existing
--- and future) — instead of scoping them order-by-order in user_assignments.
+-- and future) -  instead of scoping them order-by-order in user_assignments.
 --
 -- The app treats a row here as an implicit assignment on every order for that
 -- section. Explicit per-order rows in user_assignments still take precedence /
@@ -24,7 +24,7 @@ alter table public.stage_assignments enable row level security;
 
 -- Readable by any signed-in user: a user needs their own defaults to build their
 -- work list, and everyone needs to see who's on a stage for handoff contacts.
--- (Only user_id + section_id + can_enter_data — no sensitive fields.)
+-- (Only user_id + section_id + can_enter_data -  no sensitive fields.)
 create policy "stage_assignments_select" on public.stage_assignments
   for select using (auth.role() = 'authenticated');
 

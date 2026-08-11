@@ -42,9 +42,9 @@ async function main() {
       throw new Error(`Failed to create auth user: ${createError.message}`);
     }
     // Re-running the script after a prior partial run (e.g. schema.sql wasn't
-    // applied yet) — the auth user already exists, so reuse it and just make
+    // applied yet) -  the auth user already exists, so reuse it and just make
     // sure its password matches what's configured.
-    console.log("Auth user already exists — reusing it and syncing the password…");
+    console.log("Auth user already exists -  reusing it and syncing the password…");
     const { data: list, error: listError } = await admin.auth.admin.listUsers();
     if (listError) throw new Error(`Failed to look up existing user: ${listError.message}`);
     const existing = list.users.find((u) => u.email === email);

@@ -46,7 +46,7 @@ export function OrderDetailPage() {
   const selectedSectionId = progress?.stages[selectedIndex]?.stage.id;
   const selectedChainStage = chain?.stages.find((s) => s.stage.id === selectedSectionId) ?? null;
 
-  // Recompute progress scoped to just the chosen PO's own entries/quantities —
+  // Recompute progress scoped to just the chosen PO's own entries/quantities - 
   // this is what makes "how much has been completed for THIS PO" possible,
   // vs. the combined view which merges every PO's movement together.
   const scopedProgress = useMemo(() => {
@@ -92,7 +92,7 @@ export function OrderDetailPage() {
     ? selectedPo.cut_quantity
     : getCombinedCutQuantity(order, purchaseOrders);
 
-  // Who is scheduled to run the NEXT stage — from the assignment roster rather
+  // Who is scheduled to run the NEXT stage -  from the assignment roster rather
   // than only from whoever happened to be named on the last entry.
   const nextStage = scopedProgress.stages[selectedIndex + 1];
   const nextStageAssignees = (assignmentsQuery.data ?? [])
@@ -148,10 +148,20 @@ export function OrderDetailPage() {
             <p className="mt-1 text-sm text-ink-500">{order.description}</p>
             <p className="mt-1 text-xs text-ink-400">{order.fabric}</p>
 
-            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
               <Metric
-                label={selectedPo ? `PO ${selectedPo.po_number} Qty` : "Planned Qty (All POs)"}
+                label={selectedPo ? `PO ${selectedPo.po_number} -  Buyer Qty` : "Buyer Order Qty (All POs)"}
                 value={plannedQty.toLocaleString() + " PCS"}
+              />
+              <Metric label="Extra %" value={`${selectedPo?.extra_percent ?? 0}%`} />
+              <Metric
+                label="Extra Qty"
+                value={Math.max((chain?.totalPcs ?? plannedQty) - plannedQty, 0).toLocaleString() + " PCS"}
+              />
+              <Metric
+                label="Final Production Qty"
+                value={(chain?.totalPcs ?? plannedQty).toLocaleString() + " PCS"}
+                tone="text-brand"
               />
               <Metric
                 label="Fixed Qty (Post-Cutting)"
@@ -221,7 +231,7 @@ export function OrderDetailPage() {
             title={selectedStage.stage.label}
             subtitle={
               selectedStage.isCompleted
-                ? `Completed by ${selectedStage.completedBy ? nameOf(selectedStage.completedBy) : "—"} on ${formatDisplayDate(selectedStage.completedOn)}`
+                ? `Completed by ${selectedStage.completedBy ? nameOf(selectedStage.completedBy) : "- "} on ${formatDisplayDate(selectedStage.completedOn)}`
                 : selectedStage.isPartial
                   ? `Moved on without completing · last update ${formatDisplayDate(selectedStage.lastEntryDate)}`
                   : selectedStage.entries.length
@@ -243,7 +253,7 @@ export function OrderDetailPage() {
                 {selectedStage.isCompleted
                   ? "Completed"
                   : selectedStage.isPartial
-                    ? "Moved on — not completed"
+                    ? "Moved on -  not completed"
                     : selectedStage.entries.length
                       ? "In Progress"
                       : "Pending"}
@@ -255,7 +265,7 @@ export function OrderDetailPage() {
               <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                 Previous stage forwarded{" "}
                 <b>{selectedStage.qtyInherited.toLocaleString()} {selectedStage.stage.unit_type}</b> but{" "}
-                <b>{selectedStage.qtyReceived.toLocaleString()}</b> was counted in here — a gap of{" "}
+                <b>{selectedStage.qtyReceived.toLocaleString()}</b> was counted in here -  a gap of{" "}
                 {Math.abs(selectedStage.qtyReceived - selectedStage.qtyInherited).toLocaleString()}{" "}
                 {selectedStage.stage.unit_type} to reconcile.
               </p>
@@ -265,7 +275,7 @@ export function OrderDetailPage() {
               <Metric
                 label={`Carried In (${selectedStage.stage.unit_type})`}
                 value={
-                  selectedStage.qtyInherited > 0 ? selectedStage.qtyInherited.toLocaleString() : "—"
+                  selectedStage.qtyInherited > 0 ? selectedStage.qtyInherited.toLocaleString() : "- "
                 }
               />
               <Metric
@@ -420,22 +430,22 @@ export function OrderDetailPage() {
                           {e.qty_rejected.toLocaleString()}
                         </span>
                       ) : (
-                        "—"
+                        "- "
                       ),
                   },
                   {
                     header: "Returned",
-                    render: (e) => (e.qty_returned > 0 ? e.qty_returned.toLocaleString() : "—"),
+                    render: (e) => (e.qty_returned > 0 ? e.qty_returned.toLocaleString() : "- "),
                   },
                   {
                     header: "Result",
                     render: (e) => (
                       <Badge tone={e.is_completed ? "good" : "warn"}>
-                        {e.is_completed ? "Completed stage" : "Moved on — not completed"}
+                        {e.is_completed ? "Completed stage" : "Moved on -  not completed"}
                       </Badge>
                     ),
                   },
-                  { header: "Notes", render: (e) => e.notes || "—" },
+                  { header: "Notes", render: (e) => e.notes || "- " },
                 ]}
               />
             </div>
@@ -461,7 +471,7 @@ export function OrderDetailPage() {
                 header: "Workflow Section",
                 render: (e) => (
                   <span className="font-medium text-ink-900">
-                    {sectionLabelById.get(e.section_id) ?? "—"}
+                    {sectionLabelById.get(e.section_id) ?? "- "}
                   </span>
                 ),
               },
@@ -475,7 +485,7 @@ export function OrderDetailPage() {
                   </Badge>
                 ),
               },
-              { header: "Notes", render: (e) => e.notes || "—" },
+              { header: "Notes", render: (e) => e.notes || "- " },
             ]}
           />
 
@@ -527,7 +537,7 @@ function InfoTile({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Names with phone numbers — the handoff detail the floor actually needs. */
+/** Names with phone numbers -  the handoff detail the floor actually needs. */
 function ContactTile({
   label,
   people,

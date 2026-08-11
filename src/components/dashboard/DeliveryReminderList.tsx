@@ -47,7 +47,7 @@ export function DeliveryReminderList({ bundles }: { bundles: OrderBundle[] }) {
                 ? progress.daysRemaining >= 0
                   ? `${progress.daysRemaining}d`
                   : `${Math.abs(progress.daysRemaining)}d late`
-                : "—"}
+                : "- "}
             </span>
           </Link>
         );

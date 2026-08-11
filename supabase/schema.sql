@@ -1,5 +1,5 @@
 -- ============================================================================
--- UK Textiles — Garment Order Tracking Application
+-- UK Textiles -  Garment Order Tracking Application
 -- Full schema: tables, RLS policies, storage bucket, seed data.
 -- Run this once in the Supabase SQL editor on a fresh project.
 -- ============================================================================
@@ -39,7 +39,7 @@ create table public.workflow_stages (
 );
 
 -- One row per IO/No + Style + Color. cut_quantity is the fixed PCS baseline
--- established when Cutting is completed — every stage after Cutting compares
+-- established when Cutting is completed -  every stage after Cutting compares
 -- its own completed quantity against this fixed number (shortage/surplus).
 create table public.orders (
   id uuid primary key default gen_random_uuid(),
@@ -64,7 +64,7 @@ create table public.purchase_orders (
   po_number text not null,
   quantity numeric not null default 0,
   -- Fixed PCS baseline for THIS PO, set when Cutting completes for a
-  -- PO-scoped assignment — mirrors orders.cut_quantity but per PO.
+  -- PO-scoped assignment -  mirrors orders.cut_quantity but per PO.
   cut_quantity numeric,
   delivery_date date,
   created_at timestamptz not null default now()
@@ -193,7 +193,7 @@ after insert on public.stage_entries
 for each row execute function public.touch_user_activity();
 
 -- Safe, narrow lookup: any authenticated user can resolve a set of user ids to
--- just their name + phone (never username/password_plain/role) — used to show
+-- just their name + phone (never username/password_plain/role) -  used to show
 -- who handled an earlier/later stage of an order for handoff purposes.
 create or replace function public.get_user_contacts(p_user_ids uuid[])
 returns table (id uuid, name text, phone text)
@@ -246,7 +246,7 @@ create policy "purchase_orders_write_admin" on public.purchase_orders
   for all using (public.is_admin()) with check (public.is_admin());
 
 -- has_order_assignment must go through a SECURITY DEFINER function rather
--- than a plain subquery on user_assignments — a policy that queries its own
+-- than a plain subquery on user_assignments -  a policy that queries its own
 -- table directly makes Postgres re-evaluate that same policy for the
 -- subquery's rows, forever ("infinite recursion detected in policy for
 -- relation user_assignments"). The function body runs as its owner and so
@@ -275,7 +275,7 @@ create policy "user_assignments_write_admin" on public.user_assignments
   for all using (public.is_admin()) with check (public.is_admin());
 
 -- stage_entries: readable by anyone with ANY assignment on the order (not just
--- their own section) — the order-progress/current-stage calculation needs to
+-- their own section) -  the order-progress/current-stage calculation needs to
 -- see every stage's history, and users need to see who ran earlier stages.
 -- A global stage-role default (stage_assignments) counts as an assignment on
 -- every order for that section, same as an explicit user_assignments row.
@@ -318,7 +318,7 @@ create policy "stage_entries_update_admin" on public.stage_entries
 create policy "stage_entries_delete_admin" on public.stage_entries
   for delete using (public.is_admin());
 
--- stage_sub_items — same global stage-role default fallback as stage_entries.
+-- stage_sub_items -  same global stage-role default fallback as stage_entries.
 create policy "stage_sub_items_select" on public.stage_sub_items
   for select using (
     public.is_admin()
@@ -462,6 +462,6 @@ select id, po_number, quantity, delivery_date::date from (
 ) as po_rows;
 
 -- NOTE: the default Admin account (app_users + its Supabase Auth user) is
--- deliberately NOT seeded here — app_users.id has a foreign key into
+-- deliberately NOT seeded here -  app_users.id has a foreign key into
 -- auth.users, which can only be populated via the Supabase Auth API.
 -- Run `npm run seed:admin` once (see scripts/seed-admin.ts) after this file.

@@ -9,14 +9,20 @@ import { QtyBox, Section } from "./chainShared";
 import type { StageFormProps } from "./types";
 
 /**
- * Pattern Making & Marker Planning — the one confirmation-only stage left.
+ * Pattern Making & Marker Planning -  the one confirmation-only stage left.
  *
  * It plans rather than consumes, so it forwards the fabric it received
  * untouched. Its real job is to show the planner the fabric actually in store
  * and the size breakdown the marker has to satisfy, then get a sign-off before
  * Cutting starts turning kilos into pieces.
  */
-export function SimpleConfirmForm({ order, assignment, stageProgress, onForwarded }: StageFormProps) {
+export function SimpleConfirmForm({
+  order,
+  assignment,
+  stageProgress,
+  onForwarded,
+  showDetails,
+}: StageFormProps) {
   const toast = useToast();
   const { submitMovement, isPending, appUser } = useStageEntryBuilder(order, assignment);
   const { cs, sizes, isLoading, isError } = useStageChain(
@@ -50,8 +56,8 @@ export function SimpleConfirmForm({ order, assignment, stageProgress, onForwarde
       });
       toast.success(
         isFinal
-          ? "Marker confirmed — Cutting can start."
-          : "Moved forward — this stage stays open until the full set is signed off.",
+          ? "Marker confirmed -  Cutting can start."
+          : "Moved forward -  this stage stays open until the full set is signed off.",
       );
       onForwarded();
     } catch (err) {
@@ -70,7 +76,7 @@ export function SimpleConfirmForm({ order, assignment, stageProgress, onForwarde
         base: {
           qty_received: cs!.input,
           qty_forwarded: 0,
-          notes: notes || (confirmed ? "Marker ready — not yet released to Cutting." : "Marker in progress."),
+          notes: notes || (confirmed ? "Marker ready -  not yet released to Cutting." : "Marker in progress."),
         },
         action: "plan",
       });
@@ -89,40 +95,42 @@ export function SimpleConfirmForm({ order, assignment, stageProgress, onForwarde
         Is the pattern card and marker ready for this order, and is it clear to proceed to Cutting?
       </p>
 
-      <Section title="What this marker has to satisfy">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          <QtyBox label="Fabric in store" value={cs.input} unit="KG" hint="carried in from Fabric Store" />
-          <QtyBox label="Pieces to cut" value={totalPcs} unit="PCS" />
-          <QtyBox label="Sizes" value={sizes.length} />
-        </div>
-        {sizes.length > 0 && (
-          <div className="overflow-x-auto rounded-xl border border-ink-100">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500">
-                  {sizes.map((s) => (
-                    <th key={s.size_code} className="px-3 py-2 text-center font-semibold">
-                      {s.size_code}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="bg-white">
-                  {sizes.map((s) => (
-                    <td key={s.size_code} className="px-3 py-2.5 text-center font-semibold tabular-nums">
-                      {s.quantity.toLocaleString()}
-                    </td>
-                  ))}
-                </tr>
-              </tbody>
-            </table>
+      {showDetails && (
+        <Section title="What this marker has to satisfy">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <QtyBox label="Fabric in store" value={cs.input} unit="KG" hint="carried in from Fabric Store" />
+            <QtyBox label="Pieces to cut" value={totalPcs} unit="PCS" />
+            <QtyBox label="Sizes" value={sizes.length} />
           </div>
-        )}
-      </Section>
+          {sizes.length > 0 && (
+            <div className="overflow-x-auto rounded-xl border border-ink-100">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500">
+                    {sizes.map((s) => (
+                      <th key={s.size_code} className="px-3 py-2 text-center font-semibold">
+                        {s.size_code}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="bg-white">
+                    {sizes.map((s) => (
+                      <td key={s.size_code} className="px-3 py-2.5 text-center font-semibold tabular-nums">
+                        {s.quantity.toLocaleString()}
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Section>
+      )}
 
       <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
-        Part of the pattern set ready? Move it forward so Cutting can start — this stage stays orange
+        Part of the pattern set ready? Move it forward so Cutting can start -  this stage stays orange
         until the full set is signed off.
       </p>
 
@@ -132,7 +140,7 @@ export function SimpleConfirmForm({ order, assignment, stageProgress, onForwarde
         label="Notes (optional)"
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
-        placeholder="e.g. Marker planned at 1:2:3:3:2:1 — 82% efficiency"
+        placeholder="e.g. Marker planned at 1:2:3:3:2:1 -  82% efficiency"
       />
 
       {error && <p className="text-sm text-status-bad">{error}</p>}

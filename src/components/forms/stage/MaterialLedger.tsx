@@ -10,7 +10,7 @@ import {
   useSaveRequirement,
   diffFields,
 } from "../../../hooks/useProductionChain";
-import { buildRequirementFlow, type RequirementFlow } from "../../../lib/chain";
+import { buildRequirementFlow, type MaterialTotals, type RequirementFlow } from "../../../lib/chain";
 import { formatDisplayDate } from "../../../lib/workflow";
 import { Button } from "../../ui/Button";
 import { Badge } from "../../ui/Badge";
@@ -24,22 +24,55 @@ import type {
 } from "../../../lib/types";
 
 /**
- * Yarn and fabric, from requirement through to store.
+ * Yarn and fabric, three responsibilities over ONE set of rows.
  *
- * Raw Material Planning, PO to Suppliers and Raw Material Inward are three
- * screens over ONE set of rows: a requirement ("40s — 500 KG") and a ledger of
- * entries against it. Each screen edits the entry types it owns and shows the
- * others read-only, which is why Inward can display planned/dispatched/received
- * without the storekeeper re-typing anything the planner or buyer already
- * entered — and why the three can never disagree.
+ *   Raw Material Planning        Required Plan -  what quantity is required?
+ *   Purchase Order to Suppliers  Planned Quantity -  how much yarn is planned
+ *                                 against that requirement?
+ *   Raw Material Inward          Received Quantity -  how much actually arrived?
+ *
+ * Each screen owns exactly one number and shows the others read-only, which is
+ * why Inward can display required → planned → received without the
+ * storekeeper re-typing anything the planner or buyer already entered -  and
+ * why the three can never disagree. `entryTypes` tells this component which
+ * single figure the current screen is responsible for; `[]` (Planning) means
+ * the screen has nothing to record beyond the requirement itself.
  */
 
 const ENTRY_LABEL: Record<MaterialEntryType, string> = {
-  plan: "Planned",
-  dc: "Dispatched (DC)",
-  receipt: "Received",
-  inward: "Store Inward",
+  plan: "Planned (legacy)",
+  dc: "Planned",
+  receipt: "Received (legacy)",
+  inward: "Received",
 };
+
+/** Which totals matter on each screen, in display order. `entryTypes` (what
+ * this screen records) is enough to tell them apart -  Planning records
+ * nothing, Suppliers records "dc" (Planned Quantity), Inward records "inward"
+ * (Received Quantity). */
+function totalsColumns(
+  entryTypes: MaterialEntryType[],
+): { key: keyof MaterialTotals; label: string; tone?: "good" }[] {
+  if (entryTypes.length === 0) return [{ key: "required", label: "Required" }];
+  if (entryTypes.includes("dc")) {
+    return [
+      { key: "required", label: "Required" },
+      { key: "dc", label: "Planned", tone: "good" },
+    ];
+  }
+  return [
+    { key: "dc", label: "Planned" },
+    { key: "inward", label: "Received", tone: "good" },
+  ];
+}
+
+/** required→purchased for Suppliers, purchased→received for Inward. No
+ * balance is shown on Planning -  there's nothing yet to fall short of. */
+function balanceFor(entryTypes: MaterialEntryType[], totals: MaterialTotals): number | null {
+  if (entryTypes.length === 0) return null;
+  if (entryTypes.includes("dc")) return Math.max(totals.required - totals.dc, 0);
+  return Math.max(totals.dc - totals.inward, 0);
+}
 
 export interface MaterialLedgerProps {
   orderId: string;
@@ -62,7 +95,7 @@ const CATEGORY_TITLE: Record<MaterialCategory, string> = {
 };
 
 const CATEGORY_HINT: Record<MaterialCategory, string> = {
-  yarn: "Add the counts this order needs — 40s, 30s, 20s, 150s. They aren't a fixed list; add, rename or remove as the plan changes.",
+  yarn: "Add the counts this order needs -  40s, 30s, 20s, 150s. They aren't a fixed list; add, rename or remove as the plan changes.",
   fabric: "Fabric types and the kilos required of each.",
 };
 
@@ -122,6 +155,7 @@ function CategoryBlock({
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [newQty, setNewQty] = useState("");
+  const [newReason, setNewReason] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const totals = flows.reduce(
@@ -134,10 +168,16 @@ function CategoryBlock({
     }),
     { required: 0, planned: 0, dc: 0, received: 0, inward: 0 },
   );
+  const columns = totalsColumns(entryTypes);
+  const balance = balanceFor(entryTypes, totals);
 
   async function addRequirement() {
     const name = newName.trim();
     if (!name || !appUser) return;
+    if (canEditRequirements && !newReason.trim()) {
+      toast.show("Add a reason -  it's kept in the audit trail.", "error");
+      return;
+    }
     try {
       await saveRequirement.mutateAsync({
         input: {
@@ -162,13 +202,14 @@ function CategoryBlock({
         entity: "material_requirement",
         entity_id: null,
         action: "create",
-        summary: `${CATEGORY_TITLE[category]}: added ${name} — ${(Number(newQty) || 0).toLocaleString()} KG required`,
+        summary: `${CATEGORY_TITLE[category]}: added ${name} -  ${(Number(newQty) || 0).toLocaleString()} KG required`,
         changes: null,
-        notes: null,
+        notes: newReason.trim() || null,
         user_id: appUser.id,
       });
       setNewName("");
       setNewQty("");
+      setNewReason("");
       setAdding(false);
       onSaved();
       toast.show(`${name} added.`, "success");
@@ -179,17 +220,13 @@ function CategoryBlock({
 
   return (
     <Section title={CATEGORY_TITLE[category]} subtitle={CATEGORY_HINT[category]}>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-        <QtyBox label="Required" value={totals.required} unit="KG" />
-        <QtyBox label="Planned" value={totals.planned} unit="KG" />
-        <QtyBox label="Dispatched" value={totals.dc} unit="KG" />
-        <QtyBox label="Received" value={totals.received} unit="KG" tone="good" />
-        <QtyBox
-          label="Balance"
-          value={Math.max(totals.required - totals.received, 0)}
-          unit="KG"
-          tone={totals.required - totals.received > 0 ? "warn" : "good"}
-        />
+      <div className={`grid grid-cols-2 gap-2 ${balance === null ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
+        {columns.map((col) => (
+          <QtyBox key={col.key} label={col.label} value={totals[col.key]} unit="KG" tone={col.tone} />
+        ))}
+        {balance !== null && (
+          <QtyBox label="Balance" value={balance} unit="KG" tone={balance > 0 ? "warn" : "good"} />
+        )}
       </div>
 
       <div className="mt-3 space-y-2">
@@ -219,28 +256,46 @@ function CategoryBlock({
 
       {canEditRequirements &&
         (adding ? (
-          <div className="mt-2 flex flex-wrap items-end gap-2 rounded-xl border border-ink-100 bg-ink-50/60 p-3">
+          <div className="mt-2 space-y-2 rounded-xl border border-ink-100 bg-ink-50/60 p-3">
+            <div className="flex flex-wrap items-end gap-2">
+              <Input
+                label="Name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder={category === "yarn" ? "e.g. 40s" : "e.g. Single Jersey"}
+                autoFocus
+              />
+              <Input
+                label="Required Quantity (KG)"
+                type="number"
+                min={0}
+                value={newQty}
+                onChange={(e) => setNewQty(e.target.value)}
+                className="w-40"
+              />
+            </div>
             <Input
-              label={category === "yarn" ? "Yarn count" : "Fabric type"}
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder={category === "yarn" ? "e.g. 40s" : "e.g. Single Jersey"}
-              autoFocus
+              label="Reason for the Change (Required)"
+              value={newReason}
+              onChange={(e) => setNewReason(e.target.value)}
+              placeholder="e.g. Additional requirement raised by production"
             />
-            <Input
-              label="Required (KG)"
-              type="number"
-              min={0}
-              value={newQty}
-              onChange={(e) => setNewQty(e.target.value)}
-              className="w-32"
-            />
-            <Button type="button" size="sm" onClick={addRequirement} isLoading={saveRequirement.isPending} className="mb-0.5">
-              Add
-            </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setAdding(false)} className="mb-0.5">
-              Cancel
-            </Button>
+            <div className="flex gap-2">
+              <Button type="button" size="sm" onClick={addRequirement} isLoading={saveRequirement.isPending}>
+                Add
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setAdding(false);
+                  setNewReason("");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
           </div>
         ) : (
           <Button type="button" variant="secondary" size="sm" onClick={() => setAdding(true)} className="mt-2">
@@ -274,7 +329,10 @@ function RequirementRow({
   onToggle: () => void;
   onSaved: () => void;
 }) {
-  const { requirement: req, totals, balance } = flow;
+  const { requirement: req, totals } = flow;
+  const columns = totalsColumns(entryTypes);
+  const balance = balanceFor(entryTypes, totals);
+  const canExpand = entryTypes.length > 0;
   const appUser = useEntryUser();
   const toast = useToast();
   const confirm = useConfirm();
@@ -318,7 +376,7 @@ function RequirementRow({
       return;
     }
     if (!reason.trim()) {
-      toast.show("Add a reason — it's kept in the audit trail.", "error");
+      toast.show("Add a reason -  it's kept in the audit trail.", "error");
       return;
     }
     try {
@@ -376,16 +434,24 @@ function RequirementRow({
   return (
     <div className="rounded-xl border border-ink-100 bg-white">
       <div className="flex flex-wrap items-center gap-3 px-3 py-2.5">
-        <button type="button" onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-          <span className={`text-ink-400 transition-transform ${expanded ? "rotate-90" : ""}`}>›</span>
-          <span className="truncate text-sm font-bold text-ink-900">{req.name}</span>
-          {req.is_completed && <Badge tone="good">Completed</Badge>}
-        </button>
+        {canExpand ? (
+          <button type="button" onClick={onToggle} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+            <span className={`text-ink-400 transition-transform ${expanded ? "rotate-90" : ""}`}>›</span>
+            <span className="truncate text-sm font-bold text-ink-900">{req.name}</span>
+            {req.is_completed && <Badge tone="good">Completed</Badge>}
+          </button>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="truncate text-sm font-bold text-ink-900">{req.name}</span>
+            {req.is_completed && <Badge tone="good">Completed</Badge>}
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-          <Figure label="Required" value={totals.required} />
-          <Figure label="Received" value={totals.received} tone="good" />
-          <Figure label="Balance" value={balance} tone={balance > 0 ? "warn" : "good"} />
+          {columns.map((col) => (
+            <Figure key={col.key} label={col.label} value={totals[col.key]} tone={col.tone} />
+          ))}
+          {balance !== null && <Figure label="Balance" value={balance} tone={balance > 0 ? "warn" : "good"} />}
         </div>
 
         {canEditRequirements && (
@@ -406,7 +472,7 @@ function RequirementRow({
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} />
             <Input
-              label="Required (KG)"
+              label="Required Quantity (KG)"
               type="number"
               min={0}
               value={required}
@@ -414,7 +480,7 @@ function RequirementRow({
             />
           </div>
           <Input
-            label="Reason for the change (required)"
+            label="Reason for the Change (Required)"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="e.g. Additional requirement raised by production"
@@ -430,7 +496,7 @@ function RequirementRow({
         </div>
       )}
 
-      {expanded && (
+      {canExpand && expanded && (
         <div className="border-t border-ink-100 px-3 py-3">
           <EntryLedger
             requirementId={req.id}
@@ -637,11 +703,11 @@ function EntryLedger({
                       </Badge>
                     </td>
                     <td className="px-2.5 py-2 text-ink-600">
-                      {[e.supplier, e.doc_no].filter(Boolean).join(" · ") || "—"}
+                      {[e.supplier, e.doc_no].filter(Boolean).join(" · ") || "- "}
                     </td>
                     <td className="px-2.5 py-2 text-right font-semibold tabular-nums">{e.qty.toLocaleString()}</td>
                     <td className="px-2.5 py-2 text-right tabular-nums text-ink-500">{running.toLocaleString()}</td>
-                    <td className="max-w-[16rem] truncate px-2.5 py-2 text-ink-500">{e.notes ?? "—"}</td>
+                    <td className="max-w-[16rem] truncate px-2.5 py-2 text-ink-500">{e.notes ?? "- "}</td>
                     <td className="px-2.5 py-2 text-right">
                       {editable && (
                         <div className="flex justify-end gap-1">
@@ -685,7 +751,7 @@ function EntryLedger({
               </Select>
             )}
             <Input
-              label="Quantity (KG)"
+              label={`${ENTRY_LABEL[form.entryType]} Quantity (KG)`}
               type="number"
               min={0}
               value={form.qty}
@@ -738,7 +804,7 @@ function EntryLedger({
         </div>
       ) : (
         <Button type="button" variant="secondary" size="sm" onClick={() => setAdding(true)}>
-          + Add New Entry
+          + Record {ENTRY_LABEL[entryTypes[0]]}
         </Button>
       )}
     </div>

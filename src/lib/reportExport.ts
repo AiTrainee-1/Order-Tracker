@@ -11,7 +11,7 @@ import type { AppUser, Order, PurchaseOrder } from "./types";
  * Production summary export.
  *
  * Both formats are built from the same set of tables so the spreadsheet and the
- * PDF can never tell different stories — the only difference is presentation.
+ * PDF can never tell different stories -  the only difference is presentation.
  * Every figure comes from the chain, which comes from the ledgers, so an export
  * is always a snapshot of the real entries rather than a separately-maintained
  * report.
@@ -52,9 +52,9 @@ function buildTables(ctx: ReportContext): ReportTable[] {
     rows: [
       ["IO / No", order.io_no],
       ["Style", order.style],
-      ["Description", order.description ?? "—"],
-      ["Colour", order.color ?? "—"],
-      ["Fabric", order.fabric ?? "—"],
+      ["Description", order.description ?? "- "],
+      ["Colour", order.color ?? "- "],
+      ["Fabric", order.fabric ?? "- "],
       ["Scope", scopeLabel(ctx)],
       ["Delivery date", formatDisplayDate(order.delivery_date)],
       ["Ordered (PCS)", summary.orderedPcs],
@@ -62,7 +62,7 @@ function buildTables(ctx: ReportContext): ReportTable[] {
       ["Packed (PCS)", summary.packedPcs],
       ["Shortfall (PCS)", summary.shortfallPcs],
       ["Total rejected (PCS)", summary.totalRejectedPcs],
-      ["Overall efficiency (%)", summary.overallEfficiencyPct ?? "—"],
+      ["Overall efficiency (%)", summary.overallEfficiencyPct ?? "- "],
       ["Fabric planned (KG)", summary.fabricPlannedKg],
       ["Fabric reached store (KG)", summary.fabricInhouseKg],
       ["Fabric process loss (KG)", summary.fabricLossKg],
@@ -88,7 +88,7 @@ function buildTables(ctx: ReportContext): ReportTable[] {
       r.output,
       r.rejected,
       r.shortage,
-      r.efficiencyPct ?? "—",
+      r.efficiencyPct ?? "- ",
     ]),
   });
 
@@ -139,16 +139,16 @@ function buildTables(ctx: ReportContext): ReportTable[] {
     .sort((a, b) => a.entry_date.localeCompare(b.entry_date))
     .map((t) => [
       formatDisplayDate(t.entry_date),
-      stageLabelById.get(t.section_id) ?? "—",
-      t.lot_id ? lotNoById.get(t.lot_id) ?? "—" : "—",
-      t.size_code ?? "—",
+      stageLabelById.get(t.section_id) ?? "- ",
+      t.lot_id ? lotNoById.get(t.lot_id) ?? "- " : "- ",
+      t.size_code ?? "- ",
       t.unit,
       t.qty_in,
       t.qty_out,
       t.qty_rejected,
-      t.ref_name ?? "—",
-      t.doc_no ?? "—",
-      ctx.usersById.get(t.entered_by)?.name ?? "—",
+      t.ref_name ?? "- ",
+      t.doc_no ?? "- ",
+      ctx.usersById.get(t.entered_by)?.name ?? "- ",
       t.notes ?? "",
     ]);
   tables.push({
@@ -208,7 +208,7 @@ export async function exportPdf(ctx: ReportContext): Promise<void> {
   for (const table of tables) {
     if (table.rows.length === 0) continue;
 
-    // Start a fresh page if there isn't room for the heading plus a few rows —
+    // Start a fresh page if there isn't room for the heading plus a few rows - 
     // a section title stranded at the foot of a page reads as a mistake.
     if (cursorY > doc.internal.pageSize.getHeight() - 140) {
       doc.addPage();
@@ -238,7 +238,7 @@ export async function exportPdf(ctx: ReportContext): Promise<void> {
   doc.save(`${fileBase(ctx)}.pdf`);
 }
 
-/** CSV of the stage analysis — the one table people paste into email. */
+/** CSV of the stage analysis -  the one table people paste into email. */
 export function exportCsv(ctx: ReportContext): void {
   const table = buildTables(ctx).find((t) => t.name === "Stage Analysis")!;
   const csv = [table.head, ...table.rows]

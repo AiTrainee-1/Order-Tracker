@@ -2,7 +2,7 @@
 -- Fix: stage_entries / stage_sub_items policies only recognized explicit
 -- per-order user_assignments rows. Since migration 008, a user can also work
 -- a stage via a global stage_assignments default (no user_assignments row at
--- all) — the app's work-list correctly showed those as "your turn" and let
+-- all) -  the app's work-list correctly showed those as "your turn" and let
 -- the form render, but the database rejected the insert with 403 because the
 -- RLS check never looked at stage_assignments. This adds that fallback to
 -- every affected policy. Idempotent: safe to re-run.

@@ -2,7 +2,7 @@
 -- Production chain: size-wise POs, lot tracking, and a single transaction
 -- ledger connecting every stage from Order Confirmation to Packing.
 --
--- ⚠ THIS MIGRATION CLEARS MOVEMENT/ASSIGNMENT DATA — but NOT your orders.
+-- ⚠ THIS MIGRATION CLEARS MOVEMENT/ASSIGNMENT DATA -  but NOT your orders.
 -- Same mechanic as 010: every workflow_stages row is deleted and re-inserted
 -- with new ids, so the four tables holding a foreign key into it
 -- (stage_entries, stage_sub_items, user_assignments, stage_assignments) must
@@ -15,16 +15,16 @@
 --    seven jobs; it becomes seven real stages (Knitting, Dyeing, Setting,
 --    Raising, Compacting, In-House, Fabric Inspection) so each one carries its
 --    own lot-wise input/output/loss. Panel Checking is new, between Cutting and
---    Embroidery. Finishing and the duplicate interim Packing are removed —
+--    Embroidery. Finishing and the duplicate interim Packing are removed - 
 --    the line now ends Checking → Ironing → Packing → Output.
 --
 -- 2. Two layers, deliberately separated:
 --
---      GATING LAYER   stage_entries (unchanged) — is a stage open, partially
+--      GATING LAYER   stage_entries (unchanged) -  is a stage open, partially
 --                     forwarded, or complete; who handled it; what unlocks next.
 --                     src/lib/progress.ts still owns this.
 --
---      QUANTITY LAYER the new tables below — the authoritative numbers. Every
+--      QUANTITY LAYER the new tables below -  the authoritative numbers. Every
 --                     row is an immutable transaction; nothing is overwritten.
 --                     src/lib/chain.ts computes every stage's input/output/
 --                     balance/shortage from these, lot-wise and size-wise.
@@ -77,7 +77,7 @@ insert into public.workflow_stages (key, label, sequence_no, unit_type, typical_
   ('packing',                'Packing',                          20, 'PCS', 2, 'packing');
 
 -- ---------------------------------------------------------------------------
--- 3. Size-wise PO quantities — the base every downstream PCS figure compares to
+-- 3. Size-wise PO quantities -  the base every downstream PCS figure compares to
 -- ---------------------------------------------------------------------------
 
 create table if not exists public.po_size_quantities (
@@ -96,7 +96,7 @@ create index if not exists idx_po_size_quantities_po on public.po_size_quantitie
 -- 4. Lot register
 --
 -- A lot is a physical batch of fabric. It is created during Knitting or Dyeing
--- and then referenced by every stage after it, all the way to Packing — which
+-- and then referenced by every stage after it, all the way to Packing -  which
 -- is what makes end-to-end traceability possible. po_id is nullable: a lot
 -- knitted for the whole order serves all its POs, while a lot raised inside a
 -- PO-scoped assignment belongs to that PO alone.
@@ -120,7 +120,7 @@ create index if not exists idx_production_lots_order on public.production_lots (
 -- 5. Material requirements + their entry ledger
 --
 -- A requirement is one yarn count ("40s") or fabric type ("Single Jersey") with
--- a required KG. Yarn counts are user-defined, never hard-coded — hence a row
+-- a required KG. Yarn counts are user-defined, never hard-coded -  hence a row
 -- per requirement rather than fixed columns.
 --
 -- material_entries is the ledger beneath it, and it is what stitches Raw
@@ -306,7 +306,7 @@ $$;
 -- The yarn and fabric rows are shared by four stages (planning, purchasing,
 -- inward, and the fabric processing that consumes them), so a single
 -- section_id check would lock out three of the four. Instead the check is
--- "assigned with data entry to ANY of the procurement stages on this order" —
+-- "assigned with data entry to ANY of the procurement stages on this order" - 
 -- which still excludes a sewing supervisor from rewriting the yarn plan.
 create or replace function public.can_enter_materials(p_order_id uuid)
 returns boolean
@@ -354,7 +354,7 @@ create policy "po_size_quantities_write_admin" on public.po_size_quantities
   for all using (public.is_admin()) with check (public.is_admin());
 
 -- production_lots: readable by anyone on the order. Any user who can enter data
--- at a lot-bearing stage may raise a lot — Knitting and Dyeing both create them,
+-- at a lot-bearing stage may raise a lot -  Knitting and Dyeing both create them,
 -- and Cutting occasionally needs to register one retrospectively.
 drop policy if exists "production_lots_select" on public.production_lots;
 create policy "production_lots_select" on public.production_lots
@@ -432,7 +432,7 @@ drop policy if exists "production_txns_delete_admin" on public.production_txns;
 create policy "production_txns_delete_admin" on public.production_txns
   for delete using (public.is_admin());
 
--- audit_log: append-only by design — insert + select, no update or delete
+-- audit_log: append-only by design -  insert + select, no update or delete
 -- policy at all, so history cannot be rewritten even by an admin through the API.
 drop policy if exists "audit_log_select" on public.audit_log;
 create policy "audit_log_select" on public.audit_log

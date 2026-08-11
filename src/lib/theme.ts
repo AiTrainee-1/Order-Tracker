@@ -10,7 +10,7 @@ import type { CSSProperties } from "react";
  * stay as Tailwind classes; anything structural lives here.
  */
 
-/** Sign-in backdrop — the fullest expression of the mesh. */
+/** Sign-in backdrop -  the fullest expression of the mesh. */
 export const authBackground: CSSProperties = {
   backgroundColor: "#EEF3FF",
   backgroundImage: [
@@ -21,7 +21,7 @@ export const authBackground: CSSProperties = {
   ].join(", "),
 };
 
-/** In-app backdrop — same palette, dialled back so dense tables stay crisp. */
+/** In-app backdrop -  same palette, dialled back so dense tables stay crisp. */
 export const appBackground: CSSProperties = {
   backgroundColor: "#F3F6FD",
   backgroundImage: [
@@ -33,7 +33,7 @@ export const appBackground: CSSProperties = {
   backgroundAttachment: "fixed",
 };
 
-/** Sidebar backdrop — a vertical tint so the rail reads apart from the canvas. */
+/** Sidebar backdrop -  a vertical tint so the rail reads apart from the canvas. */
 export const sidebarBackground: CSSProperties = {
   backgroundImage:
     "linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(238,243,255,0.88) 55%, rgba(243,232,255,0.85) 100%)",
@@ -78,7 +78,7 @@ export const dotTexture: CSSProperties = {
 };
 
 // Shadow recipes as arbitrary-value Tailwind classes. These literals live here
-// so Tailwind's scanner finds them — note each variant (including the hover:
+// so Tailwind's scanner finds them -  note each variant (including the hover:
 // form) must be spelled out in full, because a class assembled at runtime like
 // `hover:${SHADOW}` is invisible to the extractor and would never be generated.
 export const SHADOW_GLASS = "shadow-[0_10px_30px_-14px_rgba(30,41,90,0.35)]";

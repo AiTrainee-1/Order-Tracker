@@ -4,7 +4,7 @@ import type { Order, PoSizeQuantity, PurchaseOrder } from "../lib/types";
 
 /** Lightweight orders + POs + size rows for search/picker UIs (no progress
  * math). The size rows come along because the order editor needs them to
- * repopulate its grid — reopening an order without them would silently wipe
+ * repopulate its grid -  reopening an order without them would silently wipe
  * the breakdown on save. */
 export function useOrdersList() {
   return useQuery({

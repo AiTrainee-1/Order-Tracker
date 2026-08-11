@@ -3,7 +3,7 @@ import { iconGradient, SHADOW_GLASS, SHADOW_GLASS_HOVER, type IconTone } from ".
 
 type Tone = "neutral" | "good" | "warn" | "bad" | "brand" | "shortage" | "rejected";
 
-/** Left accent rail — the only place raw colour appears on the tile. */
+/** Left accent rail -  the only place raw colour appears on the tile. */
 const toneRail: Record<Tone, string> = {
   neutral: "before:bg-ink-300",
   good: "before:bg-good-gradient",

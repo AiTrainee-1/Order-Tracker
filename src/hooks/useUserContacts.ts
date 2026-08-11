@@ -4,7 +4,7 @@ import { supabase } from "../lib/supabaseClient";
 import type { UserContact } from "../lib/types";
 
 /** Resolves a set of user ids to just {name, phone} via the get_user_contacts
- * RPC — safe for any authenticated user to call, unlike selecting app_users
+ * RPC -  safe for any authenticated user to call, unlike selecting app_users
  * directly (which would also be blocked by RLS for anyone but the owner/admin). */
 export function useUserContacts(userIds: string[]) {
   const sortedIds = useMemo(() => [...new Set(userIds)].sort(), [userIds]);

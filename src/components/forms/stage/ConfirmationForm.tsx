@@ -11,7 +11,7 @@ import { QtyBox, Section } from "./chainShared";
 import type { StageFormProps } from "./types";
 
 /**
- * Order Confirmation — the gate everything downstream depends on.
+ * Order Confirmation -  the gate everything downstream depends on.
  *
  * Its job is to make someone actually look at the size breakdown before the
  * factory starts spending yarn against it, because every later stage measures
@@ -19,7 +19,7 @@ import type { StageFormProps } from "./types";
  * silently allowed through: Cutting would otherwise have nothing to compare
  * against and the size-wise tracking would be hollow from the start.
  */
-export function ConfirmationForm({ order, assignment, onForwarded }: StageFormProps) {
+export function ConfirmationForm({ order, assignment, onForwarded, showDetails }: StageFormProps) {
   const toast = useToast();
   const { submitMovement, isPending, appUser } = useStageEntryBuilder(order, assignment);
   const { cs, sizes, isLoading } = useStageChain(order.id, assignment.po_id, assignment.section_id);
@@ -40,14 +40,14 @@ export function ConfirmationForm({ order, assignment, onForwarded }: StageFormPr
           qty_received: total,
           qty_completed_today: total,
           qty_forwarded: total,
-          notes: notes || (isFinal ? "Order confirmed." : "Order confirmed — awaiting paperwork."),
+          notes: notes || (isFinal ? "Order confirmed." : "Order confirmed -  awaiting paperwork."),
         },
         action: isFinal ? "complete" : "forward",
       });
       toast.success(
         isFinal
           ? "Order confirmed and forwarded to Raw Material Planning."
-          : "Moved forward — this stage stays open until you confirm it.",
+          : "Moved forward -  this stage stays open until you confirm it.",
       );
       onForwarded();
     } catch (err) {
@@ -57,7 +57,7 @@ export function ConfirmationForm({ order, assignment, onForwarded }: StageFormPr
     }
   }
 
-  /** Records the note against the order without releasing it to planning —
+  /** Records the note against the order without releasing it to planning - 
    * used when the sizes need checking with the buyer first. */
   async function savePlan() {
     if (!appUser) return;
@@ -67,7 +67,7 @@ export function ConfirmationForm({ order, assignment, onForwarded }: StageFormPr
         base: {
           qty_received: total,
           qty_forwarded: 0,
-          notes: notes || "Reviewed — not yet confirmed.",
+          notes: notes || "Reviewed -  not yet confirmed.",
         },
         action: "plan",
       });
@@ -82,26 +82,28 @@ export function ConfirmationForm({ order, assignment, onForwarded }: StageFormPr
 
   return (
     <div className="space-y-6">
-      <Section title="Order">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Field label="Style" value={order.style} />
-          <Field label="IO / No" value={order.io_no} />
-          <Field label="Colour" value={order.color ?? "—"} />
-          <Field label="Delivery" value={formatDisplayDate(order.delivery_date)} />
-        </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Description" value={order.description || "—"} />
-          <Field label="Fabric" value={order.fabric || "—"} />
-        </div>
-      </Section>
+      {showDetails && (
+        <Section title="Order">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Field label="Style" value={order.style} />
+            <Field label="IO / No" value={order.io_no} />
+            <Field label="Colour" value={order.color ?? "- "} />
+            <Field label="Delivery" value={formatDisplayDate(order.delivery_date)} />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Description" value={order.description || "- "} />
+            <Field label="Fabric" value={order.fabric || "- "} />
+          </div>
+        </Section>
+      )}
 
       <Section
-        title={assignment.po ? `PO ${assignment.po.po_number} — size breakdown` : "Size breakdown"}
+        title={assignment.po ? `PO ${assignment.po.po_number} -  size breakdown` : "Size breakdown"}
         subtitle="These quantities are the yardstick for Cutting, Panel Checking, Sewing and Packing. Check them now."
       >
         {!hasSizeBreakdown && (
           <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            This PO has no size split — only a total. Size-wise tracking won't be available
+            This PO has no size split -  only a total. Size-wise tracking won't be available
             downstream until an Admin edits the order and breaks the quantity out by size.
           </p>
         )}
@@ -133,15 +135,17 @@ export function ConfirmationForm({ order, assignment, onForwarded }: StageFormPr
         </div>
       </Section>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        <QtyBox label="Order quantity" value={total} unit="PCS" />
-        <QtyBox label="Sizes" value={sizes.length} />
-        <div className="flex items-center justify-center rounded-xl border border-white/70 bg-white/70 px-3 py-2.5">
-          <Badge tone={cs?.isStarted ? "good" : "neutral"}>
-            {cs?.isStarted ? "Confirmed" : "Awaiting confirmation"}
-          </Badge>
+      {showDetails && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <QtyBox label="Order quantity" value={total} unit="PCS" />
+          <QtyBox label="Sizes" value={sizes.length} />
+          <div className="flex items-center justify-center rounded-xl border border-white/70 bg-white/70 px-3 py-2.5">
+            <Badge tone={cs?.isStarted ? "good" : "neutral"}>
+              {cs?.isStarted ? "Confirmed" : "Awaiting confirmation"}
+            </Badge>
+          </div>
         </div>
-      </div>
+      )}
 
       <Textarea
         label="Notes (optional)"

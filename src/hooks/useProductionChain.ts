@@ -23,7 +23,7 @@ import type {
  * calculation is inherently whole-order: Packing's balance depends on Sewing's
  * output, which depends on Cutting's, and so on back to the yarn. Fetching them
  * piecemeal would mean stages could render against different snapshots and
- * disagree — which is exactly the failure this rewrite exists to prevent.
+ * disagree -  which is exactly the failure this rewrite exists to prevent.
  */
 
 const KEY = "production_chain";
@@ -80,7 +80,7 @@ export function useProductionBundle(orderId: string | undefined, purchaseOrders:
 
   const query = useQuery({
     queryKey: [KEY, orderId, poIds],
-    // Disabled outright in the sandbox — the Preview must not so much as read
+    // Disabled outright in the sandbox -  the Preview must not so much as read
     // the real order, let alone write to it.
     enabled: !!orderId && !demo,
     queryFn: () => fetchBundle(orderId!, poIds),
@@ -161,7 +161,7 @@ export function useProductionChain({
   };
 }
 
-/** The order's POs on their own — stage forms are handed an assignment, not an
+/** The order's POs on their own -  stage forms are handed an assignment, not an
  * order bundle, so they need to resolve the PO list themselves. */
 export function useOrderPurchaseOrders(orderId: string | undefined) {
   const demo = useDemoStore();
@@ -186,7 +186,7 @@ export function useOrderPurchaseOrders(orderId: string | undefined) {
  * Everything one stage form needs: its own link in the chain, the lots it can
  * pick from, and the size breakdown it measures against.
  *
- * Note it returns the WHOLE chain as well as this stage's slice — forms show
+ * Note it returns the WHOLE chain as well as this stage's slice -  forms show
  * where their input came from, and the Fabric Store and Output screens walk
  * every stage, so handing back only the current one would just force a second
  * lookup.
@@ -492,7 +492,7 @@ export function useRecordAudit() {
   const demo = useDemoStore();
   return useMutation({
     mutationFn: async (row: NewAuditRow) => {
-      // The sandbox has no history to keep — and an audit row is the one thing
+      // The sandbox has no history to keep -  and an audit row is the one thing
       // that must never be fabricated.
       if (demo) return;
       const { error } = await supabase.from("audit_log").insert(row);
@@ -502,7 +502,7 @@ export function useRecordAudit() {
   });
 }
 
-/** Field-level diff for the audit log — only the keys that actually changed. */
+/** Field-level diff for the audit log -  only the keys that actually changed. */
 export function diffFields<T extends Record<string, unknown>>(
   before: T,
   after: Partial<T>,

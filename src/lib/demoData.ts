@@ -18,7 +18,7 @@ import type {
  * press the buttons and watch the totals move without a single row being
  * written anywhere.
  *
- * Every id is prefixed `demo-`. That prefix is the safety net — the write
+ * Every id is prefixed `demo-`. That prefix is the safety net -  the write
  * guards in useProductionChain.ts refuse to touch Supabase while demo mode is
  * on, and any id that did somehow escape is obviously not a real uuid.
  */
@@ -31,7 +31,7 @@ export const DEMO_ORDER: Order = {
   id: DEMO_ORDER_ID,
   io_no: "DEMO/01",
   style: "SAMPLE CREW SWEATSHIRT",
-  description: "PRACTICE ORDER — nothing here is real",
+  description: "PRACTICE ORDER -  nothing here is real",
   color: "NAVY",
   fabric: "Brushed Back Fleece 60% Cotton 40% Poly - 280GSM",
   image_path: null,
@@ -47,6 +47,7 @@ export const DEMO_PO: PurchaseOrder = {
   po_number: "DEMO-0001",
   quantity: 1000,
   cut_quantity: null,
+  extra_percent: 0,
   delivery_date: "2026-12-15",
   created_at: "2026-01-01T00:00:00Z",
 };
@@ -116,12 +117,16 @@ export const DEMO_REQUIREMENTS: MaterialRequirement[] = REQUIREMENT_SPEC.map(
   }),
 );
 
-/** Two deliveries per material — enough to show the ledger accumulating rather
- * than a single tidy row that hides the point. */
+/** Two deliveries per material -  enough to show the ledger accumulating rather
+ * than a single tidy row that hides the point. Only the two entry types the
+ * simplified flow actually uses: "dc" (Purchase Quantity, entered on Purchase
+ * Order to Suppliers) and "inward" (Inward Confirmation, entered on Raw
+ * Material Inward) -  Raw Material Planning records nothing beyond the
+ * requirement itself. */
 export const DEMO_MATERIAL_ENTRIES: MaterialEntry[] = DEMO_REQUIREMENTS.flatMap((r, ri) => {
   const first = Math.round(r.required_qty * 0.6);
   const second = r.required_qty - first;
-  return (["dc", "receipt", "inward"] as const).flatMap((entry_type, ti) =>
+  return (["dc", "inward"] as const).flatMap((entry_type, ti) =>
     [first, second].map((qty, bi) => ({
       id: `${DEMO_PREFIX}mat-${ri}-${ti}-${bi}`,
       requirement_id: r.id,
@@ -132,7 +137,7 @@ export const DEMO_MATERIAL_ENTRIES: MaterialEntry[] = DEMO_REQUIREMENTS.flatMap(
       doc_no: entry_type === "dc" ? `DC-100${bi + 1}` : null,
       doc_date: entry_type === "dc" ? `2026-05-${String(10 + bi * 5).padStart(2, "0")}` : null,
       lot_ref: null,
-      notes: bi === 1 && entry_type === "receipt" ? "Balance delivery — weighed at gate." : null,
+      notes: bi === 1 && entry_type === "inward" ? "Balance delivery -  weighed at gate." : null,
       entered_by: "demo-user",
       created_at: "2026-05-10T00:00:00Z",
       updated_by: null,
@@ -141,7 +146,7 @@ export const DEMO_MATERIAL_ENTRIES: MaterialEntry[] = DEMO_REQUIREMENTS.flatMap(
   );
 });
 
-/** Loss per fabric stage — small and plausible, so the chain reads like a real
+/** Loss per fabric stage -  small and plausible, so the chain reads like a real
  * run rather than round numbers that never lose anything. */
 const KG_FLOW: [string, number][] = [
   [STAGE.knitting, 0.015],
@@ -192,7 +197,7 @@ function txn(over: Partial<ProductionTxn> & { section_id: string; unit: "KG" | "
  * Walks the same chain a real order does, so whichever stage is previewed
  * already has an input carried down to it and a short history above the entry
  * form. Without this, every stage would open showing zeroes and the carry-over
- * — the thing most worth demonstrating — would be invisible.
+ * -  the thing most worth demonstrating -  would be invisible.
  */
 export function buildDemoTxns(stages: WorkflowStage[]): ProductionTxn[] {
   seq = 0;

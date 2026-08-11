@@ -10,7 +10,7 @@ import type { ServerResponse } from "http";
 dotenv.config();
 
 /**
- * `vite dev` only serves the SPA — it knows nothing about the api/*.ts
+ * `vite dev` only serves the SPA -  it knows nothing about the api/*.ts
  * Vercel serverless functions, which is why they 404 locally. This plugin
  * makes local dev match production by loading each api/<name>.ts module on
  * request and invoking its default export with a minimal Vercel-shaped

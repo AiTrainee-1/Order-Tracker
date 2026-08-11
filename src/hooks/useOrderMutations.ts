@@ -17,7 +17,7 @@ export function useSetCutQuantity() {
   });
 }
 
-/** Same idea, scoped to a single PO — a PO-scoped Cutting assignment sets its
+/** Same idea, scoped to a single PO -  a PO-scoped Cutting assignment sets its
  * own fixed baseline instead of overwriting the whole order's. */
 export function useSetPoCutQuantity() {
   const queryClient = useQueryClient();
@@ -48,14 +48,18 @@ export interface PoSizeInput {
 
 export interface OrderPoInput {
   po_number: string;
-  /** Derived from `sizes` — kept on the row so every existing query that reads
-   * purchase_orders.quantity keeps working without a join. */
+  /** Derived from `sizes` -  kept on the row so every existing query that reads
+   * purchase_orders.quantity keeps working without a join. This is the BUYER
+   * total; extra_percent is applied on top of it downstream, not baked in. */
   quantity: number;
   delivery_date: string | null;
   sizes: PoSizeInput[];
+  /** % added on top of the buyer's size-wise quantity to get what's actually
+   * produced. 0 means production matches the buyer order exactly. */
+  extra_percent: number;
 }
 
-/** A PO's quantity is the sum of its size rows, never typed directly — the two
+/** A PO's quantity is the sum of its size rows, never typed directly -  the two
  * can then never disagree. */
 export function poTotal(sizes: PoSizeInput[]): number {
   return sizes.reduce((total, s) => total + (Number(s.quantity) || 0), 0);
@@ -103,7 +107,7 @@ function invalidateOrderQueries(queryClient: ReturnType<typeof useQueryClient>, 
   queryClient.invalidateQueries({ queryKey: ["user_assignments"] });
   queryClient.invalidateQueries({ queryKey: ["my_work_entries"] });
   // Size rows are part of the chain bundle, so editing an order's POs has to
-  // refresh it too — otherwise Cutting would keep measuring against the old
+  // refresh it too -  otherwise Cutting would keep measuring against the old
   // size breakdown.
   queryClient.invalidateQueries({ queryKey: ["production_chain"] });
   if (orderId) queryClient.invalidateQueries({ queryKey: ["order_detail", orderId] });
@@ -149,6 +153,7 @@ export function useCreateOrder() {
               po_number: po.po_number,
               quantity: poTotal(po.sizes),
               delivery_date: po.delivery_date,
+              extra_percent: po.extra_percent,
             })),
           )
           .select("id, po_number");
@@ -157,6 +162,24 @@ export function useCreateOrder() {
       }
 
       return order;
+    },
+    onSuccess: () => invalidateOrderQueries(queryClient),
+  });
+}
+
+/**
+ * Deletes an order and everything under it -  POs, size rows, assignments,
+ * stage entries, lots, material requirements/entries, production txns, audit
+ * log. Nothing to orchestrate here: every one of those tables already has an
+ * `on delete cascade` back to orders/purchase_orders (see schema.sql and
+ * migration 011), so a single delete on `orders` removes the lot.
+ */
+export function useDeleteOrder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (orderId: string) => {
+      const { error } = await supabase.from("orders").delete().eq("id", orderId);
+      if (error) throw error;
     },
     onSuccess: () => invalidateOrderQueries(queryClient),
   });
@@ -190,7 +213,7 @@ export function useUpdateOrder() {
 
       // POs are replaced wholesale rather than diffed. po_size_quantities
       // cascades on delete, so the size rows go with them and are re-inserted
-      // below from the form — no orphans, no stale sizes.
+      // below from the form -  no orphans, no stale sizes.
       const { error: deleteError } = await supabase
         .from("purchase_orders")
         .delete()
@@ -207,6 +230,7 @@ export function useUpdateOrder() {
               po_number: po.po_number,
               quantity: poTotal(po.sizes),
               delivery_date: po.delivery_date,
+              extra_percent: po.extra_percent,
             })),
           )
           .select("id, po_number");

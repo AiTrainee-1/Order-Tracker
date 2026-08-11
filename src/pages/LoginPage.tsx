@@ -49,7 +49,7 @@ export function LoginPage() {
       </div>
 
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center justify-center gap-10 px-5 py-12 lg:flex-row lg:justify-between lg:gap-16 lg:px-8">
-        {/* Brand side — dark text on the light mesh. */}
+        {/* Brand side -  dark text on the light mesh. */}
         <div className="w-full max-w-xl">
           <div className="flex items-center gap-3">
             <span className="flex items-center justify-center rounded-2xl border border-white/80 bg-white px-2.5 py-2 shadow-lg shadow-blue-900/10">
@@ -68,7 +68,7 @@ export function LoginPage() {
             </span>
           </h1>
           <p className="mt-4 max-w-md text-sm leading-relaxed text-ink-600 sm:text-base">
-            Track every order from PO to packing across the full 20-stage production workflow — in
+            Track every order from PO to packing across the full 20-stage production workflow -  in
             real time.
           </p>
 
@@ -183,7 +183,7 @@ function FeaturePill({
 }
 
 /** Frosted single-line field: icon inside, placeholder as the label, inset
- * shadow so it reads as pressed into the glass — not a stacked form row. */
+ * shadow so it reads as pressed into the glass -  not a stacked form row. */
 function GlassField({
   icon,
   trailing,

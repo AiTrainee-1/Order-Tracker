@@ -53,7 +53,7 @@ export function useCreateStageEntry() {
   });
 }
 
-/** Inserts a batch of entries in one round-trip — used when a stage's quantity
+/** Inserts a batch of entries in one round-trip -  used when a stage's quantity
  * is split across several units/branches/outside parties and each split needs
  * its own auditable record. */
 export function useCreateStageEntries() {

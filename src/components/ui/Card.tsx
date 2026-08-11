@@ -3,7 +3,7 @@ import { GLASS_CARD } from "../../lib/theme";
 
 type CardProps = HTMLAttributes<HTMLDivElement>;
 
-/** Frosted panel — the same surface treatment as the sign-in card, kept at 80%
+/** Frosted panel -  the same surface treatment as the sign-in card, kept at 80%
  * white so dense tables and long numbers stay fully legible over the mesh. */
 export function Card({ className = "", children, ...rest }: CardProps) {
   return (

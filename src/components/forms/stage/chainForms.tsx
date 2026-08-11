@@ -20,8 +20,8 @@ import type { StageFormProps } from "./types";
 /**
  * The quantity-recording stages.
  *
- * Knitting through Packing all do the same thing — take a quantity in, send a
- * quantity out, lose a little — so they're one component driven by a
+ * Knitting through Packing all do the same thing -  take a quantity in, send a
+ * quantity out, lose a little -  so they're one component driven by a
  * LedgerConfig rather than fourteen near-identical files. What genuinely
  * differs between them (a lot vs a size, a vendor vs a sewing line, one
  * quantity column vs three) is exactly what the config expresses.
@@ -40,7 +40,7 @@ function ChainStageForm({
   props: StageFormProps;
   config: LedgerConfig;
   intro?: string;
-  /** Rendered above the ledger — used where a stage needs context its
+  /** Rendered above the ledger -  used where a stage needs context its
    * neighbours don't, like Fabric Store's whole-journey roll-up. */
   extra?: (cs: ChainStage, chain: NonNullable<ReturnType<typeof useStageChain>["chain"]>) => React.ReactNode;
 }) {
@@ -61,7 +61,7 @@ function ChainStageForm({
    * Forwarding writes a stage_entry purely so the gating layer knows this stage
    * has moved. The quantities on it are a DELTA against what earlier entries
    * already logged, so progress.ts's running sum always equals the ledger's
-   * output — the two layers stay in step instead of double-counting when a
+   * output -  the two layers stay in step instead of double-counting when a
    * stage is forwarded more than once.
    *
    * Pending rows are committed first. Forwarding a stage while a typed-but-
@@ -89,7 +89,7 @@ function ChainStageForm({
     const hadPending = ledger.current?.hasPending() ?? false;
     if (!(await ledger.current?.save())) return;
     await submitMovement({
-      base: { qty_received: cs!.input, qty_forwarded: 0, notes: "Plan saved — nothing forwarded." },
+      base: { qty_received: cs!.input, qty_forwarded: 0, notes: "Plan saved -  nothing forwarded." },
       action: "plan",
     });
     onForwarded();
@@ -98,7 +98,7 @@ function ChainStageForm({
 
   return (
     <div className="space-y-5">
-      {intro && <p className="text-xs leading-relaxed text-ink-500">{intro}</p>}
+      {props.showDetails && intro && <p className="text-xs leading-relaxed text-ink-500">{intro}</p>}
 
       <StageLedger
         ref={ledger}
@@ -111,6 +111,7 @@ function ChainStageForm({
         sizes={sizes}
         config={config}
         onSaved={onForwarded}
+        showDetails={props.showDetails}
       >
         {extra?.(cs, chain)}
       </StageLedger>
@@ -129,14 +130,14 @@ function ChainStageForm({
 }
 
 // ---------------------------------------------------------------------------
-// Fabric processing — KG, lot-wise
+// Fabric processing -  KG, lot-wise
 // ---------------------------------------------------------------------------
 
 export function KnittingForm(props: StageFormProps) {
   return (
     <ChainStageForm
       props={props}
-      intro="Fabric is knitted here and becomes a physical batch. Raise a lot for each batch — every stage after this one, right through to Packing, is traced by that lot number."
+      intro="Fabric is knitted here and becomes a physical batch. Raise a lot for each batch -  every stage after this one, right through to Packing, is traced by that lot number."
       config={{
         lot: "required",
         size: "none",
@@ -162,7 +163,7 @@ export function LotProcessForm(props: StageFormProps) {
   const key = props.assignment.section?.key;
   const intro =
     key === STAGE.dyeing
-      ? "Each lot is dyed separately. Record what went into the bath and what came back, per lot — the difference is this stage's process loss."
+      ? "Each lot is dyed separately. Record what went into the bath and what came back, per lot -  the difference is this stage's process loss."
       : key === STAGE.fabricInhouse
         ? "Fabric coming back into the factory. Record what was actually received against each lot so any shortfall in transit is visible."
         : "Record each lot's input and output. The difference is this stage's process loss and it carries through to the Output summary.";
@@ -190,7 +191,7 @@ export function LotInspectionForm(props: StageFormProps) {
   return (
     <ChainStageForm
       props={props}
-      intro="Four-point inspection, lot by lot. Accepted plus rejected should equal what was inspected — anything left over is unaccounted and shows as balance."
+      intro="Four-point inspection, lot by lot. Accepted plus rejected should equal what was inspected -  anything left over is unaccounted and shows as balance."
       config={{
         lot: "required",
         size: "none",
@@ -287,7 +288,7 @@ function FabricJourney({ chain }: { chain: NonNullable<ReturnType<typeof useStag
 }
 
 // ---------------------------------------------------------------------------
-// Garment production — PCS, lot + size
+// Garment production -  PCS, lot + size
 // ---------------------------------------------------------------------------
 
 /**
@@ -299,7 +300,7 @@ export function CuttingForm(props: StageFormProps) {
   return (
     <ChainStageForm
       props={props}
-      intro="Fabric becomes pieces here — KG stops, PCS begins. Cut one lot at a time and enter the pieces for each size; the balance against the PO's size breakdown updates as you go."
+      intro="Fabric becomes pieces here -  KG stops, PCS begins. Cut one lot at a time and enter the pieces for each size; the balance against the PO's size breakdown updates as you go."
       config={{
         lot: "required",
         size: "required",
@@ -320,7 +321,7 @@ export function PanelCheckForm(props: StageFormProps) {
   return (
     <ChainStageForm
       props={props}
-      intro="Cut panels are checked before they reach the line. Record what was checked, what passed, and what was rejected — per lot and size."
+      intro="Cut panels are checked before they reach the line. Record what was checked, what passed, and what was rejected -  per lot and size."
       config={{
         lot: "required",
         size: "required",
@@ -336,7 +337,7 @@ export function PanelCheckForm(props: StageFormProps) {
   );
 }
 
-/** Embroidery goes out and comes back, so it gets two ledgers over one stage —
+/** Embroidery goes out and comes back, so it gets two ledgers over one stage - 
  * dispatch and return each accumulating separately, with the gap between them
  * being what's still with the vendor. */
 export function EmbroideryForm(props: StageFormProps) {
@@ -358,7 +359,7 @@ export function EmbroideryForm(props: StageFormProps) {
   const received = cs.txns.filter((t) => t.txn_type === "receive").reduce((s, t) => s + t.qty_out, 0);
   const withVendor = Math.max(sent - received, 0);
 
-  /** Both directions commit together — a dispatch and its return are often
+  /** Both directions commit together -  a dispatch and its return are often
    * entered in the same sitting. */
   async function saveBoth(): Promise<boolean> {
     if (!(await sendLedger.current?.save())) return false;
@@ -387,7 +388,7 @@ export function EmbroideryForm(props: StageFormProps) {
       (sendLedger.current?.hasPending() ?? false) || (returnLedger.current?.hasPending() ?? false);
     if (!(await saveBoth())) return;
     await submitMovement({
-      base: { qty_received: cs!.input, qty_forwarded: 0, notes: "Plan saved — nothing forwarded." },
+      base: { qty_received: cs!.input, qty_forwarded: 0, notes: "Plan saved -  nothing forwarded." },
       action: "plan",
     });
     onForwarded();
@@ -396,21 +397,25 @@ export function EmbroideryForm(props: StageFormProps) {
 
   return (
     <div className="space-y-6">
-      <p className="text-xs leading-relaxed text-ink-500">
-        Panels go out to the embroidery unit and come back. Record both directions — what's still
-        with the vendor is the difference.
-      </p>
+      {props.showDetails && (
+        <>
+          <p className="text-xs leading-relaxed text-ink-500">
+            Panels go out to the embroidery unit and come back. Record both directions -  what's still
+            with the vendor is the difference.
+          </p>
 
-      <div className="grid grid-cols-3 gap-2">
-        <QtyBox label="Sent out" value={sent} unit="PCS" />
-        <QtyBox label="Received back" value={received} unit="PCS" tone="good" />
-        <QtyBox label="With vendor" value={withVendor} unit="PCS" tone={withVendor > 0 ? "warn" : "good"} />
-      </div>
+          <div className="grid grid-cols-3 gap-2">
+            <QtyBox label="Sent out" value={sent} unit="PCS" />
+            <QtyBox label="Received back" value={received} unit="PCS" tone="good" />
+            <QtyBox label="With vendor" value={withVendor} unit="PCS" tone={withVendor > 0 ? "warn" : "good"} />
+          </div>
 
-      {cs.byLot.length > 0 && (
-        <Section title="Lot-wise position">
-          <LotSummaryTable cs={cs} />
-        </Section>
+          {cs.byLot.length > 0 && (
+            <Section title="Lot-wise position">
+              <LotSummaryTable cs={cs} />
+            </Section>
+          )}
+        </>
       )}
 
       <div className="rounded-2xl border border-blue-100 bg-blue-50/40 p-3">
@@ -428,6 +433,7 @@ export function EmbroideryForm(props: StageFormProps) {
           lots={lots}
           sizes={sizes}
           onSaved={onForwarded}
+          showDetails={props.showDetails}
           config={{
             lot: "required",
             size: "required",
@@ -458,6 +464,7 @@ export function EmbroideryForm(props: StageFormProps) {
           lots={lots}
           sizes={sizes}
           onSaved={onForwarded}
+          showDetails={props.showDetails}
           config={{
             lot: "required",
             size: "required",
@@ -490,7 +497,7 @@ export function SewingForm(props: StageFormProps) {
   return (
     <ChainStageForm
       props={props}
-      intro="Line input and line output, lot by lot and size by size. Enter each feed and each output as its own record — the gap between them is work in progress on the line, not a loss."
+      intro="Line input and line output, lot by lot and size by size. Enter each feed and each output as its own record -  the gap between them is work in progress on the line, not a loss."
       config={{
         lot: "required",
         size: "required",

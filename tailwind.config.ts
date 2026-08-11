@@ -5,7 +5,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Corporate Blue neutral scale — cool navy-gray, matches the
+        // Corporate Blue neutral scale -  cool navy-gray, matches the
         // Dark Navy Text / Secondary Text / Muted Text / app background spec.
         ink: {
           950: "#0B1526",

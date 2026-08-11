@@ -1,3 +1,4 @@
+import { OrderQtyBanner } from "./chainShared";
 import { ConfirmationForm } from "./ConfirmationForm";
 import { MaterialPlanningForm } from "./MaterialPlanningForm";
 import { SupplierDcForm } from "./SupplierDcForm";
@@ -20,9 +21,18 @@ import type { StageFormProps } from "./types";
 
 /** Picks the data-entry form for whichever stage the assignment is scoped to.
  * Stages that record the same shape of movement share a form driven by a
- * config (see chainForms.tsx); the ones that genuinely differ — confirmation,
- * procurement, embroidery's two directions — have their own. */
+ * config (see chainForms.tsx); the ones that genuinely differ -  confirmation,
+ * procurement, embroidery's two directions -  have their own. */
 export function StageFormRouter(props: StageFormProps) {
+  return (
+    <div className="space-y-4">
+      {props.showDetails && <OrderQtyBanner order={props.order} assignment={props.assignment} />}
+      {renderStageForm(props)}
+    </div>
+  );
+}
+
+function renderStageForm(props: StageFormProps) {
   switch (props.assignment.section?.form_type) {
     case "confirmation":
       return <ConfirmationForm {...props} />;

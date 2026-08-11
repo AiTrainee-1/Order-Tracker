@@ -22,7 +22,7 @@ import type {
 } from "../lib/types";
 
 /**
- * Demo mode — the sandbox behind the Preview button on Stage Roles.
+ * Demo mode -  the sandbox behind the Preview button on Stage Roles.
  *
  * The real stage forms are rendered inside this provider so someone can try
  * them out: fill fields, add entries, press the buttons, watch the totals move.
@@ -32,7 +32,7 @@ import type {
  * in useProductionChain.ts and useStageEntries.ts asks `useDemoStore()` first
  * and, if it gets a store back, updates this in-memory state and returns
  * without calling Supabase. Putting the check at the point of the write means
- * anyone reading `useCreateTxns` can see the protection — a wrapper further out
+ * anyone reading `useCreateTxns` can see the protection -  a wrapper further out
  * would be one refactor away from being bypassed silently.
  *
  * Reads are guarded the same way, so the sandbox never even fetches the real
@@ -92,7 +92,7 @@ export function DemoModeProvider({
   stages,
   children,
 }: {
-  /** The real workflow stages — the fixture chain is generated against them so
+  /** The real workflow stages -  the fixture chain is generated against them so
    * the sandbox matches the live stage list rather than a hard-coded copy. */
   stages: WorkflowStage[];
   children: ReactNode;
@@ -209,7 +209,7 @@ export function DemoModeProvider({
               {
                 id: nextId("mat"),
                 requirement_id: "",
-                entry_type: "receipt",
+                entry_type: "dc",
                 qty: 0,
                 entry_date: today(),
                 supplier: null,
@@ -251,7 +251,7 @@ export function DemoModeProvider({
  * The sandbox store, or null when running against the real database.
  *
  * Every hook that reads or writes production data checks this first. `null`
- * means "behave normally" — which is the case everywhere except inside a
+ * means "behave normally" -  which is the case everywhere except inside a
  * Preview.
  */
 export function useDemoStore(): DemoStore | null {

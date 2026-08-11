@@ -50,8 +50,8 @@ export function StageRolesPage() {
         <h1 className="text-2xl font-bold tracking-tight text-ink-900">Stage Roles</h1>
         <p className="text-sm text-ink-500">
           Assign a default user to each production stage. They're automatically responsible for that
-          stage on <span className="font-medium text-ink-700">every order and every PO</span> —
-          existing and new — without assigning them order by order.
+          stage on <span className="font-medium text-ink-700">every order and every PO</span> - 
+          existing and new -  without assigning them order by order.
         </p>
       </div>
 
@@ -64,7 +64,7 @@ export function StageRolesPage() {
             <p className="leading-relaxed">
               The stage appears in their Home and Data Input lists for every order, and they become
               the contact the previous stage hands off to. Each stage below says what that means in
-              practice — press <span className="font-semibold text-brand">Preview</span> for the
+              practice -  press <span className="font-semibold text-brand">Preview</span> for the
               full step-by-step.
             </p>
           </div>
@@ -78,7 +78,7 @@ export function StageRolesPage() {
           <div className="min-w-[14rem] flex-1">
             <p className="mb-1 font-bold text-ink-800">More than one person is fine</p>
             <p className="leading-relaxed">
-              Add as many users to a stage as you need — Raw Material Planning is usually shared
+              Add as many users to a stage as you need -  Raw Material Planning is usually shared
               between a yarn planner, a fabric planner and a supervisor.
             </p>
           </div>
@@ -210,7 +210,7 @@ function StageRoleRow({
       )}
 
       {assigned.length === 0 ? (
-        <p className="mb-2 pl-8 text-xs text-ink-400">No default user yet — this stage isn't covered.</p>
+        <p className="mb-2 pl-8 text-xs text-ink-400">No default user yet -  this stage isn't covered.</p>
       ) : (
         <div className="mb-2 flex flex-wrap gap-2 pl-8">
           {assigned.map((a) => {
@@ -265,7 +265,7 @@ function StageRoleRow({
 }
 
 /**
- * The Preview — the stage's actual form, running on a throwaway sample order.
+ * The Preview -  the stage's actual form, running on a throwaway sample order.
  *
  * The form comes first because seeing it is the point; the written walkthrough
  * sits underneath, collapsed, for anyone who wants the steps spelled out. Both
@@ -287,7 +287,7 @@ function StagePreviewModal({
     <Modal
       open={!!stage}
       onClose={onClose}
-      title={stage ? `Preview — Stage ${stage.sequence_no}: ${stage.label}` : ""}
+      title={stage ? `Preview -  Stage ${stage.sequence_no}: ${stage.label}` : ""}
       widthClass="max-w-4xl"
     >
       {stage && (
@@ -316,7 +316,7 @@ function StagePreviewModal({
           {guide && (
             <details className="rounded-xl border border-ink-100 bg-ink-50/50">
               <summary className="cursor-pointer px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-ink-600">
-                Written instructions — what to enter, step by step
+                Written instructions -  what to enter, step by step
               </summary>
               <div className="space-y-4 border-t border-ink-100 px-4 py-4">
                 <GuideSection title="What they enter">

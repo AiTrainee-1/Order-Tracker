@@ -3,7 +3,7 @@ import type { PoSizeQuantity, PurchaseOrder } from "./types";
 /**
  * Size handling.
  *
- * Sizes are per-PO data, not a fixed enum — a joggers PO runs XS–2XL while a
+ * Sizes are per-PO data, not a fixed enum -  a joggers PO runs XS–2XL while a
  * kids' order might run 3-4Y/5-6Y. The list below is only the starting template
  * offered when creating an order; anything can be typed in, reordered or
  * removed. Everything downstream keys off whatever size codes the PO actually
@@ -28,6 +28,18 @@ export function sumSizes(sizes: Pick<PoSizeQuantity, "quantity">[]): number {
   return sizes.reduce((sum, s) => sum + (Number(s.quantity) || 0), 0);
 }
 
+/**
+ * Buyer Order Quantity → Extra % → Production Quantity.
+ *
+ * The buyer's size-wise number is entered once and never touched again - 
+ * `extra_percent` (from purchase_orders.extra_percent) is applied on top to
+ * get what the factory actually cuts and produces. Rounded to a whole piece,
+ * since you can't cut a fraction of a garment.
+ */
+export function applyExtraPercent(buyerQty: number, extraPercent: number | null | undefined): number {
+  return Math.round(buyerQty * (1 + (Number(extraPercent) || 0) / 100));
+}
+
 /** Groups size rows by PO, pre-sorted, ready for lookup while rendering. */
 export function groupSizesByPo(sizes: PoSizeQuantity[]): Map<string, PoSizeQuantity[]> {
   const map = new Map<string, PoSizeQuantity[]>();
@@ -37,23 +49,31 @@ export function groupSizesByPo(sizes: PoSizeQuantity[]): Map<string, PoSizeQuant
 }
 
 /**
- * The size breakdown a stage should work against.
+ * The size breakdown a stage should work against -  the PRODUCTION quantity,
+ * not the buyer's. Every PCS stage (Cutting onward) measures against this.
  *
- * Prefers the PO's own recorded sizes. Falls back to a single TOTAL row built
- * from the PO quantity so a PO whose sizes were never entered still renders and
- * still reconciles — a missing size split degrades the detail available, it
- * does not break the chain.
+ * Prefers the PO's own recorded sizes, with the PO's extra_percent applied on
+ * top of each buyer-entered figure (see applyExtraPercent). Falls back to a
+ * single TOTAL row built from the PO quantity so a PO whose sizes were never
+ * entered still renders and still reconciles -  a missing size split degrades
+ * the detail available, it does not break the chain.
  */
 export function effectiveSizes(
   po: PurchaseOrder | null | undefined,
   sizes: PoSizeQuantity[],
 ): { size_code: string; quantity: number }[] {
-  if (sizes.length > 0) return sortSizes(sizes).map((s) => ({ size_code: s.size_code, quantity: s.quantity }));
+  const extraPercent = po?.extra_percent ?? 0;
+  if (sizes.length > 0) {
+    return sortSizes(sizes).map((s) => ({
+      size_code: s.size_code,
+      quantity: applyExtraPercent(s.quantity, extraPercent),
+    }));
+  }
   if (!po) return [];
-  return [{ size_code: LEGACY_SIZE_CODE, quantity: po.quantity }];
+  return [{ size_code: LEGACY_SIZE_CODE, quantity: applyExtraPercent(po.quantity, extraPercent) }];
 }
 
-/** Union of every size code across a set of POs, in first-seen order — used for
+/** Union of every size code across a set of POs, in first-seen order -  used for
  * the column headers of order-wide size tables. */
 export function unionSizeCodes(sizesByPo: Map<string, PoSizeQuantity[]>): string[] {
   const seen: string[] = [];

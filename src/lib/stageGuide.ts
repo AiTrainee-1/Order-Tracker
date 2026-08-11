@@ -9,7 +9,7 @@
  *
  * Keyed by workflow_stages.key. Kept beside the forms rather than in the
  * database because it describes the UI, and it has to change whenever the UI
- * does — a database row would quietly drift out of date.
+ * does -  a database row would quietly drift out of date.
  */
 
 export interface StageGuide {
@@ -29,7 +29,7 @@ export interface StageGuide {
   watchFor?: string;
 }
 
-/** Shown in every Preview — the three buttons work identically everywhere, so
+/** Shown in every Preview -  the three buttons work identically everywhere, so
  * explaining them per stage would be twenty copies of the same paragraph. */
 export const BUTTON_GUIDE: { label: string; detail: string }[] = [
   {
@@ -40,7 +40,7 @@ export const BUTTON_GUIDE: { label: string; detail: string }[] = [
   {
     label: "Not Complete – Move Forward",
     detail:
-      "Saves, and lets the next stage start — but leaves this stage OPEN. It shows in orange with the balance still owed, and stays on your list until you finish it. Use it whenever work has moved on but isn't done.",
+      "Saves, and lets the next stage start -  but leaves this stage OPEN. It shows in orange with the balance still owed, and stays on your list until you finish it. Use it whenever work has moved on but isn't done.",
   },
   {
     label: "Completed – Move Forward",
@@ -51,7 +51,7 @@ export const BUTTON_GUIDE: { label: string; detail: string }[] = [
 
 /** True for every stage, so it's stated once. */
 export const UNIVERSAL_RULES: string[] = [
-  "Never type over an old figure. Every new delivery, batch or shift is its own entry — press “+ Add New Entry” again.",
+  "Never type over an old figure. Every new delivery, batch or shift is its own entry -  press “+ Add New Entry” again.",
   "To fix a genuine mistake, press Edit on that entry. You'll be asked for a reason, and the original figure is kept in the history.",
   "You don't need to finish a stage before the next one can start. “Not Complete – Move Forward” exists exactly for that.",
 ];
@@ -65,7 +65,7 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
     steps: [
       "Open the order from Data Input and pick the PO you're confirming.",
       "Check style, colour, fabric and delivery date against the buyer's sheet.",
-      "Check the size table — the quantity for each size, and the total on the right.",
+      "Check the size table -  the quantity for each size, and the total on the right.",
       "If a PO shows only “TOTAL” with no sizes, an orange warning appears. Ask the Admin to edit the order and split it by size before confirming.",
       "Add a note if planning needs to know anything.",
       "Press “Completed – Move Forward” to release it to Raw Material Planning.",
@@ -78,64 +78,56 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
 
   // -------------------------------------------------------- procurement
   raw_material_planning: {
-    owns: "Deciding how much yarn and fabric this order needs, and recording what actually arrives against it.",
+    owns: "Required Plan -  deciding how much yarn and fabric this order needs. Nothing about purchasing or receiving happens here.",
     records: [
-      "Yarn counts (40s, 30s, 20s…) with the KG required of each",
-      "Fabric types with the KG required",
-      "Each actual receipt as its own entry",
-      "A “Completed” tick per line when that material is fully sorted",
+      "Name -  the yarn count (40s, 30s, 20s…) or fabric type",
+      "Required Quantity (KG)",
+      "Reason for the Change -  required every time a quantity is added or edited, kept in the audit trail",
     ],
-    maintains: [
-      "The required KG if the plan changes — a correction asks for a reason and keeps the old figure",
-      "Required / Received / Balance staying true for every material",
-    ],
+    maintains: ["The required KG if the plan changes -  every add or edit asks for a reason and keeps the old figure"],
     steps: [
-      "Under Yarn Counts press “+ Add Yarn Count”, type the count (e.g. 40s) and the KG required. Repeat for each count.",
+      "Under Yarn Counts press “+ Add Yarn Count”, type the count (e.g. 40s), the KG required, and a reason.",
       "Do the same under Fabric for each fabric type.",
-      "When material arrives, click the material's row to expand it, then “+ Add New Entry” and enter the KG received, the date and the supplier.",
-      "Add one entry per delivery. Three deliveries = three entries. Required, Received and Balance update themselves.",
-      "Tick “Completed” on a line once nothing more is expected for it.",
-      "Press “Not Complete – Move Forward” so Purchasing can start while material is still arriving.",
+      "To change a quantity later, press Edit on that line, update the figure, and give a reason -  the old figure is kept in the history.",
+      "Tick “Completed” on a line once its required quantity is finalised.",
+      "Press “Completed – Move Forward” once every material this order needs is listed.",
     ],
     receives: "The confirmed order quantity",
     handsTo: "Purchase Order to Suppliers",
     watchFor:
-      "You can move forward before any yarn has arrived — Purchasing needs the plan, not the stock. The stage stays orange until the material is in.",
+      "This screen only sets what's required -  it never records a purchase or a receipt. Those numbers belong to the next two stages.",
   },
 
   po_to_suppliers: {
-    owns: "Getting the planned material dispatched by suppliers, and confirming what actually turned up.",
-    records: [
-      "A “Dispatched (DC)” entry per delivery challan — supplier, DC number, DC date, KG",
-      "A “Received” entry confirming what physically arrived against that DC",
-    ],
-    maintains: ["The gap between dispatched and received — material in transit or short-supplied"],
+    owns: "Planned Quantity -  how much yarn is being planned against the required quantity Raw Material Planning set.",
+    records: ["A Planned Quantity entry per material -  KG, plus optional supplier and DC reference"],
+    maintains: ["Required vs Planned staying true for every material as purchase plans are raised"],
     steps: [
-      "The planned KG for each material is already here from Raw Material Planning. Nothing to re-type.",
-      "Expand a material and press “+ Add New Entry”.",
-      "Choose “Dispatched (DC)”, then enter the KG, supplier, DC number and DC date.",
-      "When the goods land, add a second entry against the same material, choose “Received”, and enter what actually arrived.",
-      "The “In transit” box at the top shows dispatched minus received.",
-      "Move forward once the store can start taking material in.",
+      "The Required KG for each material is already here from Raw Material Planning. Nothing to re-type.",
+      "Expand a material and press “+ Record Planned”.",
+      "Enter the Planned Quantity (KG), and optionally the supplier and DC number/date for reference.",
+      "Add one entry per purchase plan raised -  repeat entries stay as separate rows.",
+      "The Balance box shows Required minus Planned.",
+      "Move forward once the store can start taking material in against what's been planned.",
     ],
-    receives: "Yarn and fabric requirements from Raw Material Planning",
+    receives: "Required quantities from Raw Material Planning",
     handsTo: "Raw Material Inward",
     watchFor:
-      "If less arrives than was dispatched, don't change the DC entry. Add the Received entry with the real figure — the difference is the record of the short supply.",
+      "This stage only plans the required yarn quantity -  no dispatch, no receipt. Receiving happens on the next screen, not here.",
   },
 
   raw_material_inward: {
-    owns: "Confirming what physically entered the store, and keeping the full material picture straight.",
-    records: ["A “Store Inward” entry for each intake of material"],
-    maintains: ["The Planned → DC → Received → Inward → Balance table staying true"],
+    owns: "Received Quantity -  how much physically arrived against what was planned.",
+    records: ["A single Received Quantity entry for each intake of material"],
+    maintains: ["Planned vs Received staying true for every material"],
     steps: [
-      "The table shows every material end to end. Only the Inward column is yours to fill.",
-      "Expand a material, press “+ Add New Entry”, and enter the KG taken into store with the date.",
-      "Add one entry per intake — repeat deliveries stay as separate rows.",
-      "Check the Balance column: required minus inward. Anything above zero is still owed by the supplier.",
-      "Move forward once Knitting can draw yarn.",
+      "The table shows Planned next to Received for every material, side by side.",
+      "Expand a material, press “+ Record Received”, and enter the KG actually received with the date.",
+      "Add one entry per intake -  repeat deliveries stay as separate rows.",
+      "Check the Balance column: planned minus received. Anything above zero is still owed by the supplier -  the status badge reads Full, Partial or Pending.",
+      "Move forward once Knitting can draw yarn -  the order forwards to Knitting exactly as it always has.",
     ],
-    receives: "Confirmed receipts from Purchase Order to Suppliers",
+    receives: "Planned quantities from Purchase Order to Suppliers",
     handsTo: "Knitting",
   },
 
@@ -144,15 +136,15 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
     owns: "Turning yarn into fabric, and giving each batch the lot number the whole factory will track it by.",
     records: [
       "A lot number for each batch",
-      "Knitting unit — JKR, Texwell, or a new one you type in",
+      "Knitting unit -  JKR, Texwell, or a new one you type in",
       "Yarn issued (KG) and fabric out (KG)",
       "Wastage",
     ],
-    maintains: ["The lot register — every stage after this picks from the lots you create here"],
+    maintains: ["The lot register -  every stage after this picks from the lots you create here"],
     steps: [
       "Press “+ Add New Entry”.",
       "Press “+ New Lot”, type the lot number for this batch, and press Create.",
-      "Pick the knitting unit, or type a new company name — it's remembered for next time.",
+      "Pick the knitting unit, or type a new company name -  it's remembered for next time.",
       "Enter the yarn issued, the fabric that came back, and any wastage.",
       "Add a separate entry for each batch. Different lots always mean different rows.",
       "Move forward when Dyeing can start.",
@@ -166,9 +158,9 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
   dyeing: {
     owns: "Dyeing each lot and recording the weight that went in against what came back.",
     records: ["Lot number", "Input KG", "Output KG", "Rejected KG", "Date and notes"],
-    maintains: ["Each lot's balance — input minus output is this stage's process loss"],
+    maintains: ["Each lot's balance -  input minus output is this stage's process loss"],
     steps: [
-      "Press “+ Add New Entry” and pick the lot from the dropdown — Knitting has already created it.",
+      "Press “+ Add New Entry” and pick the lot from the dropdown -  Knitting has already created it.",
       "Enter the KG that went into the bath and the KG that came back.",
       "Anything unusable goes in Rejected rather than being left out of the figures.",
       "One entry per lot. Never merge two lots into one row.",
@@ -247,7 +239,7 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
       "Press “+ Add New Entry” and pick the lot.",
       "Enter the KG inspected, the KG accepted and the KG rejected.",
       "Accepted + Rejected should equal Inspected. Anything left over shows as an unexplained balance.",
-      "Put the reason for rejection in Notes — it isn't recorded anywhere else.",
+      "Put the reason for rejection in Notes -  it isn't recorded anywhere else.",
       "Move forward to release the accepted fabric to the store.",
     ],
     receives: "Fabric from In-House",
@@ -259,7 +251,7 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
     records: ["Received KG", "Issued to Cutting KG", "The lot, where it's known"],
     maintains: ["The final in-house figure the whole fabric plan is judged against"],
     steps: [
-      "Read the Fabric journey panel first — it shows every processing stage and what each one lost.",
+      "Read the Fabric journey panel first -  it shows every processing stage and what each one lost.",
       "Press “+ Add New Entry” and record the KG received into store.",
       "When Cutting draws fabric, record it under “Issued to Cutting”.",
       "Compare Planned against Reached store at the top. The gap is total process loss for the order.",
@@ -271,8 +263,8 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
 
   pattern_marker: {
     owns: "Having the pattern and marker ready so Cutting can lay the fabric.",
-    records: ["A tick confirming the marker is ready", "Notes — marker ratio and efficiency"],
-    maintains: ["Nothing is consumed here — the fabric passes straight through to Cutting"],
+    records: ["A tick confirming the marker is ready", "Notes -  marker ratio and efficiency"],
+    maintains: ["Nothing is consumed here -  the fabric passes straight through to Cutting"],
     steps: [
       "Check the fabric in store and the pieces to cut, size by size, in the panel at the top.",
       "Plan the marker against that size ratio.",
@@ -294,7 +286,7 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
       "A size table appears showing the PO quantity, what's already done, and a box for this entry.",
       "Type the pieces cut for each size. “Balance after” updates as you type.",
       "Press “Save Plan” to record the lay without moving on, or a Move Forward button to record and hand off in one step.",
-      "Cut the next lot as a separate entry — never add two lots together.",
+      "Cut the next lot as a separate entry -  never add two lots together.",
     ],
     receives: "Fabric issued by the store",
     handsTo: "Panel Checking",
@@ -309,7 +301,7 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
     steps: [
       "Press “+ Add New Entry” and pick the lot and size.",
       "Enter how many were checked, accepted, rejected and sent for rework.",
-      "Put the reason for rejection in Notes — it's the only place it's recorded.",
+      "Put the reason for rejection in Notes -  it's the only place it's recorded.",
       "Add a separate entry for each size.",
       "Move forward when the accepted panels can go on.",
     ],
@@ -323,11 +315,11 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
       "Dispatch: lot, size, quantity sent, embroidery unit, DC number",
       "Return: lot, size, quantity received, anything rejected",
     ],
-    maintains: ["The “With vendor” figure — everything sent that hasn't come back yet"],
+    maintains: ["The “With vendor” figure -  everything sent that hasn't come back yet"],
     steps: [
       "There are two panels: blue for Dispatch, green for Return.",
-      "In Dispatch, press “+ Add New Entry” — pick the lot and size, enter the quantity sent, the vendor and the DC number.",
-      "When goods come back, use the Return panel — lot, size, quantity received, and any rejects.",
+      "In Dispatch, press “+ Add New Entry” -  pick the lot and size, enter the quantity sent, the vendor and the DC number.",
+      "When goods come back, use the Return panel -  lot, size, quantity received, and any rejects.",
       "The boxes at the top show Sent out, Received back and With vendor.",
       "Use “Not Complete – Move Forward” to let Sewing start while some pieces are still with the vendor.",
     ],
@@ -346,7 +338,7 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
       "Line output pieces",
       "Rejected and rework",
     ],
-    maintains: ["Work in progress on the line — input minus output"],
+    maintains: ["Work in progress on the line -  input minus output"],
     steps: [
       "When you feed a line, press “+ Add New Entry”: pick the lot, size and line, and enter Line Input.",
       "When the line produces, add another entry with Line Output. Input and output can be separate rows on different days.",
@@ -388,7 +380,7 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
   },
 
   packing: {
-    owns: "Packing the finished garments — the figure the whole order is finally judged against.",
+    owns: "Packing the finished garments -  the figure the whole order is finally judged against.",
     records: ["Lot and size", "Input pieces", "Packed pieces", "Anything damaged", "Carton / reference"],
     maintains: ["The final packed quantity for each size"],
     steps: [
@@ -399,7 +391,7 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
       "When the order is finished press “Completed – Move Forward”.",
     ],
     receives: "Pressed garments from Ironing",
-    handsTo: "the Output report — ordered against packed, and where every piece went",
+    handsTo: "the Output report -  ordered against packed, and where every piece went",
     watchFor:
       "Check the “Against the order” panel before completing. Once packed, a shortfall against the buyer's quantity is what everyone will be asked about.",
   },

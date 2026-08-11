@@ -10,7 +10,7 @@
 -- IMPORTANT: this deletes existing user_assignments (their section_id points
 -- at the old stage rows, which are being replaced). No stage_entries exist
 -- yet in this project (0 production entries logged so far), so nothing
--- production-related is lost — but any work assignments made under the old
+-- production-related is lost -  but any work assignments made under the old
 -- stage names must be re-created afterward against the new stage list.
 -- ============================================================================
 

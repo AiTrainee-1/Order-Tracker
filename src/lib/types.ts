@@ -36,7 +36,7 @@ export interface AppUser {
   created_at: string;
 }
 
-/** Safe, narrow view of another user — never includes username/password/role. */
+/** Safe, narrow view of another user -  never includes username/password/role. */
 export interface UserContact {
   id: string;
   name: string;
@@ -74,9 +74,14 @@ export interface PurchaseOrder {
   po_number: string;
   quantity: number;
   /** Fixed PCS baseline for THIS PO, set when Cutting completes for a
-   * PO-scoped assignment — mirrors orders.cut_quantity but per PO, so every
+   * PO-scoped assignment -  mirrors orders.cut_quantity but per PO, so every
    * PO's downstream stages compare against its own fixed number. */
   cut_quantity: number | null;
+  /** The buyer's size-wise quantity is entered as-is, but factories cut and
+   * produce a bit over it -  this is the % added on top. 2 means production
+   * runs 2% over the buyer's number. See lib/sizes.ts#applyExtraPercent for
+   * where it's actually applied. */
+  extra_percent: number;
   delivery_date: string | null;
   created_at: string;
 }
@@ -109,7 +114,7 @@ export interface StageEntry {
   external_unit_name: string | null;
   is_sent_outside: boolean;
   is_returned: boolean;
-  /** The operator moved this stage on. Deliberately independent of quantity —
+  /** The operator moved this stage on. Deliberately independent of quantity - 
    * a stage can be forwarded with nothing counted yet (planning before the
    * material arrives) and the next stage still has to unlock. */
   is_forwarded: boolean;
@@ -146,13 +151,13 @@ export interface StageAssignment {
 // ---------------------------------------------------------------------------
 // Production chain (migration 011)
 //
-// These are the QUANTITY layer. stage_entries above remains the GATING layer —
+// These are the QUANTITY layer. stage_entries above remains the GATING layer - 
 // it says whether a stage is open, partial or complete; these say how much
 // actually moved. Keeping them apart lets a figure be corrected without
 // disturbing which stages are unlocked.
 // ---------------------------------------------------------------------------
 
-/** One size row of a purchase order — the base every downstream PCS figure
+/** One size row of a purchase order -  the base every downstream PCS figure
  * (cut, checked, embroidered, sewn, packed) is compared against. */
 export interface PoSizeQuantity {
   id: string;
@@ -179,7 +184,7 @@ export interface ProductionLot {
 export type MaterialCategory = "yarn" | "fabric";
 
 /** One user-defined yarn count ("40s") or fabric type ("Single Jersey") with
- * its required quantity. Yarn counts are never hard-coded — the planner adds,
+ * its required quantity. Yarn counts are never hard-coded -  the planner adds,
  * renames and removes them per order. */
 export interface MaterialRequirement {
   id: string;

@@ -31,8 +31,8 @@ export interface WorkBadge {
 /**
  * How a work item presents in a list.
  *
- * Orange is reserved for exactly one meaning across the whole app — "moved on
- * but not finished, a balance is still owed here" — so it has to outrank the
+ * Orange is reserved for exactly one meaning across the whole app -  "moved on
+ * but not finished, a balance is still owed here" -  so it has to outrank the
  * gate status: a partially-forwarded stage is still `active`, but showing it as
  * an ordinary "Your Turn" would hide the outstanding balance. "Your Turn" is
  * blue for the same reason; if both were amber the distinction would be lost.
@@ -45,7 +45,7 @@ export function workBadge(item: WorkItem): WorkBadge {
 }
 
 /**
- * Every work item is scoped to (order, PO, section) — never just (order,
+ * Every work item is scoped to (order, PO, section) -  never just (order,
  * section). Tracking is PO-first: an assignment that covers "every PO" (no
  * po_id set, whether explicit or a stage-role default) is expanded here into
  * one item per purchase order, each with its own progress/quantities against
@@ -84,7 +84,7 @@ export function useMyWork(userId: string | undefined) {
 
   // Effective assignments = explicit per-order rows PLUS global stage-role
   // defaults, both expanded across every PO of their order (see
-  // expandAcrossPOs) — skipping any (order, PO, section) an explicit row
+  // expandAcrossPOs) -  skipping any (order, PO, section) an explicit row
   // already covers, so a default never duplicates a more specific assignment.
   const effectiveAssignments = useMemo<AssignmentWithDetails[]>(() => {
     const explicitBase = (assignmentsQuery.data ?? []).filter((a) => !!a.order);
@@ -154,7 +154,7 @@ export function useMyWork(userId: string | undefined) {
 
     return effectiveAssignments.map((a) => {
       // Every item is PO-scoped now (or order-level only when the order truly
-      // has no POs yet) — only that PO's movement counts toward its progress.
+      // has no POs yet) -  only that PO's movement counts toward its progress.
       const orderEntries = entries.filter(
         (e) => e.order_id === a.order_id && (a.po_id ? e.po_id === a.po_id : true),
       );
@@ -164,8 +164,8 @@ export function useMyWork(userId: string | undefined) {
       const orderProgress = buildOrderProgress(a.order as Order, stagesQuery.data!, orderEntries, qtyBaseline);
       const stageProgress = orderProgress.stages.find((s) => s.stage.id === a.section_id);
 
-      // A stage opens once every earlier stage has moved goods on — completed
-      // OR partially forwarded — so a partial handoff never blocks the line.
+      // A stage opens once every earlier stage has moved goods on -  completed
+      // OR partially forwarded -  so a partial handoff never blocks the line.
       let gateStatus: GateStatus;
       if (stageProgress?.isCompleted) {
         gateStatus = "completed";
