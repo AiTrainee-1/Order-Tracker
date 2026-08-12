@@ -5,15 +5,16 @@ import { BrandMark } from "../ui/BrandMark";
 import { brandGradient, iconGradient, sidebarBackground, spatialBackground, SHADOW_BRAND, type IconTone } from "../../lib/theme";
 
 const navItems: { to: string; label: string; icon: string; tone: IconTone }[] = [
-  { to: "/admin/dashboard", label: "Dashboard", icon: "📊", tone: "sky" },
-  { to: "/admin/orders", label: "Orders", icon: "📦", tone: "violet" },
-  { to: "/admin/users", label: "Users", icon: "👥", tone: "emerald" },
-  { to: "/admin/assign", label: "Assign Work", icon: "📝", tone: "amber" },
-  { to: "/admin/stage-roles", label: "Stage Roles", icon: "🎯", tone: "rose" },
-  { to: "/admin/account-management", label: "Account Management", icon: "🔐", tone: "slate" },
+  { to: "/md/dashboard", label: "Dashboard", icon: "📊", tone: "sky" },
+  { to: "/md/users", label: "Users", icon: "👥", tone: "emerald" },
+  { to: "/md/workflow-map", label: "Workflow Map", icon: "🗺️", tone: "violet" },
 ];
 
-export function AdminLayout() {
+/** MD's shell -  a near-verbatim copy of AdminLayout, deliberately: same look
+ * and feel as the rest of the app, just two nav items instead of five. MD is
+ * a read-only login (see migration 015 + ProtectedRoute's requireMd), so
+ * unlike AdminLayout there's nothing here that writes anything. */
+export function MdLayout() {
   const { appUser, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -54,7 +55,7 @@ export function AdminLayout() {
           <div>
             <p className="text-sm font-bold tracking-tight text-ink-900">UK TEXTILES</p>
             <p className="text-[11px] font-medium uppercase tracking-wide text-ink-400">
-              Admin Portal
+              MD Portal
             </p>
           </div>
         </div>

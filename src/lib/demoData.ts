@@ -38,6 +38,8 @@ export const DEMO_ORDER: Order = {
   total_qty: 1000,
   cut_quantity: null,
   delivery_date: "2026-12-31",
+  created_by: null,
+  is_hidden: false,
   created_at: "2026-01-01T00:00:00Z",
 };
 
@@ -151,8 +153,6 @@ export const DEMO_MATERIAL_ENTRIES: MaterialEntry[] = DEMO_REQUIREMENTS.flatMap(
 const KG_FLOW: [string, number][] = [
   [STAGE.knitting, 0.015],
   [STAGE.dyeing, 0.02],
-  [STAGE.setting, 0.008],
-  [STAGE.raising, 0.012],
   [STAGE.compacting, 0.01],
   [STAGE.fabricInhouse, 0.004],
   [STAGE.fabricInspection, 0.006],

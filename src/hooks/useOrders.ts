@@ -20,7 +20,9 @@ export function useAllOrderProgress() {
     queryKey: ["orders_bundle"],
     queryFn: async () => {
       const [ordersRes, posRes, entriesRes] = await Promise.all([
-        supabase.from("orders").select("*").order("delivery_date", { ascending: true }),
+        // Hidden orders (soft-hidden by their own creator, migration 017)
+        // never appear on the fleet-wide dashboard -  admin or MD.
+        supabase.from("orders").select("*").eq("is_hidden", false).order("delivery_date", { ascending: true }),
         supabase.from("purchase_orders").select("*"),
         supabase.from("stage_entries").select("*"),
       ]);

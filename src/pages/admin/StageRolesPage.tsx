@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useUsers } from "../../hooks/useUsers";
+import { useUsers, useUpdateUser } from "../../hooks/useUsers";
 import { useWorkflowStages } from "../../hooks/useWorkflowStages";
 import {
   useStageAssignments,
@@ -112,12 +112,100 @@ export function StageRolesPage() {
         </CardBody>
       </Card>
 
+      <OrderCreatorAccessCard users={users ?? []} />
+
       <StagePreviewModal
         stage={previewStage}
         allStages={sortedStages}
         onClose={() => setPreviewStage(null)}
       />
     </div>
+  );
+}
+
+/**
+ * A separate, deliberately small permission -  not a stage. Creating an order
+ * happens before any production stage exists, so it doesn't belong in the
+ * list above; it's a flag on the user (app_users.can_create_orders, migration
+ * 016), granted/revoked the same way a stage role is.
+ */
+function OrderCreatorAccessCard({ users }: { users: AppUser[] }) {
+  const toast = useToast();
+  const updateUser = useUpdateUser();
+  const [addUserId, setAddUserId] = useState("");
+
+  const granted = users.filter((u) => u.can_create_orders);
+  const available = users.filter((u) => !u.can_create_orders && u.role !== "admin" && u.role !== "md");
+
+  async function grant() {
+    if (!addUserId) return;
+    const user = users.find((u) => u.id === addUserId);
+    try {
+      await updateUser.mutateAsync({ id: addUserId, can_create_orders: true });
+      toast.success(`${user?.name ?? "User"} can now create orders.`);
+      setAddUserId("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not grant access.");
+    }
+  }
+
+  async function revoke(user: AppUser) {
+    try {
+      await updateUser.mutateAsync({ id: user.id, can_create_orders: false });
+      toast.success(`Removed order-creator access from ${user.name}.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not remove access.");
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Order Creator Access"
+        subtitle="Lets a user create new orders from their own Home page, using the exact same order-creation form Admin uses. Editing or deleting an order stays Admin-only."
+      />
+      <CardBody className="space-y-3">
+        {granted.length === 0 ? (
+          <p className="text-xs text-ink-400">Nobody has this yet -  only Admin can create orders.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {granted.map((u) => (
+              <span
+                key={u.id}
+                className="inline-flex items-center gap-2 rounded-full border border-ink-200 bg-white py-1 pl-3 pr-1.5 text-xs"
+              >
+                <span className="font-medium text-ink-800">{u.name}</span>
+                <span className="text-ink-400">@{u.username}</span>
+                <button
+                  type="button"
+                  onClick={() => revoke(u)}
+                  aria-label={`Remove ${u.name}`}
+                  className="flex h-5 w-5 items-center justify-center rounded-full text-ink-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          <div className="w-full max-w-xs">
+            <Select value={addUserId} onChange={(e) => setAddUserId(e.target.value)} aria-label="Grant order-creator access">
+              <option value="">Add a user…</option>
+              {available.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name} (@{u.username})
+                </option>
+              ))}
+            </Select>
+          </div>
+          <Button size="sm" onClick={grant} isLoading={updateUser.isPending} disabled={!addUserId}>
+            Grant
+          </Button>
+        </div>
+      </CardBody>
+    </Card>
   );
 }
 

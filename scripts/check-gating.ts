@@ -25,7 +25,7 @@ const stages: WorkflowStage[] = [
 const order: Order = {
   id: "o1", io_no: "1/26", style: "TEST", description: null, color: null, fabric: null,
   image_path: null, total_qty: 1000, cut_quantity: null, delivery_date: "2026-12-01",
-  created_at: "2026-01-01",
+  created_by: null, is_hidden: false, created_at: "2026-01-01",
 };
 
 function entry(sectionId: string, over: Partial<StageEntry>): StageEntry {

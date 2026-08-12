@@ -1,7 +1,8 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import type { OrderBundle } from "../../hooks/useOrders";
 import { publicImageUrl } from "../../lib/supabaseClient";
 import { deliveryUrgency, formatDisplayDate, urgencyColorClasses } from "../../lib/workflow";
+import { orderTrackingBasePath } from "../../lib/routing";
 import {
   cardStatusAccent,
   cardStatusBorder,
@@ -35,10 +36,11 @@ export function OrderCard({ bundle }: { bundle: OrderBundle }) {
   const urgency = deliveryUrgency(order.delivery_date);
   const currentStage = progress.stages[progress.currentStageIndex]?.stage.label ?? "- ";
   const tone = cardTone(progress);
+  const basePath = orderTrackingBasePath(useLocation().pathname);
 
   return (
     <Link
-      to={`/admin/orders/${order.id}`}
+      to={`${basePath}/orders/${order.id}`}
       style={cardStatusSoftBg[tone]}
       className={`group relative flex flex-col gap-3 overflow-hidden rounded-2xl border ${cardStatusBorder[tone]} p-4 transition-transform duration-150 hover:-translate-y-0.5 ${cardStatusShadow[tone]}`}
     >

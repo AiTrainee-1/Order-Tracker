@@ -119,6 +119,12 @@ export function useCreateOrder() {
     mutationFn: async (input: OrderFormInput) => {
       const totalQty = input.purchaseOrders.reduce((sum, po) => sum + poTotal(po.sizes), 0);
 
+      // Stamped on every order regardless of who's creating it (Admin
+      // included) -  it's what scopes the order-creator role's narrow update
+      // permission to just the rows they made (see migration 016), not a
+      // field anything in the UI displays.
+      const { data: userData } = await supabase.auth.getUser();
+
       const { data: order, error: orderError } = await supabase
         .from("orders")
         .insert({
@@ -129,6 +135,7 @@ export function useCreateOrder() {
           fabric: input.fabric || null,
           delivery_date: input.delivery_date,
           total_qty: totalQty,
+          created_by: userData.user?.id ?? null,
         })
         .select("*")
         .single<Order>();
@@ -182,6 +189,20 @@ export function useDeleteOrder() {
       if (error) throw error;
     },
     onSuccess: () => invalidateOrderQueries(queryClient),
+  });
+}
+
+/** Soft hide/unhide -  covered by the same orders_update_order_creator RLS
+ * policy as the image-path patch in useCreateOrder (see migration 016/017),
+ * so this works for the order's own creator without any new grant. */
+export function useSetOrderHidden() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ orderId, hidden }: { orderId: string; hidden: boolean }) => {
+      const { error } = await supabase.from("orders").update({ is_hidden: hidden }).eq("id", orderId);
+      if (error) throw error;
+    },
+    onSuccess: (_data, variables) => invalidateOrderQueries(queryClient, variables.orderId),
   });
 }
 

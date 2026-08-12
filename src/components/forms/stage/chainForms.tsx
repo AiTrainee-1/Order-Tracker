@@ -133,45 +133,14 @@ function ChainStageForm({
 // Fabric processing -  KG, lot-wise
 // ---------------------------------------------------------------------------
 
-export function KnittingForm(props: StageFormProps) {
-  return (
-    <ChainStageForm
-      props={props}
-      intro="Fabric is knitted here and becomes a physical batch. Raise a lot for each batch -  every stage after this one, right through to Packing, is traced by that lot number."
-      config={{
-        lot: "required",
-        size: "none",
-        inLabel: "Yarn Issued",
-        outLabel: "Fabric Out",
-        rejectedLabel: "Wastage",
-        reworkLabel: false,
-        ref: {
-          label: "Knitting Unit",
-          presets: ["JKR", "Texwell"],
-          placeholder: "JKR / Texwell / new unit",
-        },
-        docLabel: false,
-        txnType: "process",
-      }}
-    />
-  );
-}
-
-/** Dyeing, Setting, Raising, Compacting and In-House are the same shape: a lot
- * goes in, a slightly lighter lot comes out. */
+/** Fabric In-House is the one stage of this shape left: a lot goes in, a
+ * slightly lighter lot comes out (Knitting/Dyeing/Compacting moved to
+ * LotSendReceiveForm below -  see migration 018). */
 export function LotProcessForm(props: StageFormProps) {
-  const key = props.assignment.section?.key;
-  const intro =
-    key === STAGE.dyeing
-      ? "Each lot is dyed separately. Record what went into the bath and what came back, per lot -  the difference is this stage's process loss."
-      : key === STAGE.fabricInhouse
-        ? "Fabric coming back into the factory. Record what was actually received against each lot so any shortfall in transit is visible."
-        : "Record each lot's input and output. The difference is this stage's process loss and it carries through to the Output summary.";
-
   return (
     <ChainStageForm
       props={props}
-      intro={intro}
+      intro="Fabric coming back into the factory. Record what was actually received against each lot so any shortfall in transit is visible."
       config={{
         lot: "required",
         size: "none",
@@ -187,103 +156,309 @@ export function LotProcessForm(props: StageFormProps) {
   );
 }
 
+/**
+ * Knitting, Dyeing and Compacting are all the same shape: material physically
+ * leaves this point to a processing unit (Sending), and comes back lighter
+ * (Receiving) -  two events, not one, and both worth recording. This is the
+ * same pattern EmbroideryForm already uses (two ledgers, txn_type 'send' and
+ * 'receive'), generalized so the other three round-trip stages share it
+ * instead of re-implementing it.
+ *
+ * Sending writes to qty_in (this is genuinely what the stage "received in and
+ * sent onward" -  the chain's normal recordedIn), Receiving writes to qty_out
+ * (what's actually available to the next stage). Keeping them on separate
+ * columns, rather than both writing qty_out the way Embroidery's two ledgers
+ * do, is what lets the chain's ordinary carry-over and mismatch banner work
+ * correctly here -  the next stage inherits Receiving's total, not
+ * Sending-plus-Receiving combined.
+ *
+ * Only Knitting's Sending ledger may raise a brand new lot (migration 018
+ * enforces this server-side too) -  Dyeing and Compacting always pick from the
+ * existing register.
+ */
+export function LotSendReceiveForm(props: StageFormProps) {
+  const { order, assignment, stageProgress, onForwarded } = props;
+  const key = assignment.section?.key;
+  const { cs, lots, sizes, isLoading, isError } = useStageChain(order.id, assignment.po_id, assignment.section_id);
+  const { submitMovement, isPending } = useStageEntryBuilder(order, assignment);
+  const sendLedger = useRef<StageLedgerHandle>(null);
+  const receiveLedger = useRef<StageLedgerHandle>(null);
+  const toast = useToast();
+
+  if (isLoading) return <Loader label="Loading this stage…" />;
+  if (isError || !cs) return <p className="text-sm text-status-bad">Couldn't load this stage's data.</p>;
+
+  const copy = SEND_RECEIVE_COPY[key ?? ""] ?? SEND_RECEIVE_COPY.default;
+  const sent = cs.txns.filter((t) => t.txn_type === "send").reduce((s, t) => s + t.qty_in, 0);
+  const received = cs.txns.filter((t) => t.txn_type === "receive").reduce((s, t) => s + t.qty_out, 0);
+  const withParty = Math.max(sent - received, 0);
+  const rejected = cs.txns.filter((t) => t.txn_type === "receive").reduce((s, t) => s + t.qty_rejected, 0);
+
+  async function saveBoth(): Promise<boolean> {
+    if (!(await sendLedger.current?.save())) return false;
+    return (await receiveLedger.current?.save()) ?? true;
+  }
+
+  async function forward(isFinal: boolean) {
+    if (!(await saveBoth())) return;
+    const alreadyLogged = stageProgress?.qtyForwarded ?? 0;
+    await submitMovement({
+      base: {
+        qty_received: cs!.input,
+        qty_completed_today: Math.max(received - alreadyLogged, 0),
+        qty_forwarded: Math.max(received - alreadyLogged, 0),
+        qty_rejected: Math.max(rejected - (stageProgress?.qtyRejected ?? 0), 0),
+        is_sent_outside: true,
+        notes: null,
+      },
+      action: isFinal ? "complete" : "forward",
+    });
+    onForwarded();
+  }
+
+  async function savePlan() {
+    const hadPending = (sendLedger.current?.hasPending() ?? false) || (receiveLedger.current?.hasPending() ?? false);
+    if (!(await saveBoth())) return;
+    await submitMovement({
+      base: { qty_received: cs!.input, qty_forwarded: 0, notes: "Plan saved -  nothing forwarded." },
+      action: "plan",
+    });
+    onForwarded();
+    if (!hadPending) toast.show("Progress saved. Nothing moved on.", "success");
+  }
+
+  return (
+    <div className="space-y-6">
+      {props.showDetails && (
+        <>
+          <p className="text-xs leading-relaxed text-ink-500">{copy.intro}</p>
+
+          <ChainStrip cs={cs} inputHint="sent so far" />
+
+          <div className="grid grid-cols-3 gap-2">
+            <QtyBox label="Sent" value={sent} unit={cs.unit} />
+            <QtyBox label="Received back" value={received} unit={cs.unit} tone="good" />
+            <QtyBox label={copy.withPartyLabel} value={withParty} unit={cs.unit} tone={withParty > 0 ? "warn" : "good"} />
+          </div>
+
+          {cs.byLot.length > 0 && (
+            <Section title="Lot-wise position">
+              <LotSummaryTable cs={cs} />
+            </Section>
+          )}
+        </>
+      )}
+
+      <div className="rounded-2xl border border-blue-100 bg-blue-50/40 p-3">
+        <div className="mb-2 flex items-center gap-2">
+          <Badge tone="external">Sending</Badge>
+          <span className="text-xs font-semibold text-ink-700">{copy.sendingHeading}</span>
+        </div>
+        <StageLedger
+          ref={sendLedger}
+          orderId={order.id}
+          poId={assignment.po_id}
+          sectionId={assignment.section_id}
+          unit={cs.unit}
+          cs={cs}
+          lots={lots}
+          sizes={sizes}
+          onSaved={onForwarded}
+          showDetails={props.showDetails}
+          config={{
+            lot: "required",
+            size: "none",
+            inLabel: "Quantity Sent",
+            outLabel: false,
+            rejectedLabel: false,
+            reworkLabel: false,
+            ref: { label: "Sent To", presets: copy.presets, placeholder: "Unit / vendor name" },
+            docLabel: "Doc / DC No",
+            txnType: "send",
+            filterByTxnType: true,
+            allowCreateLot: copy.allowCreateLot,
+          }}
+        />
+      </div>
+
+      <div className="rounded-2xl border border-green-100 bg-green-50/40 p-3">
+        <div className="mb-2 flex items-center gap-2">
+          <Badge tone="good">Receiving</Badge>
+          <span className="text-xs font-semibold text-ink-700">{copy.receivingHeading}</span>
+        </div>
+        <StageLedger
+          ref={receiveLedger}
+          orderId={order.id}
+          poId={assignment.po_id}
+          sectionId={assignment.section_id}
+          unit={cs.unit}
+          cs={cs}
+          lots={lots}
+          sizes={sizes}
+          onSaved={onForwarded}
+          showDetails={props.showDetails}
+          config={{
+            lot: "required",
+            size: "none",
+            inLabel: false,
+            outLabel: "Quantity Received",
+            rejectedLabel: copy.rejectedLabel,
+            reworkLabel: false,
+            ref: { label: "Received From", presets: copy.presets, placeholder: "Unit / vendor name" },
+            docLabel: "Doc / DC No",
+            txnType: "receive",
+            filterByTxnType: true,
+            allowCreateLot: false,
+          }}
+        />
+      </div>
+
+      <StageActions
+        sectionLabel={assignment.section?.label ?? "This stage"}
+        unitType={cs.unit}
+        balance={withParty}
+        isLoading={isPending}
+        onSavePlan={savePlan}
+        onMoveForward={() => forward(false)}
+        onComplete={() => forward(true)}
+      />
+    </div>
+  );
+}
+
+interface SendReceiveCopy {
+  intro: string;
+  sendingHeading: string;
+  receivingHeading: string;
+  withPartyLabel: string;
+  rejectedLabel: string;
+  presets: string[];
+  allowCreateLot: boolean;
+}
+
+const SEND_RECEIVE_COPY: Record<string, SendReceiveCopy> = {
+  [STAGE.knitting]: {
+    intro:
+      "Yarn is sent out to be knitted and fabric comes back as a physical batch. Raise a lot when you send it -  every stage after this one, right through to Packing, is traced by that lot number.",
+    sendingHeading: "Sending yarn to the knitting unit",
+    receivingHeading: "Fabric received back",
+    withPartyLabel: "With Knitter",
+    rejectedLabel: "Wastage",
+    presets: ["JKR", "Texwell"],
+    allowCreateLot: true,
+  },
+  [STAGE.dyeing]: {
+    intro: "Each lot is sent out to be dyed and comes back a slightly lighter lot -  the difference is this stage's process loss.",
+    sendingHeading: "Sending to the dyeing unit",
+    receivingHeading: "Dyed fabric received back",
+    withPartyLabel: "With Dyer",
+    rejectedLabel: "Rejected",
+    presets: [],
+    allowCreateLot: false,
+  },
+  [STAGE.compacting]: {
+    intro: "Each lot is sent out for compacting to its final GSM and width, and comes back a slightly lighter lot.",
+    sendingHeading: "Sending to the compacting unit",
+    receivingHeading: "Compacted fabric received back",
+    withPartyLabel: "With Compactor",
+    rejectedLabel: "Rejected",
+    presets: [],
+    allowCreateLot: false,
+  },
+  default: {
+    intro: "Record what was sent out and what came back -  the difference is this stage's process loss.",
+    sendingHeading: "Sending out",
+    receivingHeading: "Received back",
+    withPartyLabel: "Outstanding",
+    rejectedLabel: "Rejected",
+    presets: [],
+    allowCreateLot: false,
+  },
+};
+
+/** Passed + Rejected should equal what was sent for testing -  the passed
+ * quantity (qty_out) is what carries forward to Fabric Store; rejected never
+ * does, since it's excluded from output by construction. */
 export function LotInspectionForm(props: StageFormProps) {
+  const { order, assignment } = props;
+  const { cs, isLoading, isError } = useStageChain(order.id, assignment.po_id, assignment.section_id);
+
   return (
     <ChainStageForm
       props={props}
-      intro="Four-point inspection, lot by lot. Accepted plus rejected should equal what was inspected -  anything left over is unaccounted and shows as balance."
+      intro="Four-point inspection, lot by lot. Passed plus rejected should equal what was sent for testing -  anything left over is unaccounted and shows as balance. Only the passed quantity moves on to the store."
       config={{
         lot: "required",
         size: "none",
-        inLabel: "Inspected",
-        outLabel: "Accepted",
+        inLabel: "Sent for Testing",
+        outLabel: "Passed",
         rejectedLabel: "Rejected",
         reworkLabel: false,
         ref: false,
         docLabel: false,
         txnType: "process",
       }}
+      extra={() =>
+        !isLoading && !isError && cs && cs.byLot.length > 0 ? <LotStatusStrip cs={cs} /> : null
+      }
     />
   );
 }
 
+export function lotStatus(l: ChainStage["byLot"][number]): { label: string; tone: "good" | "bad" | "warn" | "neutral" } {
+  if (l.qtyIn === 0) return { label: "Not Started", tone: "neutral" };
+  if (l.qtyOut > 0 && l.qtyRejected === 0 && l.balance === 0) return { label: "Passed", tone: "good" };
+  if (l.qtyOut === 0 && l.qtyRejected > 0) return { label: "Rejected", tone: "bad" };
+  return { label: "Partial", tone: "warn" };
+}
+
+function LotStatusStrip({ cs }: { cs: ChainStage }) {
+  return (
+    <Section title="Lot status">
+      <div className="flex flex-wrap gap-2">
+        {cs.byLot.map((l) => {
+          const status = lotStatus(l);
+          return (
+            <div
+              key={l.lotId}
+              className="flex items-center gap-2 rounded-xl border border-white/70 bg-white/70 px-3 py-2"
+            >
+              <span className="text-xs font-semibold text-ink-900">{l.lotNo}</span>
+              <Badge tone={status.tone}>{status.label}</Badge>
+            </div>
+          );
+        })}
+      </div>
+    </Section>
+  );
+}
+
 /**
- * Fabric Store is a reckoning, not a process: it states what actually reached
- * the store against everything the fabric passed through to get there. It still
- * takes an entry, because the store's own count is the one that matters for
- * Cutting.
+ * Fabric Store is a simple record, not a re-count: it states the final
+ * approved quantity for each passed lot (visible above, from Fabric
+ * Inspection's own Lot-wise position table, via showDetails) and which unit
+ * or location is holding it. One entry per lot -  no separate "issued to
+ * Cutting" step, since Cutting reads this stage's output the same way every
+ * other stage reads its predecessor's.
  */
 export function FabricStoreForm(props: StageFormProps) {
   return (
     <ChainStageForm
       props={props}
-      intro="What finally reached the store. The journey below shows where every kilo went between the yarn plan and this shelf."
+      intro="Record the final approved quantity for each lot -  check the Lot-wise position above for what Fabric Inspection passed -  and which unit or location is holding it."
       config={{
         lot: "optional",
         size: "none",
-        inLabel: "Received",
-        outLabel: "Issued to Cutting",
+        inLabel: false,
+        outLabel: "Final Approved Qty",
         rejectedLabel: false,
         reworkLabel: false,
-        ref: false,
+        ref: { label: "Stored At", presets: [], placeholder: "Unit / location" },
         docLabel: false,
         txnType: "process",
+        allowCreateLot: false,
       }}
-      extra={(_cs, chain) => <FabricJourney chain={chain} />}
     />
-  );
-}
-
-function FabricJourney({ chain }: { chain: NonNullable<ReturnType<typeof useStageChain>["chain"]> }) {
-  const keys = [
-    STAGE.knitting,
-    STAGE.dyeing,
-    STAGE.setting,
-    STAGE.raising,
-    STAGE.compacting,
-    STAGE.fabricInhouse,
-    STAGE.fabricInspection,
-  ];
-  const rows = keys.map((k) => chain.byKey.get(k)).filter((s): s is ChainStage => !!s);
-  const planned = chain.materialTotals.all.required;
-  const finalOut = rows[rows.length - 1]?.output ?? 0;
-  const loss = Math.max(planned - finalOut, 0);
-
-  return (
-    <Section title="Fabric journey" subtitle="Every processing stage, from the yarn plan to this store.">
-      <div className="grid grid-cols-3 gap-2">
-        <QtyBox label="Planned" value={planned} unit="KG" />
-        <QtyBox label="Reached store" value={finalOut} unit="KG" tone="good" />
-        <QtyBox label="Total process loss" value={loss} unit="KG" tone={loss > 0 ? "bad" : "good"} />
-      </div>
-      <div className="overflow-x-auto rounded-xl border border-ink-100">
-        <table className="w-full min-w-[480px] text-sm">
-          <thead>
-            <tr className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500">
-              <th className="px-3 py-2 text-left font-semibold">Stage</th>
-              <th className="px-3 py-2 text-right font-semibold">Input</th>
-              <th className="px-3 py-2 text-right font-semibold">Output</th>
-              <th className="px-3 py-2 text-right font-semibold">Loss</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-ink-100">
-            {rows.map((s) => {
-              const stageLoss = Math.max(s.input - s.output - s.rejected, 0);
-              return (
-                <tr key={s.stage.id} className="bg-white">
-                  <td className="px-3 py-2 font-medium text-ink-900">{s.stage.label}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{s.input.toLocaleString()}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-status-good">{s.output.toLocaleString()}</td>
-                  <td className={`px-3 py-2 text-right tabular-nums ${stageLoss > 0 ? "text-status-bad" : "text-ink-400"}`}>
-                    {stageLoss.toLocaleString()}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </Section>
   );
 }
 

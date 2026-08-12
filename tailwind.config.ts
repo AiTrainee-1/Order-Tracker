@@ -72,11 +72,16 @@ export default {
           "0%": { opacity: "0", transform: "translateY(6px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
+        flowMove: {
+          "0%": { backgroundPosition: "0 0" },
+          "100%": { backgroundPosition: "28px 0" },
+        },
       },
       animation: {
         pulseSoft: "pulseSoft 2s ease-in-out infinite",
         floatSlow: "floatSlow 6s ease-in-out infinite",
         fadeInUp: "fadeInUp 0.35s ease-out",
+        flowMove: "flowMove 0.9s linear infinite",
       },
     },
   },

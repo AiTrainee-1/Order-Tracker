@@ -111,6 +111,7 @@ export interface UpdateUserInput {
   phone?: string | null;
   is_monitor_only?: boolean;
   is_active?: boolean;
+  can_create_orders?: boolean;
 }
 
 export function useUpdateUser() {

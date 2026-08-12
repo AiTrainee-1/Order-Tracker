@@ -11,6 +11,7 @@ export type StageFormType =
   | "supplier_dc"
   | "material_inward"
   | "knitting"
+  | "lot_send_receive"
   | "lot_process"
   | "lot_inspection"
   | "fabric_store"
@@ -32,6 +33,9 @@ export interface AppUser {
   phone: string | null;
   is_monitor_only: boolean;
   is_active: boolean;
+  /** Granted from Stage Roles -  lets this user create new orders from their
+   * own Home page, via the same form/procedure Admin uses. See migration 016. */
+  can_create_orders: boolean;
   last_activity_at: string | null;
   created_at: string;
 }
@@ -65,6 +69,15 @@ export interface Order {
   /** Fixed PCS baseline set when Cutting completes; every later stage compares against this. */
   cut_quantity: number | null;
   delivery_date: string | null;
+  /** Who created this order -  null for orders created before migration 016,
+   * or created directly by Admin. Only meaningfully populated for orders made
+   * via the order-creator flow, and only used to scope that flow's own
+   * narrow update permission (see migration 016) -  not shown in the UI. */
+  created_by: string | null;
+  /** Soft-hidden by its creator (migration 017) -  filtered out of every
+   * fleet-wide order list, but still visible (with an unhide option) on the
+   * creator's own "Orders You've Created" list. */
+  is_hidden: boolean;
   created_at: string;
 }
 

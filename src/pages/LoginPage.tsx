@@ -3,7 +3,6 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Loader } from "../components/ui/Loader";
 import { BrandMark } from "../components/ui/BrandMark";
-import { FluidGlassBackground } from "../components/ui/FluidGlassBackground";
 import {
   authBackground,
   brandGradient,
@@ -14,6 +13,13 @@ import {
   SHADOW_NEO_RAISED_LG,
   type IconTone,
 } from "../lib/theme";
+
+/** Where a signed-in user lands, by role. */
+function homeFor(role: string): string {
+  if (role === "admin") return "/admin/dashboard";
+  if (role === "md") return "/md/dashboard";
+  return "/user/home";
+}
 
 export function LoginPage() {
   const { appUser, loading, login } = useAuth();
@@ -26,7 +32,7 @@ export function LoginPage() {
 
   if (loading) return <Loader full label="Loading…" />;
   if (appUser) {
-    return <Navigate to={appUser.role === "admin" ? "/admin/dashboard" : "/user/home"} replace />;
+    return <Navigate to={homeFor(appUser.role)} replace />;
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -35,7 +41,7 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       const user = await login(username, password);
-      navigate(user.role === "admin" ? "/admin/dashboard" : "/user/home", { replace: true });
+      navigate(homeFor(user.role), { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed.");
     } finally {
@@ -48,8 +54,6 @@ export function LoginPage() {
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute inset-0 opacity-[0.5]" style={dotTexture} />
       </div>
-
-      <FluidGlassBackground />
 
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center justify-center gap-10 px-5 py-12 lg:flex-row lg:justify-between lg:gap-16 lg:px-8">
         {/* Brand side -  dark text on the light mesh. */}

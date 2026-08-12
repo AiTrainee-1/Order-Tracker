@@ -361,6 +361,12 @@ export interface LedgerConfig {
    * size dropdown per draft row. Used by Cutting, where every size of a lot is
    * entered together. */
   sizeGrid?: boolean;
+  /** Whether this ledger's lot picker may raise a brand new lot. Lots are only
+   * ever created at Knitting (see migration 018) -  every other stage, including
+   * Knitting's own Receiving ledger, only selects from the existing register.
+   * Defaults to true so ledgers that don't touch this (most of them, since a
+   * lot already exists long before they run) keep their previous behaviour. */
+  allowCreateLot?: boolean;
 }
 
 export interface DraftRow {
@@ -930,7 +936,14 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
       {config.sizeGrid ? (
         <Section title="Add new entry" subtitle="Pick the lot, then enter the pieces produced in each size.">
           <div className="space-y-3 rounded-xl border border-ink-100 bg-ink-50/60 p-3">
-            <LotSelect lots={lots} value={gridLotId} onChange={setGridLotId} orderId={orderId} poId={poId} />
+            <LotSelect
+              lots={lots}
+              value={gridLotId}
+              onChange={setGridLotId}
+              orderId={orderId}
+              poId={poId}
+              allowCreate={config.allowCreateLot ?? true}
+            />
             <div className="overflow-x-auto rounded-lg border border-ink-100 bg-white">
               <table className="w-full text-sm">
                 <thead>
@@ -1014,6 +1027,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                         onChange={(v) => patchDraft(d.key, { lotId: v })}
                         orderId={orderId}
                         poId={poId}
+                        allowCreate={config.allowCreateLot ?? true}
                       />
                     </div>
                   )}

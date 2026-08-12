@@ -1,14 +1,14 @@
 import { useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useLocation } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { useOrderDetail } from "../../hooks/useOrderDetail";
 import { useProductionChain } from "../../hooks/useProductionChain";
 import { useOrderAssignments } from "../../hooks/useAssignments";
-import { LotSummaryTable, SizeSummaryTable } from "../../components/forms/stage/chainShared";
 import { publicImageUrl } from "../../lib/supabaseClient";
 import { deliveryUrgency, formatDisplayDate, urgencyTextClasses } from "../../lib/workflow";
 import { buildOrderProgress } from "../../lib/progress";
 import { getCombinedCutQuantity } from "../../lib/orderQty";
+import { orderTrackingBasePath } from "../../lib/routing";
 import { Card, CardBody, CardHeader } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -17,6 +17,7 @@ import { Loader } from "../../components/ui/Loader";
 import { Table } from "../../components/ui/Table";
 import { FilterTabs } from "../../components/ui/FilterTabs";
 import { GameLevelPath } from "../../components/dashboard/GameLevelPath";
+import { StageDetailPanel } from "../../components/dashboard/StageDetailPanel";
 import { GarmentPlaceholder } from "../../components/ui/GarmentPlaceholder";
 import { BackButton } from "../../components/ui/BackButton";
 import type { AppUser } from "../../lib/types";
@@ -26,6 +27,7 @@ const ALL_POS = "all";
 
 export function OrderDetailPage() {
   const { orderId } = useParams<{ orderId: string }>();
+  const basePath = orderTrackingBasePath(useLocation().pathname);
   const { order, purchaseOrders, entries, usersById, progress, isLoading, isError } =
     useOrderDetail(orderId);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -117,8 +119,8 @@ export function OrderDetailPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <BackButton to="/admin/dashboard" label="Back to Dashboard" />
-        <Link to={`/admin/output/${order.id}`}>
+        <BackButton to={`${basePath}/dashboard`} label="Back to Dashboard" />
+        <Link to={`${basePath}/output/${order.id}`}>
           <Button size="sm">Production Output & Reports →</Button>
         </Link>
       </div>
@@ -261,194 +263,16 @@ export function OrderDetailPage() {
             }
           />
           <CardBody className="space-y-5">
-            {selectedStage.hasQtyMismatch && (
-              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                Previous stage forwarded{" "}
-                <b>{selectedStage.qtyInherited.toLocaleString()} {selectedStage.stage.unit_type}</b> but{" "}
-                <b>{selectedStage.qtyReceived.toLocaleString()}</b> was counted in here -  a gap of{" "}
-                {Math.abs(selectedStage.qtyReceived - selectedStage.qtyInherited).toLocaleString()}{" "}
-                {selectedStage.stage.unit_type} to reconcile.
-              </p>
-            )}
-
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-              <Metric
-                label={`Carried In (${selectedStage.stage.unit_type})`}
-                value={
-                  selectedStage.qtyInherited > 0 ? selectedStage.qtyInherited.toLocaleString() : "- "
-                }
-              />
-              <Metric
-                label={`Allotted (${selectedStage.stage.unit_type})`}
-                value={selectedStage.qtyAllotted.toLocaleString()}
-              />
-              <Metric label="Forwarded" value={selectedStage.qtyForwarded.toLocaleString()} />
-              <Metric
-                label="Pending"
-                value={selectedStage.qtyPending.toLocaleString()}
-                tone={selectedStage.qtyPending > 0 ? "text-amber-700" : undefined}
-              />
-              <Metric
-                label="Shortage"
-                value={selectedStage.qtyShortage.toLocaleString()}
-                tone="text-status-shortage"
-              />
-              <Metric
-                label="Rejected"
-                value={selectedStage.qtyRejected.toLocaleString()}
-                tone="text-status-rejected"
-              />
-              <Metric label="Returned" value={selectedStage.qtyReturned.toLocaleString()} />
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <ContactTile
-                label="Responsible Person(s)"
-                people={selectedStage.responsibleUserIds
-                  .map((id) => usersById.get(id))
-                  .filter((u): u is AppUser => !!u)}
-                emptyLabel="Not yet actioned"
-              />
-              <ContactTile
-                label="Next Assigned Person"
-                people={nextStageAssignees}
-                emptyLabel={
-                  assignmentsQuery.isLoading ? "Loading…" : "No one assigned to the next stage yet"
-                }
-              />
-              <InfoTile label="Next Process" value={nextStage?.stage.label ?? "Final stage"} />
-            </div>
-
-            {!selectedStage.isCompleted && (
-              <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">
-                Estimated completion:{" "}
-                <span className="font-semibold">
-                  {formatDisplayDate(selectedStage.estimatedCompletionDate)}
-                </span>{" "}
-                (based on a typical {selectedStage.stage.typical_duration_days}-day cycle for this stage)
-              </p>
-            )}
-
-            {selectedChainStage && selectedChainStage.byLot.length > 0 && (
-              <div>
-                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
-                  Lot-wise Breakdown
-                </h4>
-                <LotSummaryTable cs={selectedChainStage} />
-              </div>
-            )}
-
-            {selectedChainStage && selectedChainStage.bySize.length > 0 && (
-              <div>
-                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
-                  Size-wise Breakdown
-                </h4>
-                <SizeSummaryTable cs={selectedChainStage} />
-              </div>
-            )}
-
-            {selectedChainStage && selectedChainStage.material && (
-              <div>
-                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
-                  Material Position
-                </h4>
-                <Table
-                  keyFor={(f) => f.requirement.id}
-                  rows={chain?.requirementFlows ?? []}
-                  emptyMessage="No yarn or fabric planned for this order yet."
-                  columns={[
-                    { header: "Material", render: (f) => f.requirement.name },
-                    { header: "Type", render: (f) => f.requirement.category },
-                    { header: "Required", render: (f) => f.totals.required.toLocaleString() },
-                    { header: "DC", render: (f) => f.totals.dc.toLocaleString() },
-                    { header: "Received", render: (f) => f.totals.received.toLocaleString() },
-                    { header: "Inward", render: (f) => f.totals.inward.toLocaleString() },
-                    {
-                      header: "Balance",
-                      render: (f) => Math.max(f.balance, 0).toLocaleString(),
-                    },
-                    {
-                      header: "Status",
-                      render: (f) => (
-                        <Badge tone={f.requirement.is_completed ? "good" : "warn"}>
-                          {f.requirement.is_completed ? "Complete" : "In Progress"}
-                        </Badge>
-                      ),
-                    },
-                  ]}
-                />
-              </div>
-            )}
-
-            <div>
-              <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                  Entries for this stage
-                </h4>
-                <span className="text-xs text-ink-500">
-                  {selectedStage.entries.length} record
-                  {selectedStage.entries.length === 1 ? "" : "s"}
-                  {selectedStage.firstEntryDate
-                    ? ` · first ${formatDisplayDate(selectedStage.firstEntryDate)}`
-                    : ""}
-                  {selectedStage.lastEntryDate
-                    ? ` · last ${formatDisplayDate(selectedStage.lastEntryDate)}`
-                    : ""}
-                </span>
-              </div>
-              <Table
-                keyFor={(e) => e.id}
-                rows={selectedStage.entries}
-                emptyMessage="No entries submitted for this stage yet."
-                columns={[
-                  { header: "#", render: (e) => selectedStage.entries.indexOf(e) + 1 },
-                  { header: "Date", render: (e) => formatDisplayDate(e.entry_date) },
-                  {
-                    header: "Entered By",
-                    render: (e) => (
-                      <div>
-                        <p className="font-medium text-ink-900">{nameOf(e.entered_by)}</p>
-                        {usersById.get(e.entered_by)?.phone && (
-                          <p className="text-xs text-ink-500">{usersById.get(e.entered_by)!.phone}</p>
-                        )}
-                      </div>
-                    ),
-                  },
-                  {
-                    header: "Forwarded",
-                    render: (e) => (
-                      <span className="font-semibold text-ink-900">
-                        {e.qty_forwarded.toLocaleString()}
-                      </span>
-                    ),
-                  },
-                  {
-                    header: "Rejected",
-                    render: (e) =>
-                      e.qty_rejected > 0 ? (
-                        <span className="font-medium text-status-rejected">
-                          {e.qty_rejected.toLocaleString()}
-                        </span>
-                      ) : (
-                        "- "
-                      ),
-                  },
-                  {
-                    header: "Returned",
-                    render: (e) => (e.qty_returned > 0 ? e.qty_returned.toLocaleString() : "- "),
-                  },
-                  {
-                    header: "Result",
-                    render: (e) => (
-                      <Badge tone={e.is_completed ? "good" : "warn"}>
-                        {e.is_completed ? "Completed stage" : "Moved on -  not completed"}
-                      </Badge>
-                    ),
-                  },
-                  { header: "Notes", render: (e) => e.notes || "- " },
-                ]}
-              />
-            </div>
+            <StageDetailPanel
+              stage={selectedStage}
+              chainStage={selectedChainStage}
+              chain={chain}
+              nameOf={nameOf}
+              usersById={usersById}
+              nextStage={nextStage}
+              nextStageAssignees={nextStageAssignees}
+              nextStageAssigneesLoading={assignmentsQuery.isLoading}
+            />
           </CardBody>
         </Card>
       )}
@@ -528,47 +352,3 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: s
   );
 }
 
-function InfoTile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-white/80 bg-white/70 px-3 py-2">
-      <p className="text-[11px] uppercase tracking-wide text-ink-400">{label}</p>
-      <p className="mt-0.5 truncate text-sm font-medium text-ink-800">{value}</p>
-    </div>
-  );
-}
-
-/** Names with phone numbers -  the handoff detail the floor actually needs. */
-function ContactTile({
-  label,
-  people,
-  emptyLabel,
-}: {
-  label: string;
-  people: AppUser[];
-  emptyLabel: string;
-}) {
-  const unique = Array.from(new Map(people.map((p) => [p.id, p])).values());
-  return (
-    <div className="rounded-xl border border-white/80 bg-white/70 px-3 py-2">
-      <p className="text-[11px] uppercase tracking-wide text-ink-400">{label}</p>
-      {unique.length === 0 ? (
-        <p className="mt-0.5 text-sm text-ink-400">{emptyLabel}</p>
-      ) : (
-        <div className="mt-0.5 space-y-0.5">
-          {unique.map((p) => (
-            <div key={p.id} className="flex flex-wrap items-baseline gap-x-2">
-              <span className="text-sm font-medium text-ink-900">{p.name}</span>
-              {p.phone ? (
-                <a href={`tel:${p.phone}`} className="text-xs font-medium text-brand hover:underline">
-                  {p.phone}
-                </a>
-              ) : (
-                <span className="text-xs text-ink-400">no phone on file</span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}

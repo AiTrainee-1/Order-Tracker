@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useOrdersList } from "../../hooks/useOrdersList";
-import { useCreateOrder, useDeleteOrder, useUpdateOrder } from "../../hooks/useOrderMutations";
+import { useDeleteOrder, useUpdateOrder } from "../../hooks/useOrderMutations";
 import { useToast } from "../../context/ToastContext";
 import { useConfirm } from "../../context/ConfirmContext";
 import { publicImageUrl } from "../../lib/supabaseClient";
@@ -17,8 +17,8 @@ import type { Order } from "../../lib/types";
 import type { OrderFormInput } from "../../hooks/useOrderMutations";
 
 export function OrdersPage() {
+  const navigate = useNavigate();
   const { data, isLoading, refetch } = useOrdersList();
-  const createOrder = useCreateOrder();
   const updateOrder = useUpdateOrder();
   const deleteOrder = useDeleteOrder();
   const toast = useToast();
@@ -68,12 +68,6 @@ export function OrdersPage() {
 
   if (isLoading) return <Loader full label="Loading orders…" />;
 
-  function openCreate() {
-    setEditingOrder(null);
-    setFormError(null);
-    setShowForm(true);
-  }
-
   function openEdit(order: Order) {
     setEditingOrder(order);
     setFormError(null);
@@ -81,15 +75,11 @@ export function OrdersPage() {
   }
 
   async function handleSubmit(input: OrderFormInput) {
+    if (!editingOrder) return;
     setFormError(null);
     try {
-      if (editingOrder) {
-        await updateOrder.mutateAsync({ orderId: editingOrder.id, input });
-        toast.success("Order updated successfully.");
-      } else {
-        await createOrder.mutateAsync(input);
-        toast.success("Order created successfully.");
-      }
+      await updateOrder.mutateAsync({ orderId: editingOrder.id, input });
+      toast.success("Order updated successfully.");
       setShowForm(false);
       refetch();
     } catch (err) {
@@ -119,7 +109,7 @@ export function OrdersPage() {
               Delete Selected ({selectedIds.size})
             </Button>
           )}
-          <Button onClick={openCreate}>+ Create Order</Button>
+          <Button onClick={() => navigate("/admin/orders/new")}>+ Create Order</Button>
         </div>
       </div>
 
@@ -182,31 +172,22 @@ export function OrdersPage() {
         )}
       </div>
 
-      <Modal
-        open={showForm}
-        onClose={() => setShowForm(false)}
-        title={editingOrder ? "Edit Order" : "Create Order"}
-        widthClass="max-w-2xl"
-      >
-        <OrderForm
-          key={editingOrder?.id ?? "new"}
-          initialOrder={editingOrder ?? undefined}
-          initialPurchaseOrders={
-            editingOrder ? purchaseOrders.filter((p) => p.order_id === editingOrder.id) : undefined
-          }
-          initialSizes={
-            editingOrder
-              ? sizes.filter((s) =>
-                  purchaseOrders.some((p) => p.id === s.po_id && p.order_id === editingOrder.id),
-                )
-              : undefined
-          }
-          existingImageUrl={editingOrder ? publicImageUrl(editingOrder.image_path) : undefined}
-          onSubmit={handleSubmit}
-          onCancel={() => setShowForm(false)}
-          submitting={createOrder.isPending || updateOrder.isPending}
-          error={formError}
-        />
+      <Modal open={showForm} onClose={() => setShowForm(false)} title="Edit Order" widthClass="max-w-2xl">
+        {editingOrder && (
+          <OrderForm
+            key={editingOrder.id}
+            initialOrder={editingOrder}
+            initialPurchaseOrders={purchaseOrders.filter((p) => p.order_id === editingOrder.id)}
+            initialSizes={sizes.filter((s) =>
+              purchaseOrders.some((p) => p.id === s.po_id && p.order_id === editingOrder.id),
+            )}
+            existingImageUrl={publicImageUrl(editingOrder.image_path)}
+            onSubmit={handleSubmit}
+            onCancel={() => setShowForm(false)}
+            submitting={updateOrder.isPending}
+            error={formError}
+          />
+        )}
       </Modal>
     </div>
   );

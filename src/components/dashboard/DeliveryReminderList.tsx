@@ -1,10 +1,12 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import type { OrderBundle } from "../../hooks/useOrders";
 import { publicImageUrl } from "../../lib/supabaseClient";
 import { deliveryUrgency, formatDisplayDate, urgencyColorClasses } from "../../lib/workflow";
+import { orderTrackingBasePath } from "../../lib/routing";
 import { GarmentPlaceholder } from "../ui/GarmentPlaceholder";
 
 export function DeliveryReminderList({ bundles }: { bundles: OrderBundle[] }) {
+  const basePath = orderTrackingBasePath(useLocation().pathname);
   const sorted = [...bundles]
     .filter((b) => b.progress.status !== "completed")
     .sort((a, b) => {
@@ -26,7 +28,7 @@ export function DeliveryReminderList({ bundles }: { bundles: OrderBundle[] }) {
         return (
           <Link
             key={order.id}
-            to={`/admin/orders/${order.id}`}
+            to={`${basePath}/orders/${order.id}`}
             className="flex w-64 shrink-0 items-center gap-3 rounded-xl border border-white/70 bg-white/80 p-3 backdrop-blur-xl shadow-[0_10px_30px_-14px_rgba(30,41,90,0.35)] transition-shadow hover:shadow-[0_18px_44px_-16px_rgba(30,41,90,0.45)]"
           >
             <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/80 bg-white/70">

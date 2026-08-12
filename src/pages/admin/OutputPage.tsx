@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useLocation } from "react-router-dom";
 import {
   Bar,
   BarChart,
@@ -25,6 +25,7 @@ import { Button } from "../../components/ui/Button";
 import { Loader } from "../../components/ui/Loader";
 import { FilterTabs } from "../../components/ui/FilterTabs";
 import { BackButton } from "../../components/ui/BackButton";
+import { orderTrackingBasePath } from "../../lib/routing";
 import { iconGradient, type IconTone } from "../../lib/theme";
 
 /**
@@ -49,6 +50,7 @@ const CHART_SLATE = "#CBD5E1";
 
 export function OutputPage() {
   const { orderId } = useParams<{ orderId: string }>();
+  const basePath = orderTrackingBasePath(useLocation().pathname);
   const { order, purchaseOrders, usersById, isLoading, isError } = useOrderDetail(orderId);
   const [poScope, setPoScope] = useState<string>(ALL_POS);
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -115,7 +117,7 @@ export function OutputPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <BackButton to={`/admin/orders/${order.id}`} label="Back to Order" />
+        <BackButton to={`${basePath}/orders/${order.id}`} label="Back to Order" />
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="secondary" onClick={() => download("csv")} isLoading={downloading === "csv"}>
             CSV

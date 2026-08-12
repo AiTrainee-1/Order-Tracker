@@ -4,7 +4,7 @@ import { useAuth } from "../../context/AuthContext";
 import { BrandMark } from "../ui/BrandMark";
 import { brandGradient, iconGradient, sidebarBackground, spatialBackground, SHADOW_BRAND, type IconTone } from "../../lib/theme";
 
-const navItems: { to: string; label: string; icon: string; tone: IconTone }[] = [
+const baseNavItems: { to: string; label: string; icon: string; tone: IconTone }[] = [
   { to: "/user/home", label: "Home", icon: "🏠", tone: "sky" },
   { to: "/user/data-input", label: "Data Input", icon: "✍️", tone: "violet" },
 ];
@@ -13,6 +13,12 @@ export function UserLayout() {
   const { appUser, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Granted from Stage Roles (app_users.can_create_orders, migration 016) -
+  // hidden entirely for anyone who doesn't have it, not just disabled.
+  const navItems = appUser?.can_create_orders
+    ? [...baseNavItems, { to: "/user/create-order", label: "Create Orders", icon: "🧾", tone: "emerald" as IconTone }]
+    : baseNavItems;
 
   async function handleLogout() {
     await logout();

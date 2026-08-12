@@ -10,9 +10,9 @@ import {
   FabricStoreForm,
   GarmentProcessForm,
   GarmentQcForm,
-  KnittingForm,
   LotInspectionForm,
   LotProcessForm,
+  LotSendReceiveForm,
   PackingForm,
   PanelCheckForm,
   SewingForm,
@@ -43,7 +43,8 @@ function renderStageForm(props: StageFormProps) {
     case "material_inward":
       return <MaterialInwardForm {...props} />;
     case "knitting":
-      return <KnittingForm {...props} />;
+    case "lot_send_receive":
+      return <LotSendReceiveForm {...props} />;
     case "lot_process":
       return <LotProcessForm {...props} />;
     case "lot_inspection":
