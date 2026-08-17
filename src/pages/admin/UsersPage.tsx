@@ -8,8 +8,7 @@ import {
 } from "../../hooks/useUsers";
 import { useAssignments } from "../../hooks/useAssignments";
 import { useAuth } from "../../context/AuthContext";
-import { Card, CardBody, CardHeader } from "../../components/ui/Card";
-import { Table } from "../../components/ui/Table";
+import { Card, CardBody } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/FormControls";
@@ -19,6 +18,13 @@ import { UserForm } from "../../components/forms/UserForm";
 import { StatCard } from "../../components/ui/StatCard";
 import { formatDisplayDate } from "../../lib/workflow";
 import { useToast } from "../../context/ToastContext";
+import {
+  cardStatusAccent,
+  cardStatusBorder,
+  cardStatusShadow,
+  cardStatusSoftBg,
+  type CardStatusTone,
+} from "../../lib/theme";
 import type { AppUser } from "../../lib/types";
 import type { CreateUserInput } from "../../hooks/useUsers";
 
@@ -26,6 +32,174 @@ function isActiveToday(lastActivityAt: string | null): boolean {
   if (!lastActivityAt) return false;
   const today = new Date().toDateString();
   return new Date(lastActivityAt).toDateString() === today;
+}
+
+/** Three states worth telling apart at a glance, in order of how much the
+ * admin cares: someone working today, an enabled account that's idle, and a
+ * deactivated login. */
+function userTone(user: AppUser): CardStatusTone {
+  if (!user.is_active) return "notStarted";
+  return isActiveToday(user.last_activity_at) ? "completed" : "started";
+}
+
+function LegendDot({ className, label }: { className: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`h-2.5 w-2.5 rounded-full ${className}`} />
+      {label}
+    </span>
+  );
+}
+
+function UserCard({
+  user,
+  sections,
+  isSelf,
+  revealed,
+  onToggleReveal,
+  onToggleActive,
+  onEdit,
+  onResetPassword,
+  onDelete,
+}: {
+  user: AppUser;
+  sections: string[];
+  isSelf: boolean;
+  revealed: boolean;
+  onToggleReveal: () => void;
+  onToggleActive: () => void;
+  onEdit: () => void;
+  onResetPassword: () => void;
+  onDelete: () => void;
+}) {
+  const tone = userTone(user);
+  const today = isActiveToday(user.last_activity_at);
+
+  return (
+    <div
+      style={cardStatusSoftBg[tone]}
+      className={`relative flex flex-col overflow-hidden rounded-2xl border ${cardStatusBorder[tone]} ${cardStatusShadow[tone]}`}
+    >
+      <span className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: cardStatusAccent[tone] }} />
+
+      {/* Identity */}
+      <div className="flex items-start gap-3 px-4 pb-3 pt-4">
+        <span
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white shadow-sm"
+          style={{ backgroundColor: cardStatusAccent[tone] }}
+        >
+          {user.name.charAt(0).toUpperCase()}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <p className="truncate text-sm font-bold text-ink-900">{user.name}</p>
+            {isSelf && <Badge tone="brand">You</Badge>}
+          </div>
+          <p className="truncate text-xs text-ink-600">
+            @{user.username} · {user.role}
+          </p>
+        </div>
+        {/* Still a click to toggle, as before -  just clearer that it's a control. */}
+        <button type="button" onClick={onToggleActive} title="Click to activate / deactivate">
+          <Badge tone={user.is_active ? "good" : "bad"}>{user.is_active ? "Active" : "Inactive"}</Badge>
+        </button>
+      </div>
+
+      {/* Details */}
+      <div className="space-y-2 border-t border-black/5 px-4 py-3 text-xs">
+        <Row label="Phone">
+          {user.phone ? (
+            <a href={`tel:${user.phone}`} className="font-medium text-brand hover:underline">
+              {user.phone}
+            </a>
+          ) : (
+            <span className="text-ink-400">Not on file</span>
+          )}
+        </Row>
+
+        <Row label="Access">
+          <Badge tone={user.is_monitor_only ? "info" : "neutral"}>
+            {user.is_monitor_only ? "Monitor Only" : "Can Enter Data"}
+          </Badge>
+        </Row>
+
+        <Row label="Last activity">
+          <span className="flex flex-wrap items-center gap-1.5">
+            <span className="font-medium text-ink-800">
+              {user.last_activity_at ? formatDisplayDate(user.last_activity_at) : "Never"}
+            </span>
+            {today && <Badge tone="good">Today</Badge>}
+          </span>
+        </Row>
+
+        <Row label="Password">
+          <span className="flex items-center gap-2">
+            <span className="font-mono text-[11px] text-ink-800">
+              {revealed ? user.password_plain : "••••••••"}
+            </span>
+            <button
+              type="button"
+              onClick={onToggleReveal}
+              className="rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-brand hover:bg-blue-50"
+              title="Toggle visibility"
+            >
+              {revealed ? "Hide" : "View"}
+            </button>
+          </span>
+        </Row>
+
+        <div>
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-400">
+            Assigned sections
+          </p>
+          {sections.length === 0 ? (
+            <p className="text-ink-400">None assigned</p>
+          ) : (
+            <div className="flex flex-wrap gap-1">
+              {sections.map((s) => (
+                <Badge key={s} tone="neutral">
+                  {s}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="mt-auto flex flex-wrap items-center gap-1 border-t border-black/5 bg-white/40 px-3 py-2">
+        <Button variant="ghost" size="sm" onClick={onEdit}>
+          Edit
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onResetPassword}>
+          Reset Password
+        </Button>
+        {!isSelf && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto text-status-bad hover:bg-red-50"
+            onClick={onDelete}
+          >
+            Delete
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Label on the left, value on the right -  so the same field sits in the same
+ * place on every card and the grid reads down a column. */
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-ink-400">
+        {label}
+      </span>
+      <span className="min-w-0 text-right">{children}</span>
+    </div>
+  );
 }
 
 export function UsersPage() {
@@ -168,112 +342,47 @@ export function UsersPage() {
         <StatCard label="Active Today" value={activeTodayCount} tone={activeTodayCount ? "good" : "warn"} icon="⚡" />
       </div>
 
-      <Card>
-        <CardHeader title="All Users" />
-        <CardBody>
-          <Table
-            keyFor={(u) => u.id}
-            rows={list}
-            columns={[
-              {
-                header: "Name",
-                render: (u) => (
-                  <div>
-                    <p className="font-medium text-ink-900">{u.name}</p>
-                    <p className="text-xs text-ink-500">@{u.username}</p>
-                  </div>
-                ),
-              },
-              { header: "Role", render: (u) => u.role },
-              { header: "Phone", render: (u) => u.phone || <span className="text-ink-300">- </span> },
-              {
-                header: "Sections",
-                render: (u) => (
-                  <div className="flex max-w-[220px] flex-wrap gap-1">
-                    {(sectionsByUser.get(u.id) ?? []).length === 0 ? (
-                      <span className="text-xs text-ink-400">None assigned</span>
-                    ) : (
-                      sectionsByUser.get(u.id)!.map((s) => (
-                        <Badge key={s} tone="neutral">
-                          {s}
-                        </Badge>
-                      ))
-                    )}
-                  </div>
-                ),
-              },
-              {
-                header: "Access",
-                render: (u) => <Badge tone={u.is_monitor_only ? "info" : "neutral"}>{u.is_monitor_only ? "Monitor Only" : "Can Enter Data"}</Badge>,
-              },
-              {
-                header: "Password",
-                render: (u) => (
-                  <div className="flex items-center gap-2 font-mono text-xs">
-                    <span className="min-w-[80px]">{revealedIds.has(u.id) ? u.password_plain : "••••••••"}</span>
-                    <button
-                      onClick={() => toggleReveal(u.id)}
-                      className="rounded-md px-1.5 py-0.5 text-[11px] font-sans font-semibold text-brand hover:bg-blue-50"
-                      title="Toggle visibility"
-                    >
-                      {revealedIds.has(u.id) ? "Hide" : "View"}
-                    </button>
-                  </div>
-                ),
-              },
-              {
-                header: "Last Activity",
-                render: (u) => (
-                  <div>
-                    <p>{u.last_activity_at ? formatDisplayDate(u.last_activity_at) : "Never"}</p>
-                    <Badge tone={isActiveToday(u.last_activity_at) ? "good" : "neutral"}>
-                      {isActiveToday(u.last_activity_at) ? "Active today" : "No activity today"}
-                    </Badge>
-                  </div>
-                ),
-              },
-              {
-                header: "Status",
-                render: (u) => (
-                  <button
-                    onClick={() => updateUser.mutate({ id: u.id, is_active: !u.is_active })}
-                    className="cursor-pointer"
-                  >
-                    <Badge tone={u.is_active ? "good" : "bad"}>{u.is_active ? "Active" : "Inactive"}</Badge>
-                  </button>
-                ),
-              },
-              {
-                header: "",
-                className: "text-right",
-                render: (u) => (
-                  <div className="flex justify-end gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(u)}>
-                      Edit
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setResetTarget(u)}>
-                      Reset Password
-                    </Button>
-                    {u.id !== appUser?.id && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-status-bad hover:bg-red-50"
-                        onClick={() => {
-                          setDeleteError(null);
-                          setDeleteTarget(u);
-                        }}
-                      >
-                        Delete
-                      </Button>
-                    )}
-                  </div>
-                ),
-              },
-            ]}
-          />
-        </CardBody>
-      </Card>
+      {/* A card per user rather than a nine-column table. The same fields are
+          all here, but each user is one scannable block and their state is
+          carried by colour as well as text -  grey account disabled, blue
+          active, green worked today -  so the list can be read at a glance
+          instead of column by column. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-ink-500">
+        <LegendDot className="bg-status-good" label="Worked today" />
+        <LegendDot className="bg-brand" label="Active account" />
+        <LegendDot className="bg-ink-300" label="Deactivated" />
+        <span className="ml-auto font-medium text-ink-600">
+          {list.length} {list.length === 1 ? "user" : "users"}
+        </span>
+      </div>
+
+      {list.length === 0 ? (
+        <Card>
+          <CardBody className="py-12 text-center text-sm text-ink-400">
+            No users yet. Click <b>+ Add User</b> to create the first account.
+          </CardBody>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {list.map((u) => (
+            <UserCard
+              key={u.id}
+              user={u}
+              sections={sectionsByUser.get(u.id) ?? []}
+              isSelf={u.id === appUser?.id}
+              revealed={revealedIds.has(u.id)}
+              onToggleReveal={() => toggleReveal(u.id)}
+              onToggleActive={() => updateUser.mutate({ id: u.id, is_active: !u.is_active })}
+              onEdit={() => openEdit(u)}
+              onResetPassword={() => setResetTarget(u)}
+              onDelete={() => {
+                setDeleteError(null);
+                setDeleteTarget(u);
+              }}
+            />
+          ))}
+        </div>
+      )}
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Add User">
         <UserForm

@@ -5,7 +5,7 @@ import { Badge } from "../../ui/Badge";
 import { MaterialLedger } from "./MaterialLedger";
 import { StageActions } from "./shared";
 import { useStageEntryBuilder } from "../../../hooks/useStageEntryBuilder";
-import { QtyBox, Section } from "./chainShared";
+import { DirectionPanel, QtyBox, Section } from "./chainShared";
 import type { StageFormProps } from "./types";
 
 /**
@@ -149,16 +149,26 @@ export function MaterialInwardForm(props: StageFormProps) {
           No materials planned for this order yet.
         </p>
       ) : (
-        <MaterialLedger
-          orderId={order.id}
-          poId={assignment.po_id}
-          sectionId={assignment.section_id}
-          flows={flows}
-          categories={["yarn", "fabric"]}
-          canEditRequirements={false}
-          entryTypes={["inward"]}
-          onSaved={onForwarded}
-        />
+        // Green: material that has physically arrived -  the first inbound
+        // figure in the whole chain, hence the same colour every later
+        // "received" panel uses.
+        <DirectionPanel
+          direction="in"
+          step={1}
+          title="Received Into Store"
+          subtitle="What physically arrived against the planned quantity. Knitting draws from this."
+        >
+          <MaterialLedger
+            orderId={order.id}
+            poId={assignment.po_id}
+            sectionId={assignment.section_id}
+            flows={flows}
+            categories={["yarn", "fabric"]}
+            canEditRequirements={false}
+            entryTypes={["inward"]}
+            onSaved={onForwarded}
+          />
+        </DirectionPanel>
       )}
 
       <StageActions

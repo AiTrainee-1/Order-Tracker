@@ -7,7 +7,7 @@ import { Badge } from "../../ui/Badge";
 import { formatDisplayDate } from "../../../lib/workflow";
 import { StageActions } from "./shared";
 import { useStageEntryBuilder } from "../../../hooks/useStageEntryBuilder";
-import { QtyBox, Section } from "./chainShared";
+import { DirectionPanel, QtyBox, Section } from "./chainShared";
 import type { StageFormProps } from "./types";
 
 /**
@@ -105,43 +105,51 @@ export function ConfirmationForm({ order, assignment, onForwarded, showDetails }
         </Section>
       )}
 
-      <Section
-        title={assignment.po ? `PO ${assignment.po.po_number} -  size breakdown` : "Size breakdown"}
-        subtitle="These quantities are the yardstick for Cutting, Panel Checking, Sewing and Packing. Check them now."
+      {/* Slate: a checkpoint, not a movement. Confirmation approves figures
+          that already exist rather than committing or receiving any quantity,
+          so it deliberately takes neither the blue nor the green. */}
+      <DirectionPanel
+        direction="neutral"
+        title="Confirm the Order"
+        subtitle="These quantities are the yardstick for Cutting, Panel Checking, Sewing and Packing. Check them before anything is committed."
       >
-        {!hasSizeBreakdown && (
-          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            This PO has no size split -  only a total. Size-wise tracking won't be available
-            downstream until an Admin edits the order and breaks the quantity out by size.
-          </p>
-        )}
-        <div className="overflow-x-auto rounded-xl border border-ink-100">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500">
-                {sizes.map((s) => (
-                  <th key={s.size_code} className="px-3 py-2 text-center font-semibold">
-                    {s.size_code}
-                  </th>
-                ))}
-                <th className="px-3 py-2 text-center font-semibold">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="bg-white">
-                {sizes.map((s) => (
-                  <td key={s.size_code} className="px-3 py-2.5 text-center font-semibold tabular-nums text-ink-900">
-                    {s.quantity.toLocaleString()}
+        <Section
+          title={assignment.po ? `PO ${assignment.po.po_number} -  size breakdown` : "Size breakdown"}
+        >
+          {!hasSizeBreakdown && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              This PO has no size split -  only a total. Size-wise tracking won't be available
+              downstream until an Admin edits the order and breaks the quantity out by size.
+            </p>
+          )}
+          <div className="overflow-x-auto rounded-xl border border-ink-100">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500">
+                  {sizes.map((s) => (
+                    <th key={s.size_code} className="px-3 py-2 text-center font-semibold">
+                      {s.size_code}
+                    </th>
+                  ))}
+                  <th className="px-3 py-2 text-center font-semibold">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="bg-white">
+                  {sizes.map((s) => (
+                    <td key={s.size_code} className="px-3 py-2.5 text-center font-semibold tabular-nums text-ink-900">
+                      {s.quantity.toLocaleString()}
+                    </td>
+                  ))}
+                  <td className="bg-ink-50 px-3 py-2.5 text-center font-bold tabular-nums text-ink-900">
+                    {total.toLocaleString()}
                   </td>
-                ))}
-                <td className="bg-ink-50 px-3 py-2.5 text-center font-bold tabular-nums text-ink-900">
-                  {total.toLocaleString()}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </Section>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </Section>
+      </DirectionPanel>
 
       {showDetails && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">

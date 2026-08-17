@@ -4,7 +4,7 @@ import { Loader } from "../../ui/Loader";
 import { MaterialLedger } from "./MaterialLedger";
 import { StageActions } from "./shared";
 import { useStageEntryBuilder } from "../../../hooks/useStageEntryBuilder";
-import { QtyBox, Section } from "./chainShared";
+import { DirectionPanel, QtyBox, Section } from "./chainShared";
 import type { StageFormProps } from "./types";
 
 /**
@@ -90,16 +90,24 @@ export function SupplierDcForm(props: StageFormProps) {
           Nothing to plan yet -  Raw Material Planning hasn't added any yarn counts or fabric.
         </p>
       ) : (
-        <MaterialLedger
-          orderId={order.id}
-          poId={assignment.po_id}
-          sectionId={assignment.section_id}
-          flows={flows}
-          categories={["yarn", "fabric"]}
-          canEditRequirements={false}
-          entryTypes={["dc"]}
-          onSaved={onForwarded}
-        />
+        // Blue: still a commitment -  ordered, not yet arrived.
+        <DirectionPanel
+          direction="out"
+          step={1}
+          title="Planned Quantity"
+          subtitle="What is being ordered against the required quantity. The store records what actually arrives."
+        >
+          <MaterialLedger
+            orderId={order.id}
+            poId={assignment.po_id}
+            sectionId={assignment.section_id}
+            flows={flows}
+            categories={["yarn", "fabric"]}
+            canEditRequirements={false}
+            entryTypes={["dc"]}
+            onSaved={onForwarded}
+          />
+        </DirectionPanel>
       )}
 
       <StageActions

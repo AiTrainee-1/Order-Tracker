@@ -15,7 +15,7 @@ import { formatDisplayDate } from "../../../lib/workflow";
 import { Button } from "../../ui/Button";
 import { Badge } from "../../ui/Badge";
 import { Checkbox, Input, Select, Textarea } from "../../ui/FormControls";
-import { Section, QtyBox } from "./chainShared";
+import { QtyBox } from "./chainShared";
 import type {
   MaterialCategory,
   MaterialEntry,
@@ -99,6 +99,35 @@ const CATEGORY_HINT: Record<MaterialCategory, string> = {
   fabric: "Fabric types and the kilos required of each.",
 };
 
+/**
+ * Yarn and fabric are two different materials with two different unit
+ * vocabularies, and they were previously separated only by a plain heading -
+ * so on a screen holding both, it was easy to add a yarn count under fabric.
+ *
+ * The accent is a RAIL and a chip rather than a frame, deliberately: these
+ * blocks sit inside a DirectionPanel whose frame colour already means
+ * something (blue = committing, green = received). Reusing those hues here
+ * would make a green "Fabric" block inside a green "Received" panel read as
+ * two different things at once. Indigo and teal are used nowhere else in the
+ * workflow's colour language, so material type stays unambiguous.
+ */
+const CATEGORY_SKIN: Record<MaterialCategory, { rail: string; band: string; chip: string; text: string; initial: string }> = {
+  yarn: {
+    rail: "border-l-indigo-500",
+    band: "bg-indigo-50/70",
+    chip: "bg-indigo-600",
+    text: "text-indigo-900",
+    initial: "Y",
+  },
+  fabric: {
+    rail: "border-l-teal-500",
+    band: "bg-teal-50/70",
+    chip: "bg-teal-600",
+    text: "text-teal-900",
+    initial: "F",
+  },
+};
+
 export function MaterialLedger({
   orderId,
   poId,
@@ -121,6 +150,10 @@ export function MaterialLedger({
           flows={flows.filter((f) => f.requirement.category === category)}
           canEditRequirements={canEditRequirements}
           entryTypes={entryTypes}
+          // Yarn is the bulk of the plan and stays open. Fabric is usually one
+          // or two lines yet took the same vertical space, pushing everything
+          // below it off the screen -  so it starts collapsed behind Show.
+          defaultOpen={category !== "fabric"}
           onSaved={onSaved}
         />
       ))}
@@ -136,6 +169,7 @@ function CategoryBlock({
   flows,
   canEditRequirements,
   entryTypes,
+  defaultOpen,
   onSaved,
 }: {
   category: MaterialCategory;
@@ -145,6 +179,7 @@ function CategoryBlock({
   flows: RequirementFlow[];
   canEditRequirements: boolean;
   entryTypes: MaterialEntryType[];
+  defaultOpen: boolean;
   onSaved: () => void;
 }) {
   const appUser = useEntryUser();
@@ -157,6 +192,7 @@ function CategoryBlock({
   const [newQty, setNewQty] = useState("");
   const [newReason, setNewReason] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [open, setOpen] = useState(defaultOpen);
 
   const totals = flows.reduce(
     (acc, f) => ({
@@ -218,8 +254,40 @@ function CategoryBlock({
     }
   }
 
+  const skin = CATEGORY_SKIN[category];
+
   return (
-    <Section title={CATEGORY_TITLE[category]} subtitle={CATEGORY_HINT[category]}>
+    <section className="overflow-hidden rounded-xl border border-ink-200 bg-white">
+      <div className={`flex items-start gap-2.5 border-l-4 px-3 py-2.5 ${skin.rail} ${skin.band}`}>
+        <span
+          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white shadow-sm ${skin.chip}`}
+          aria-hidden
+        >
+          {skin.initial}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className={`text-xs font-bold uppercase tracking-wide ${skin.text}`}>
+            {CATEGORY_TITLE[category]}
+          </p>
+          {/* Collapsed, the hint is wasted space -  what's useful is the figure
+              the section is hiding, so the block still says something shut. */}
+          {open ? (
+            <p className="text-[11px] leading-snug text-ink-600">{CATEGORY_HINT[category]}</p>
+          ) : (
+            <p className="text-[11px] leading-snug text-ink-600">
+              {flows.length === 0
+                ? `No ${category === "yarn" ? "yarn counts" : "fabric types"} added`
+                : `${flows.length} ${flows.length === 1 ? "type" : "types"} · ${totals.required.toLocaleString()} KG required`}
+            </p>
+          )}
+        </div>
+        <Button type="button" variant="secondary" size="sm" onClick={() => setOpen((v) => !v)}>
+          {open ? "Hide" : "Show"}
+        </Button>
+      </div>
+
+      {open && (
+      <div className="space-y-3 p-3">
       <div className={`grid grid-cols-2 gap-2 ${balance === null ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
         {columns.map((col) => (
           <QtyBox key={col.key} label={col.label} value={totals[col.key]} unit="KG" tone={col.tone} />
@@ -302,7 +370,9 @@ function CategoryBlock({
             + Add {category === "yarn" ? "Yarn Count" : "Fabric"}
           </Button>
         ))}
-    </Section>
+      </div>
+      )}
+    </section>
   );
 }
 

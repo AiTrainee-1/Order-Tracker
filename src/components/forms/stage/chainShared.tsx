@@ -1909,6 +1909,82 @@ function MiniStat({
   );
 }
 
+/**
+ * A colour-coded panel around one kind of entry.
+ *
+ * Every stage that captures more than one kind of figure used to render them as
+ * near-identical blocks separated only by a faint tint, which made it easy to
+ * type into the wrong one. One component owns the treatment so the colour means
+ * the same thing on every screen, front to back:
+ *
+ *   → blue    what we are committing or sending OUT  (required, planned, dispatched)
+ *   ← green   what actually came IN                  (received, returned)
+ *   • slate   a checkpoint that moves no quantity    (confirmation, approval)
+ *
+ * Purely presentational -  it wraps children and changes nothing about what
+ * they record.
+ */
+export function DirectionPanel({
+  direction,
+  step,
+  title,
+  subtitle,
+  children,
+}: {
+  direction: "out" | "in" | "neutral";
+  /** Shown as "Step N · Title" where the stage is a real sequence. */
+  step?: number;
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+}) {
+  const skin =
+    direction === "out"
+      ? {
+          frame: "border-sky-400 bg-sky-50/40",
+          band: "bg-sky-100/80",
+          chip: "bg-sky-600",
+          text: "text-sky-900",
+          arrow: "→",
+        }
+      : direction === "in"
+        ? {
+            frame: "border-emerald-500 bg-emerald-50/40",
+            band: "bg-emerald-100/80",
+            chip: "bg-emerald-600",
+            text: "text-emerald-900",
+            arrow: "←",
+          }
+        : {
+            frame: "border-ink-300 bg-ink-50/60",
+            band: "bg-ink-100/80",
+            chip: "bg-ink-600",
+            text: "text-ink-800",
+            arrow: "✓",
+          };
+
+  return (
+    <div className={`overflow-hidden rounded-2xl border-2 ${skin.frame}`}>
+      <div className={`flex flex-wrap items-center gap-2.5 px-3 py-2.5 ${skin.band}`}>
+        <span
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-base font-bold text-white shadow-sm ${skin.chip}`}
+          aria-hidden
+        >
+          {skin.arrow}
+        </span>
+        <div className="min-w-0">
+          <p className={`text-sm font-bold uppercase tracking-wide ${skin.text}`}>
+            {step != null ? `Step ${step} · ` : ""}
+            {title}
+          </p>
+          <p className="text-[11px] leading-snug text-ink-600">{subtitle}</p>
+        </div>
+      </div>
+      <div className="p-3">{children}</div>
+    </div>
+  );
+}
+
 export function Section({
   title,
   subtitle,

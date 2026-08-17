@@ -9,6 +9,7 @@ import { StageActions } from "./shared";
 import { useStageEntryBuilder } from "../../../hooks/useStageEntryBuilder";
 import {
   ChainStrip,
+  DirectionPanel,
   LotSummaryTable,
   Section,
   SizeSummaryTable,
@@ -173,11 +174,12 @@ export function LotProcessForm(props: StageFormProps) {
  *
  * Sending writes to qty_in (this is genuinely what the stage "received in and
  * sent onward" -  the chain's normal recordedIn), Receiving writes to qty_out
- * (what's actually available to the next stage). Keeping them on separate
- * columns, rather than both writing qty_out the way Embroidery's two ledgers
- * do, is what lets the chain's ordinary carry-over and mismatch banner work
- * correctly here -  the next stage inherits Receiving's total, not
- * Sending-plus-Receiving combined.
+ * (what's actually available to the next stage). Keeping them on SEPARATE
+ * columns is what lets the chain's ordinary carry-over and mismatch banner work
+ * here: the next stage inherits Receiving's total, not Sending-plus-Receiving
+ * combined. Embroidery once had both directions on qty_out and consequently
+ * reported a round trip as two productions -  200 sent plus the same 200 back
+ * read as 400. Every round-trip stage now follows this split.
  *
  * Only Knitting's Sending ledger may raise a brand new lot (migration 018
  * enforces this server-side too) -  Dyeing and Compacting always pick from the
@@ -257,7 +259,7 @@ export function LotSendReceiveForm(props: StageFormProps) {
         </>
       )}
 
-      <DirectionPanel direction="send" step={1} subtitle={copy.sendingHeading}>
+      <DirectionPanel direction="out" step={1} title="Sending Out" subtitle={copy.sendingHeading}>
         <StageLedger
           ref={sendLedger}
           orderId={order.id}
@@ -289,7 +291,7 @@ export function LotSendReceiveForm(props: StageFormProps) {
         />
       </DirectionPanel>
 
-      <DirectionPanel direction="receive" step={2} subtitle={copy.receivingHeading}>
+      <DirectionPanel direction="in" step={2} title="Receiving Back" subtitle={copy.receivingHeading}>
         <StageLedger
           ref={receiveLedger}
           orderId={order.id}
@@ -326,66 +328,6 @@ export function LotSendReceiveForm(props: StageFormProps) {
         onMoveForward={() => forward(false)}
         onComplete={() => forward(true)}
       />
-    </div>
-  );
-}
-
-/**
- * The two halves of a round-trip stage, visually separated.
- *
- * Sending and Receiving are the same ledger component with opposite meanings,
- * so on screen they were near-identical blocks distinguished only by a faint
- * tint -  easy to type into the wrong one. This gives each direction a solid
- * 2px outline, a filled header band, a direction arrow and a step number, and
- * it is shared by every round-trip stage (Knitting, Dyeing, Compacting,
- * Embroidery) so the colour always means the same thing.
- *
- *   → blue   material LEAVING us
- *   ← green  material COMING BACK
- */
-function DirectionPanel({
-  direction,
-  step,
-  subtitle,
-  children,
-}: {
-  direction: "send" | "receive";
-  step: number;
-  subtitle: string;
-  children: React.ReactNode;
-}) {
-  const isSend = direction === "send";
-  return (
-    <div
-      className={`overflow-hidden rounded-2xl border-2 ${
-        isSend ? "border-sky-400 bg-sky-50/40" : "border-emerald-500 bg-emerald-50/40"
-      }`}
-    >
-      <div
-        className={`flex flex-wrap items-center gap-2.5 px-3 py-2.5 ${
-          isSend ? "bg-sky-100/80" : "bg-emerald-100/80"
-        }`}
-      >
-        <span
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-base font-bold text-white shadow-sm ${
-            isSend ? "bg-sky-600" : "bg-emerald-600"
-          }`}
-          aria-hidden
-        >
-          {isSend ? "→" : "←"}
-        </span>
-        <div className="min-w-0">
-          <p
-            className={`text-sm font-bold uppercase tracking-wide ${
-              isSend ? "text-sky-900" : "text-emerald-900"
-            }`}
-          >
-            Step {step} · {isSend ? "Sending Out" : "Receiving Back"}
-          </p>
-          <p className="text-[11px] leading-snug text-ink-600">{subtitle}</p>
-        </div>
-      </div>
-      <div className="p-3">{children}</div>
     </div>
   );
 }
@@ -694,7 +636,7 @@ export function EmbroideryForm(props: StageFormProps) {
         </>
       )}
 
-      <DirectionPanel direction="send" step={1} subtitle="Panels going out to the embroidery unit">
+      <DirectionPanel direction="out" step={1} title="Sending Out" subtitle="Panels going out to the embroidery unit">
         <StageLedger
           ref={sendLedger}
           orderId={order.id}
@@ -731,7 +673,7 @@ export function EmbroideryForm(props: StageFormProps) {
         />
       </DirectionPanel>
 
-      <DirectionPanel direction="receive" step={2} subtitle="Embroidered panels coming back in-house">
+      <DirectionPanel direction="in" step={2} title="Receiving Back" subtitle="Embroidered panels coming back in-house">
         <StageLedger
           ref={returnLedger}
           orderId={order.id}

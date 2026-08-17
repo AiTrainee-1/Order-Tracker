@@ -15,7 +15,33 @@ import { Modal } from "../../components/ui/Modal";
 import { StagePreviewSandbox } from "../../components/forms/stage/StagePreviewSandbox";
 import { useToast } from "../../context/ToastContext";
 import { BUTTON_GUIDE, UNIVERSAL_RULES, guideFor } from "../../lib/stageGuide";
+import { PHASES, phaseOf } from "../../lib/stagePhases";
 import type { AppUser, StageAssignment, WorkflowStage } from "../../lib/types";
+
+function CoverageStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "good" | "bad" | "brand" | "neutral";
+}) {
+  const color =
+    tone === "good"
+      ? "text-status-good"
+      : tone === "bad"
+        ? "text-status-bad"
+        : tone === "brand"
+          ? "text-brand"
+          : "text-ink-900";
+  return (
+    <div className="rounded-xl border border-white/70 bg-white/80 px-3 py-2.5 shadow-[0_8px_20px_-14px_rgba(30,41,90,0.4)]">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-400">{label}</p>
+      <p className={`mt-0.5 text-xl font-bold tabular-nums ${color}`}>{value}</p>
+    </div>
+  );
+}
 
 export function StageRolesPage() {
   const { data: users, isLoading: usersLoading } = useUsers();
@@ -55,10 +81,47 @@ export function StageRolesPage() {
         </p>
       </div>
 
-      {/* What assigning someone actually commits them to. Stated up front so an
-          admin isn't guessing what a name in a box means. */}
-      <Card>
-        <CardBody className="flex flex-wrap items-start gap-x-6 gap-y-3 text-xs text-ink-600">
+      {/* Coverage first. With 18 stages the question is never "what does this
+          page do", it's "which stages has nobody got" -  so that reads as a
+          number before any of the explanatory text. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <CoverageStat label="Stages covered" value={`${sortedStages.length - uncovered.length}/${sortedStages.length}`} tone="good" />
+        <CoverageStat
+          label="Nobody assigned"
+          value={String(uncovered.length)}
+          tone={uncovered.length > 0 ? "bad" : "good"}
+        />
+        <CoverageStat label="Roles set" value={String(assignments?.length ?? 0)} tone="brand" />
+        <CoverageStat label="Users available" value={String((users ?? []).length)} tone="neutral" />
+      </div>
+
+      {uncovered.length > 0 && (
+        <div className="rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-amber-800">
+            {uncovered.length} stage{uncovered.length === 1 ? "" : "s"} with nobody assigned
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-amber-900">
+            Orders will still flow through {uncovered.length === 1 ? "it" : "them"}, but nobody will
+            see the work on their list. Marked in amber below.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {uncovered.map((s) => (
+              <span
+                key={s.id}
+                className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-300"
+              >
+                {s.sequence_no}. {s.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <details className="rounded-xl border border-ink-200 bg-white">
+        <summary className="cursor-pointer px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-ink-600">
+          What assigning someone actually commits them to
+        </summary>
+        <div className="flex flex-wrap items-start gap-x-6 gap-y-3 border-t border-ink-100 px-4 py-3 text-xs text-ink-600">
           <div className="min-w-[14rem] flex-1">
             <p className="mb-1 font-bold text-ink-800">What you're handing them</p>
             <p className="leading-relaxed">
@@ -82,35 +145,55 @@ export function StageRolesPage() {
               between a yarn planner, a fabric planner and a supervisor.
             </p>
           </div>
-        </CardBody>
-      </Card>
+        </div>
+      </details>
 
-      {uncovered.length > 0 && (
-        <p className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-800">
-          {uncovered.length} stage{uncovered.length === 1 ? " has" : "s have"} nobody assigned:{" "}
-          {uncovered.map((s) => s.label).join(", ")}. Orders will still flow through {uncovered.length === 1 ? "it" : "them"}, but nobody
-          will see the work on their list.
-        </p>
-      )}
+      {/* Grouped by production phase rather than one flat list of eighteen.
+          The phase rail tells you where in the line you are without reading
+          the stage names, which is what made the flat list hard to navigate. */}
+      {PHASES.map((phase) => {
+        const phaseStages = sortedStages.filter((s) => phaseOf(s.key) === phase.key);
+        if (phaseStages.length === 0) return null;
+        const phaseUncovered = phaseStages.filter((s) => (bySection.get(s.id) ?? []).length === 0).length;
 
-      <Card>
-        <CardHeader
-          title="Default Stage Assignments"
-          subtitle={`${assignments?.length ?? 0} role${(assignments?.length ?? 0) === 1 ? "" : "s"} set across ${sortedStages.length} stages`}
-        />
-        <CardBody className="space-y-3">
-          {sortedStages.map((stage) => (
-            <StageRoleRow
-              key={stage.id}
-              stage={stage}
-              assigned={bySection.get(stage.id) ?? []}
-              users={users ?? []}
-              usersById={usersById}
-              onPreview={() => setPreviewStage(stage)}
-            />
-          ))}
-        </CardBody>
-      </Card>
+        return (
+          <section key={phase.key} className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
+            <div className={`flex flex-wrap items-center gap-2.5 border-l-4 px-4 py-3 ${phase.rail} ${phase.band}`}>
+              <span
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white shadow-sm ${phase.chip}`}
+                aria-hidden
+              >
+                {phase.initial}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className={`text-sm font-bold uppercase tracking-wide ${phase.text}`}>{phase.label}</p>
+                <p className="text-[11px] leading-snug text-ink-600">{phase.hint}</p>
+              </div>
+              <span className="text-[11px] font-medium text-ink-600">
+                {phaseStages.length} stage{phaseStages.length === 1 ? "" : "s"}
+                {phaseUncovered > 0 && (
+                  <span className="ml-1.5 rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-800">
+                    {phaseUncovered} uncovered
+                  </span>
+                )}
+              </span>
+            </div>
+
+            <div className="space-y-3 p-3">
+              {phaseStages.map((stage) => (
+                <StageRoleRow
+                  key={stage.id}
+                  stage={stage}
+                  assigned={bySection.get(stage.id) ?? []}
+                  users={users ?? []}
+                  usersById={usersById}
+                  onPreview={() => setPreviewStage(stage)}
+                />
+              ))}
+            </div>
+          </section>
+        );
+      })}
 
       <OrderCreatorAccessCard users={users ?? []} />
 
@@ -263,14 +346,25 @@ function StageRoleRow({
     }
   }
 
+  const uncovered = assigned.length === 0;
+
   return (
-    <div className="rounded-xl border border-ink-100 p-3">
+    <div
+      className={`rounded-xl border p-3 ${
+        uncovered ? "border-amber-300 bg-amber-50/40" : "border-ink-100 bg-white"
+      }`}
+    >
       <div className="mb-1.5 flex flex-wrap items-center gap-2">
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-bold text-ink-600">
+        <span
+          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+            uncovered ? "bg-amber-500 text-white" : "bg-ink-100 text-ink-600"
+          }`}
+        >
           {stage.sequence_no}
         </span>
         <p className="text-sm font-semibold text-ink-900">{stage.label}</p>
         <Badge tone="neutral">{stage.unit_type}</Badge>
+        {uncovered && <Badge tone="warn">Nobody assigned</Badge>}
         <Button variant="ghost" size="sm" onClick={onPreview} className="ml-auto text-brand">
           Preview
         </Button>
@@ -297,8 +391,10 @@ function StageRoleRow({
         </div>
       )}
 
-      {assigned.length === 0 ? (
-        <p className="mb-2 pl-8 text-xs text-ink-400">No default user yet -  this stage isn't covered.</p>
+      {uncovered ? (
+        <p className="mb-2 pl-8 text-xs font-medium text-amber-800">
+          No default user yet -  work at this stage won't appear on anyone's list.
+        </p>
       ) : (
         <div className="mb-2 flex flex-wrap gap-2 pl-8">
           {assigned.map((a) => {

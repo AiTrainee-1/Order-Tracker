@@ -4,6 +4,7 @@ import { Loader } from "../../ui/Loader";
 import { MaterialLedger } from "./MaterialLedger";
 import { StageActions } from "./shared";
 import { useStageEntryBuilder } from "../../../hooks/useStageEntryBuilder";
+import { DirectionPanel } from "./chainShared";
 import type { StageFormProps } from "./types";
 
 /**
@@ -66,16 +67,24 @@ export function MaterialPlanningForm(props: StageFormProps) {
         </p>
       )}
 
-      <MaterialLedger
-        orderId={order.id}
-        poId={assignment.po_id}
-        sectionId={assignment.section_id}
-        flows={flows}
-        categories={["yarn", "fabric"]}
-        canEditRequirements
-        entryTypes={[]}
-        onSaved={onForwarded}
-      />
+      {/* Blue: a commitment we're making, not a quantity that has arrived. */}
+      <DirectionPanel
+        direction="out"
+        step={1}
+        title="Required Plan"
+        subtitle="What this order needs. Purchasing and receiving happen on the next two screens."
+      >
+        <MaterialLedger
+          orderId={order.id}
+          poId={assignment.po_id}
+          sectionId={assignment.section_id}
+          flows={flows}
+          categories={["yarn", "fabric"]}
+          canEditRequirements
+          entryTypes={[]}
+          onSaved={onForwarded}
+        />
+      </DirectionPanel>
 
       <StageActions
         sectionLabel={assignment.section?.label ?? "Raw Material Planning"}
