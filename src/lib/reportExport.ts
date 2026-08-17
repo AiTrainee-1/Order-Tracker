@@ -93,19 +93,21 @@ function buildTables(ctx: ReportContext): ReportTable[] {
   });
 
   // --- Material / procurement ----------------------------------------------
+  // Required → Planned → Received → Balance, matching what the Inward screen
+  // and the dashboard show. The old columns split "Received" from "Inward",
+  // which are the same physical event -  the Received column read a legacy
+  // entry type nothing writes, so it always exported as zero.
   tables.push({
     name: "Raw Material",
-    head: ["Material", "Type", "Required KG", "Planned KG", "DC KG", "Received KG", "Inward KG", "Balance KG", "Status"],
+    head: ["Material", "Type", "Required KG", "Planned KG", "Received KG", "Balance KG", "Status"],
     rows: chain.requirementFlows.map((f) => [
       f.requirement.name,
       f.requirement.category,
       f.totals.required,
-      f.totals.planned,
-      f.totals.dc,
-      f.totals.received,
-      f.totals.inward,
-      Math.max(f.balance, 0),
-      f.requirement.is_completed ? "Complete" : "Pending",
+      f.plannedQty,
+      f.receivedQty,
+      f.balance,
+      f.balance === 0 && f.receivedQty > 0 ? "Full" : f.receivedQty > 0 ? "Partial" : "Pending",
     ]),
   });
 

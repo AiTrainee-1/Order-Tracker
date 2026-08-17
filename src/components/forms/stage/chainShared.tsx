@@ -239,16 +239,24 @@ function sumBy<T>(rows: T[], pick: (row: T) => number): number {
 // Lot picker
 // ---------------------------------------------------------------------------
 
-/** Selects an existing lot, or raises a new one inline. Lots are created where
- * the fabric physically becomes a batch (Knitting/Dyeing), but every later
- * stage can register one it was handed without leaving its own screen. */
+/**
+ * Selects a lot from the register, and -  only where explicitly allowed -
+ * raises a new one inline.
+ *
+ * A lot is created exactly once, at Knitting, where the fabric physically
+ * becomes a batch; every stage after it selects from that register so the
+ * whole line traces the same number. `allowCreate` therefore defaults to
+ * false: creation is opted into in one place rather than switched off in
+ * fifteen. Migration 018 enforces the same rule at the database level, so a
+ * picker that somehow offered creation still could not write the row.
+ */
 export function LotSelect({
   lots,
   value,
   onChange,
   orderId,
   poId,
-  allowCreate = true,
+  allowCreate = false,
   label = "Lot",
 }: {
   lots: ProductionLot[];
@@ -315,19 +323,26 @@ export function LotSelect({
   }
 
   return (
-    <div className="flex items-end gap-2">
-      <Select label={label} value={value} onChange={(e) => onChange(e.target.value)} className="min-w-[9rem]">
-        <option value="">-  Select lot - </option>
-        {lots.map((l) => (
-          <option key={l.id} value={l.id}>
-            {l.lot_no}
-          </option>
-        ))}
-      </Select>
-      {allowCreate && (
-        <Button type="button" variant="secondary" size="sm" onClick={() => setAdding(true)} className="mb-0.5">
-          + New Lot
-        </Button>
+    <div className="space-y-1">
+      <div className="flex items-end gap-2">
+        <Select label={label} value={value} onChange={(e) => onChange(e.target.value)} className="min-w-[9rem]">
+          <option value="">-  Select lot - </option>
+          {lots.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.lot_no}
+            </option>
+          ))}
+        </Select>
+        {allowCreate && (
+          <Button type="button" variant="secondary" size="sm" onClick={() => setAdding(true)} className="mb-0.5">
+            + New Lot
+          </Button>
+        )}
+      </div>
+      {!allowCreate && lots.length === 0 && (
+        <p className="text-[11px] text-amber-700">
+          No lots on this order yet. Lots are created at Knitting -  once Knitting raises one, it appears here.
+        </p>
       )}
     </div>
   );
@@ -361,11 +376,17 @@ export interface LedgerConfig {
    * size dropdown per draft row. Used by Cutting, where every size of a lot is
    * entered together. */
   sizeGrid?: boolean;
-  /** Whether this ledger's lot picker may raise a brand new lot. Lots are only
-   * ever created at Knitting (see migration 018) -  every other stage, including
-   * Knitting's own Receiving ledger, only selects from the existing register.
-   * Defaults to true so ledgers that don't touch this (most of them, since a
-   * lot already exists long before they run) keep their previous behaviour. */
+  /**
+   * Whether this ledger's lot picker may raise a brand new lot.
+   *
+   * Defaults to FALSE -  deny by default. Lots originate at Knitting and
+   * nowhere else (migration 018 enforces the same rule server-side), so every
+   * other stage, including Knitting's own Receiving ledger, can only select
+   * from the register Knitting created. The default is deliberately the
+   * restrictive one: a stage added later that forgets to think about lots
+   * inherits the safe behaviour rather than silently gaining the ability to
+   * fork the lot register.
+   */
   allowCreateLot?: boolean;
 }
 
@@ -942,7 +963,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
               onChange={setGridLotId}
               orderId={orderId}
               poId={poId}
-              allowCreate={config.allowCreateLot ?? true}
+              allowCreate={config.allowCreateLot ?? false}
             />
             <div className="overflow-x-auto rounded-lg border border-ink-100 bg-white">
               <table className="w-full text-sm">
@@ -1027,7 +1048,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                         onChange={(v) => patchDraft(d.key, { lotId: v })}
                         orderId={orderId}
                         poId={poId}
-                        allowCreate={config.allowCreateLot ?? true}
+                        allowCreate={config.allowCreateLot ?? false}
                       />
                     </div>
                   )}

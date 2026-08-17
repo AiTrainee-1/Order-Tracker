@@ -100,8 +100,23 @@ export interface RequirementFlow {
   requirement: MaterialRequirement;
   entries: MaterialEntry[];
   totals: MaterialTotals;
-  /** required − received. Positive = still owed. */
+  /** What Purchase Order to Suppliers raised against the requirement. */
+  plannedQty: number;
+  /**
+   * What was actually RECEIVED into store.
+   *
+   * "Inward" and "Received" are the same physical event in the current flow,
+   * recorded as entry_type 'inward'; 'receipt' is a legacy type from the older
+   * four-step procurement chain that nothing writes any more. Both are folded
+   * in here so a screen asking "how much came in?" gets the true figure rather
+   * than reading one bucket and finding it empty -  which is exactly what made
+   * the dashboard show Received as blank while Inward had data.
+   */
+  receivedQty: number;
+  /** Planned − received. Positive = still owed by the supplier. */
   balance: number;
+  /** Required − planned. Positive = still to be purchased. */
+  toPurchase: number;
 }
 
 export function buildRequirementFlow(
@@ -115,7 +130,18 @@ export function buildRequirementFlow(
   const totals: MaterialTotals = { ...ZERO_TOTALS, required: requirement.required_qty };
   for (const e of entries) totals[ENTRY_FIELD[e.entry_type]] += Number(e.qty) || 0;
 
-  return { requirement, entries, totals, balance: totals.required - totals.received };
+  const plannedQty = totals.dc;
+  const receivedQty = totals.inward + totals.received;
+
+  return {
+    requirement,
+    entries,
+    totals,
+    plannedQty,
+    receivedQty,
+    balance: Math.max(plannedQty - receivedQty, 0),
+    toPurchase: Math.max(totals.required - plannedQty, 0),
+  };
 }
 
 function sumMaterialTotals(flows: RequirementFlow[]): MaterialTotals {
@@ -301,10 +327,13 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
         base.recordedIn = totals.dc;
         base.output = totals.dc;
       } else {
-        // Inward Confirmation -  what the store actually took in against the
-        // purchase quantity.
-        base.recordedIn = totals.inward;
-        base.output = totals.inward;
+        // Received into store -  what physically arrived against the purchase
+        // quantity, and what Knitting therefore has to draw from. Legacy
+        // 'receipt' rows fold in alongside 'inward' for the same reason
+        // RequirementFlow.receivedQty does: they are the same event.
+        const receivedIn = totals.inward + totals.received;
+        base.recordedIn = receivedIn;
+        base.output = receivedIn;
       }
       base.lastEntryDate = latestDate(materialEntries.map((e) => e.entry_date), base.lastEntryDate);
     }

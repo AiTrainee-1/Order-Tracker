@@ -75,6 +75,7 @@ export function WorkflowMapStagePage() {
         />
         <CardBody>
           <StageDetailPanel
+            orderId={orderId}
             stage={selectedStage}
             chainStage={selectedChainStage}
             chain={chain}

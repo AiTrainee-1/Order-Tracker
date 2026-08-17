@@ -32,6 +32,9 @@ export function OrderDetailPage() {
     useOrderDetail(orderId);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [historyPage, setHistoryPage] = useState(1);
+  // Collapsed by default -  it's a full cross-section log and pushes everything
+  // above it off the screen on a long order.
+  const [showHistory, setShowHistory] = useState(false);
   const [poScope, setPoScope] = useState<string>(ALL_POS);
   const assignmentsQuery = useOrderAssignments(order?.id);
 
@@ -264,6 +267,7 @@ export function OrderDetailPage() {
           />
           <CardBody className="space-y-5">
             <StageDetailPanel
+              orderId={orderId}
               stage={selectedStage}
               chainStage={selectedChainStage}
               chain={chain}
@@ -285,57 +289,69 @@ export function OrderDetailPage() {
           }`}
         />
         <CardBody className="space-y-3">
-          <Table
-            keyFor={(e) => e.id}
-            rows={historyRows}
-            emptyMessage="No production activity logged for this order yet."
-            columns={[
-              { header: "Date", render: (e) => formatDisplayDate(e.entry_date) },
-              {
-                header: "Workflow Section",
-                render: (e) => (
-                  <span className="font-medium text-ink-900">
-                    {sectionLabelById.get(e.section_id) ?? "- "}
-                  </span>
-                ),
-              },
-              { header: "By", render: (e) => nameOf(e.entered_by) },
-              { header: "Qty Fwd", render: (e) => e.qty_forwarded.toLocaleString() },
-              {
-                header: "Result",
-                render: (e) => (
-                  <Badge tone={e.is_completed ? "good" : "warn"}>
-                    {e.is_completed ? "Completed" : "Partial"}
-                  </Badge>
-                ),
-              },
-              { header: "Notes", render: (e) => e.notes || "- " },
-            ]}
-          />
+          {!showHistory ? (
+            <Button variant="secondary" size="sm" onClick={() => setShowHistory(true)}>
+              See Here
+            </Button>
+          ) : (
+            <>
+              <Table
+                keyFor={(e) => e.id}
+                rows={historyRows}
+                emptyMessage="No production activity logged for this order yet."
+                columns={[
+                  { header: "Date", render: (e) => formatDisplayDate(e.entry_date) },
+                  {
+                    header: "Workflow Section",
+                    render: (e) => (
+                      <span className="font-medium text-ink-900">
+                        {sectionLabelById.get(e.section_id) ?? "- "}
+                      </span>
+                    ),
+                  },
+                  { header: "By", render: (e) => nameOf(e.entered_by) },
+                  { header: "Qty Fwd", render: (e) => e.qty_forwarded.toLocaleString() },
+                  {
+                    header: "Result",
+                    render: (e) => (
+                      <Badge tone={e.is_completed ? "good" : "warn"}>
+                        {e.is_completed ? "Completed" : "Partial"}
+                      </Badge>
+                    ),
+                  },
+                  { header: "Notes", render: (e) => e.notes || "- " },
+                ]}
+              />
 
-          {historyTotalPages > 1 && (
-            <div className="flex items-center justify-between pt-1">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
-                disabled={historyCurrentPage <= 1}
-              >
-                ← Previous
+              {historyTotalPages > 1 && (
+                <div className="flex items-center justify-between pt-1">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                    disabled={historyCurrentPage <= 1}
+                  >
+                    ← Previous
+                  </Button>
+                  <span className="text-xs text-ink-500">
+                    Page {historyCurrentPage} of {historyTotalPages} · showing{" "}
+                    {historyRows.length} of {history.length}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setHistoryPage((p) => Math.min(historyTotalPages, p + 1))}
+                    disabled={historyCurrentPage >= historyTotalPages}
+                  >
+                    Next →
+                  </Button>
+                </div>
+              )}
+
+              <Button variant="ghost" size="sm" onClick={() => setShowHistory(false)}>
+                Hide
               </Button>
-              <span className="text-xs text-ink-500">
-                Page {historyCurrentPage} of {historyTotalPages} · showing{" "}
-                {historyRows.length} of {history.length}
-              </span>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setHistoryPage((p) => Math.min(historyTotalPages, p + 1))}
-                disabled={historyCurrentPage >= historyTotalPages}
-              >
-                Next →
-              </Button>
-            </div>
+            </>
           )}
         </CardBody>
       </Card>

@@ -7,7 +7,7 @@ import { brandGradient, iconGradient, sidebarBackground, spatialBackground, SHAD
 const navItems: { to: string; label: string; icon: string; tone: IconTone }[] = [
   { to: "/md/dashboard", label: "Dashboard", icon: "📊", tone: "sky" },
   { to: "/md/users", label: "Users", icon: "👥", tone: "emerald" },
-  { to: "/md/workflow-map", label: "Workflow Map", icon: "🗺️", tone: "violet" },
+  // { to: "/md/workflow-map", label: "Workflow Map", icon: "🗺️", tone: "violet" },
 ];
 
 /** MD's shell -  a near-verbatim copy of AdminLayout, deliberately: same look
