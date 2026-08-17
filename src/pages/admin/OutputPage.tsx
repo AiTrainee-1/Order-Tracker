@@ -5,7 +5,9 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
   Legend,
+  Line,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -48,12 +50,32 @@ const CHART_RED = "#F04438";
 const CHART_AMBER = "#F79009";
 const CHART_SLATE = "#CBD5E1";
 
+/** Axis ticks in the tens of thousands are unreadable at 11px -  28,943 becomes
+ * 28.9k and the axis stops fighting the bars for space. */
+function compactNumber(n: number): string {
+  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1)}k`;
+  return String(n);
+}
+
+/** Yield banding. A garment line losing 5% at one stage is a real problem, so
+ * the thresholds are deliberately tight rather than a generic red/amber/green
+ * spread across the whole 0-100 range. */
+function yieldColor(pct: number): string {
+  if (pct >= 98) return CHART_GREEN;
+  if (pct >= 95) return CHART_AMBER;
+  return CHART_RED;
+}
+
 export function OutputPage() {
   const { orderId } = useParams<{ orderId: string }>();
   const basePath = orderTrackingBasePath(useLocation().pathname);
   const { order, purchaseOrders, usersById, isLoading, isError } = useOrderDetail(orderId);
   const [poScope, setPoScope] = useState<string>(ALL_POS);
   const [downloading, setDownloading] = useState<string | null>(null);
+  /** Which half of the line the stage-flow chart is showing. KG and PCS cannot
+   * share a Y axis without hiding one of them -  see flowRowsFor. */
+  const [unitScope, setUnitScope] = useState<"KG" | "PCS">("PCS");
   const toast = useToast();
 
   const selectedPo = poScope === ALL_POS ? null : purchaseOrders.find((p) => p.id === poScope) ?? null;
@@ -94,17 +116,50 @@ export function OutputPage() {
     }
   }
 
-  const flowRows = summary.rows.map((r) => ({
-    name: r.label.replace(/ \(.*\)/, ""),
-    Input: r.input,
-    Output: r.output,
-    Shortage: r.shortage,
-    unit: r.unit,
-  }));
+  /**
+   * The stage flow, SPLIT BY UNIT.
+   *
+   * A single chart cannot honestly hold both: the fabric stages run in
+   * hundreds of KG while the garment stages run in tens of thousands of
+   * pieces, so on one linear axis every KG stage collapses to a flat line at
+   * zero. Two charts on their own scales is the only way both halves are
+   * actually readable.
+   */
+  const flowRowsFor = (unit: "KG" | "PCS") =>
+    summary.rows
+      .filter((r) => r.unit === unit)
+      .map((r) => ({
+        name: r.label.replace(/ \(.*\)/, ""),
+        Input: r.input,
+        Output: r.output,
+        Shortage: r.shortage,
+        Efficiency: r.efficiencyPct,
+        unit: r.unit,
+      }));
 
-  const shortageRows = summary.rows
-    .filter((r) => r.shortage > 0)
-    .map((r) => ({ name: r.label, shortage: r.shortage, unit: r.unit }));
+  const kgRows = flowRowsFor("KG");
+  const pcsRows = flowRowsFor("PCS");
+  const flowRows = unitScope === "KG" ? kgRows : pcsRows;
+
+  /** Worst yield first -  the stage to go and ask about. */
+  const efficiencyRows = summary.rows
+    .filter((r) => r.efficiencyPct != null && r.input > 0)
+    .map((r) => ({
+      name: r.label.replace(/ \(.*\)/, ""),
+      efficiency: r.efficiencyPct as number,
+      unit: r.unit,
+      lost: r.shortage + r.rejected,
+    }))
+    .sort((a, b) => a.efficiency - b.efficiency);
+
+  /** The pipeline narrowing, in pieces -  the headline "how far has it got". */
+  const sewnPcs = chain.byKey.get(STAGE.sewing)?.output ?? 0;
+  const funnelSteps = [
+    { label: "Ordered", value: summary.orderedPcs, color: CHART_BLUE },
+    { label: "Cut", value: summary.cutPcs, color: "#7C3AED" },
+    { label: "Sewn", value: sewnPcs, color: CHART_AMBER },
+    { label: "Packed", value: summary.packedPcs, color: CHART_GREEN },
+  ];
 
   const lotChartRows = lotJourneys
     .map((j) => ({
@@ -227,98 +282,181 @@ export function OutputPage() {
         </CardBody>
       </Card>
 
+      {/* ------------------------- Progress funnel ------------------------- */}
+      <Card>
+        <CardHeader
+          title="How far the order has got"
+          subtitle="Each step as a share of the ordered quantity, and what it dropped from the step before."
+        />
+        <CardBody className="space-y-2.5">
+          {funnelSteps.map((step, i) => {
+            const pct = summary.orderedPcs > 0 ? (step.value / summary.orderedPcs) * 100 : 0;
+            const prev = i > 0 ? funnelSteps[i - 1].value : null;
+            const drop = prev != null ? prev - step.value : null;
+            return (
+              <div key={step.label}>
+                <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2 text-xs">
+                  <span className="font-semibold text-ink-800">{step.label}</span>
+                  <span className="flex items-baseline gap-2">
+                    <span className="font-bold tabular-nums text-ink-900">
+                      {step.value.toLocaleString()} PCS
+                    </span>
+                    <span className="tabular-nums text-ink-400">{Math.round(pct)}%</span>
+                    {drop != null && drop > 0 && (
+                      <span className="tabular-nums text-status-bad">−{drop.toLocaleString()}</span>
+                    )}
+                  </span>
+                </div>
+                <div className="h-4 w-full overflow-hidden rounded-full bg-ink-100">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{ width: `${Math.max(pct, 0)}%`, backgroundColor: step.color }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </CardBody>
+      </Card>
+
       {/* ------------------------- Flow chart ------------------------- */}
       <Card>
         <CardHeader
           title="Input vs Output by stage"
-          subtitle="What each stage received against what it sent on. The gap is process loss and rejection."
+          subtitle="What each stage received against what it sent on, with its yield. Fabric and garment stages are shown separately -  kilograms and pieces can't share a scale."
+          action={
+            <FilterTabs
+              value={unitScope}
+              onChange={(v) => setUnitScope(v as "KG" | "PCS")}
+              tabs={[
+                { key: "PCS", label: `Garment (PCS)${pcsRows.length ? "" : " -  none"}` },
+                { key: "KG", label: `Fabric (KG)${kgRows.length ? "" : " -  none"}` },
+              ]}
+            />
+          }
         />
         <CardBody>
-          <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={flowRows} margin={{ top: 8, right: 8, left: 0, bottom: 60 }}>
-                <defs>
-                  <linearGradient id="gradInput" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={CHART_BLUE_LIGHT} />
-                    <stop offset="100%" stopColor={CHART_BLUE} />
-                  </linearGradient>
-                  <linearGradient id="gradOutput" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={CHART_GREEN_LIGHT} />
-                    <stop offset="100%" stopColor={CHART_GREEN} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#EAECF0" vertical={false} />
-                <XAxis
-                  dataKey="name"
-                  angle={-40}
-                  textAnchor="end"
-                  interval={0}
-                  height={80}
-                  tick={{ fontSize: 11, fill: "#667085" }}
-                />
-                <YAxis tick={{ fontSize: 11, fill: "#667085" }} />
-                <Tooltip
-                  formatter={(value: number, key: string, item) => [
-                    `${value.toLocaleString()} ${(item?.payload as { unit?: string })?.unit ?? ""}`,
-                    key,
-                  ]}
-                  contentStyle={{ borderRadius: 12, border: "1px solid #EAECF0", fontSize: 12 }}
-                />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="Input" fill="url(#gradInput)" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Output" fill="url(#gradOutput)" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {flowRows.length === 0 ? (
+            <p className="py-10 text-center text-sm text-ink-400">
+              Nothing recorded yet for the {unitScope === "KG" ? "fabric" : "garment"} stages.
+            </p>
+          ) : (
+            <div className="h-96 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={flowRows} margin={{ top: 8, right: 12, left: 0, bottom: 60 }}>
+                  <defs>
+                    <linearGradient id="gradInput" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={CHART_BLUE_LIGHT} />
+                      <stop offset="100%" stopColor={CHART_BLUE} />
+                    </linearGradient>
+                    <linearGradient id="gradOutput" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={CHART_GREEN_LIGHT} />
+                      <stop offset="100%" stopColor={CHART_GREEN} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#EAECF0" vertical={false} />
+                  <XAxis
+                    dataKey="name"
+                    angle={-40}
+                    textAnchor="end"
+                    interval={0}
+                    height={80}
+                    tick={{ fontSize: 11, fill: "#667085" }}
+                  />
+                  <YAxis
+                    yAxisId="qty"
+                    tick={{ fontSize: 11, fill: "#667085" }}
+                    tickFormatter={(v: number) => compactNumber(v)}
+                  />
+                  {/* Yield rides on its own 0-100 axis so a 97% line doesn't
+                      vanish against a 28,000-piece bar. */}
+                  <YAxis
+                    yAxisId="pct"
+                    orientation="right"
+                    domain={[0, 100]}
+                    unit="%"
+                    tick={{ fontSize: 11, fill: "#98A2B3" }}
+                  />
+                  <Tooltip
+                    formatter={(value: number, key: string, item) =>
+                      key === "Efficiency"
+                        ? [`${value}%`, "Yield"]
+                        : [`${value.toLocaleString()} ${(item?.payload as { unit?: string })?.unit ?? ""}`, key]
+                    }
+                    contentStyle={{ borderRadius: 12, border: "1px solid #EAECF0", fontSize: 12 }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar yAxisId="qty" dataKey="Input" fill="url(#gradInput)" radius={[4, 4, 0, 0]} maxBarSize={38} />
+                  <Bar yAxisId="qty" dataKey="Output" fill="url(#gradOutput)" radius={[4, 4, 0, 0]} maxBarSize={38} />
+                  <Line
+                    yAxisId="pct"
+                    type="monotone"
+                    dataKey="Efficiency"
+                    name="Yield %"
+                    stroke={CHART_AMBER}
+                    strokeWidth={2}
+                    dot={{ r: 3, fill: CHART_AMBER }}
+                    connectNulls
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </CardBody>
       </Card>
 
-      {/* ------------------------- Shortage ------------------------- */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Card>
-          <CardHeader title="Where quantity was lost" subtitle="Shortage by stage, largest first." />
-          <CardBody>
-            {shortageRows.length === 0 ? (
-              <p className="py-10 text-center text-sm text-ink-400">
-                No shortage recorded -  every stage passed on what it received.
-              </p>
-            ) : (
-              <div className="h-72 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={[...shortageRows].sort((a, b) => b.shortage - a.shortage)}
-                    layout="vertical"
-                    margin={{ top: 8, right: 16, left: 8, bottom: 8 }}
+      {/* ------------------------- Yield by stage ------------------------- */}
+      <Card>
+        <CardHeader
+          title="Yield by stage"
+          subtitle="Output as a share of input, worst first -  the stage to go and ask about."
+        />
+        <CardBody>
+          {efficiencyRows.length === 0 ? (
+            <p className="py-10 text-center text-sm text-ink-400">Nothing measurable yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {efficiencyRows.map((r) => (
+                <div key={r.name} className="flex items-center gap-3">
+                  <span className="w-40 shrink-0 truncate text-xs font-medium text-ink-700" title={r.name}>
+                    {r.name}
+                  </span>
+                  <div className="h-3.5 flex-1 overflow-hidden rounded-full bg-ink-100">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${Math.min(Math.max(r.efficiency, 0), 100)}%`,
+                        backgroundColor: yieldColor(r.efficiency),
+                      }}
+                    />
+                  </div>
+                  <span
+                    className="w-14 shrink-0 text-right text-xs font-bold tabular-nums"
+                    style={{ color: yieldColor(r.efficiency) }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#EAECF0" horizontal={false} />
-                    <XAxis type="number" tick={{ fontSize: 11, fill: "#667085" }} />
-                    <YAxis
-                      type="category"
-                      dataKey="name"
-                      width={130}
-                      tick={{ fontSize: 11, fill: "#667085" }}
-                    />
-                    <Tooltip
-                      formatter={(value: number, _k, item) => [
-                        `${value.toLocaleString()} ${(item?.payload as { unit?: string })?.unit ?? ""}`,
-                        "Shortage",
-                      ]}
-                      contentStyle={{ borderRadius: 12, border: "1px solid #EAECF0", fontSize: 12 }}
-                    />
-                    <Bar dataKey="shortage" radius={[0, 4, 4, 0]}>
-                      {shortageRows.map((r) => (
-                        <Cell key={r.name} fill={r.unit === "KG" ? CHART_AMBER : CHART_RED} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </CardBody>
-        </Card>
+                    {r.efficiency}%
+                  </span>
+                  <span className="w-28 shrink-0 text-right text-[11px] tabular-nums text-ink-400">
+                    {r.lost > 0 ? `−${r.lost.toLocaleString()} ${r.unit}` : "no loss"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardBody>
+      </Card>
 
+      {/* ------------------------- Size-wise ------------------------- */}
+      {/* The old "Where quantity was lost" bar chart lived here. It plotted KG
+          shortage beside PCS shortage on one axis -  the same flaw as the flow
+          chart -  and "Yield by stage" above now answers the same question
+          honestly, with the absolute loss per stage in its right column. */}
+      <div className="grid grid-cols-1 gap-6">
         <Card>
-          <CardHeader title="Size-wise output" subtitle="Ordered against packed, size by size." />
+          <CardHeader
+            title="Size-wise output"
+            subtitle="Ordered → cut → packed per size, with the outstanding balance behind it."
+          />
           <CardBody>
             <div className="h-72 w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -339,12 +477,16 @@ export function OutputPage() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#EAECF0" vertical={false} />
                   <XAxis dataKey="sizeCode" tick={{ fontSize: 11, fill: "#667085" }} />
-                  <YAxis tick={{ fontSize: 11, fill: "#667085" }} />
-                  <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #EAECF0", fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 11, fill: "#667085" }} tickFormatter={(v: number) => compactNumber(v)} />
+                  <Tooltip
+                    formatter={(value: number, key: string) => [`${value.toLocaleString()} PCS`, key]}
+                    contentStyle={{ borderRadius: 12, border: "1px solid #EAECF0", fontSize: 12 }}
+                  />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="ordered" name="Ordered" fill="url(#gradOrderedBar)" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="cut" name="Cut" fill="url(#gradCutBar)" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="packed" name="Packed" fill="url(#gradPackedBar)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="ordered" name="Ordered" fill="url(#gradOrderedBar)" radius={[4, 4, 0, 0]} maxBarSize={26} />
+                  <Bar dataKey="cut" name="Cut" fill="url(#gradCutBar)" radius={[4, 4, 0, 0]} maxBarSize={26} />
+                  <Bar dataKey="packed" name="Packed" fill="url(#gradPackedBar)" radius={[4, 4, 0, 0]} maxBarSize={26} />
+                  <Bar dataKey="balance" name="Outstanding" fill={CHART_SLATE} radius={[4, 4, 0, 0]} maxBarSize={26} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

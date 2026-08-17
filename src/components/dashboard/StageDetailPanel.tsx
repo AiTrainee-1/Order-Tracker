@@ -4,6 +4,7 @@ import { buildLotJourney, STAGE, type ChainStage, type ProductionChain } from ".
 import { lotStatus } from "../../components/forms/stage/chainForms";
 import { LotSummaryTable, SizeSummaryTable } from "../../components/forms/stage/chainShared";
 import { useAuditLog } from "../../hooks/useProductionChain";
+import { stageQtyLabels } from "../../lib/stageLabels";
 import { formatDisplayDate } from "../../lib/workflow";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -228,6 +229,7 @@ function SectionSummary({
   nameOf: (id: string) => string;
 }) {
   const unit = cs.unit;
+  const labels = stageQtyLabels(cs.stage.key);
   const { input, output, rejected, balance } = cs;
 
   // Scale against whichever is larger so an over-producing stage (output above
@@ -251,17 +253,17 @@ function SectionSummary({
   return (
     <div className="space-y-3 rounded-2xl border border-white/70 bg-white/70 p-4">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <SummaryTile label="Input Quantity" value={input} unit={unit} hint={inputHint(cs)} />
-        <SummaryTile label="Output Quantity" value={output} unit={unit} tone="good" hint="passed to next section" />
+        <SummaryTile label={labels.in} value={input} unit={unit} hint={inputHint(cs)} />
+        <SummaryTile label={labels.out} value={output} unit={unit} tone="good" hint="passed to next section" />
         <SummaryTile
-          label={closed ? "Shortage" : "Balance"}
+          label={closed ? "Shortage" : labels.balance}
           value={balance}
           unit={unit}
           tone={balance > 0 ? (closed ? "bad" : "warn") : "good"}
           hint={closed ? "never arrived" : "still owed here"}
         />
         <SummaryTile
-          label="Rejected"
+          label={labels.rejected}
           value={rejected}
           unit={unit}
           tone={rejected > 0 ? "bad" : "neutral"}
@@ -286,12 +288,14 @@ function SectionSummary({
         </div>
 
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-600">
-          <BarKey className="bg-status-good" label="Output" value={output} unit={unit} />
-          {rejected > 0 && <BarKey className="bg-status-rejected" label="Rejected" value={rejected} unit={unit} />}
+          <BarKey className="bg-status-good" label={labels.out} value={output} unit={unit} />
+          {rejected > 0 && (
+            <BarKey className="bg-status-rejected" label={labels.rejected} value={rejected} unit={unit} />
+          )}
           {balance > 0 && (
             <BarKey
               className="bg-status-warn"
-              label={closed ? "Shortage" : "Still owed"}
+              label={closed ? "Shortage" : labels.balance}
               value={balance}
               unit={unit}
             />
@@ -650,6 +654,7 @@ function buildActivityEvents(
 ): ActivityEvent[] {
   const events: ActivityEvent[] = [];
   const lotsById = new Map((chain?.lots ?? []).map((l) => [l.id, l.lot_no]));
+  const labels = stageQtyLabels(stage.stage.key);
 
   // --- Quantity entries (Knitting → Packing) --------------------------------
   for (const t of chainStage?.txns ?? []) {
@@ -663,10 +668,12 @@ function buildActivityEvents(
     if (t.doc_no) chips.push({ label: "Doc", value: t.doc_no });
 
     const metrics: ActivityMetric[] = [];
-    if (t.qty_in > 0) metrics.push({ label: "In", value: t.qty_in, unit: t.unit });
-    if (t.qty_out > 0) metrics.push({ label: "Out", value: t.qty_out, unit: t.unit, tone: "good" });
-    if (t.qty_rejected > 0) metrics.push({ label: "Rejected", value: t.qty_rejected, unit: t.unit, tone: "bad" });
-    if (t.qty_rework > 0) metrics.push({ label: "Rework", value: t.qty_rework, unit: t.unit, tone: "warn" });
+    if (t.qty_in > 0) metrics.push({ label: labels.in, value: t.qty_in, unit: t.unit });
+    if (t.qty_out > 0) metrics.push({ label: labels.out, value: t.qty_out, unit: t.unit, tone: "good" });
+    if (t.qty_rejected > 0)
+      metrics.push({ label: labels.rejected, value: t.qty_rejected, unit: t.unit, tone: "bad" });
+    if (t.qty_rework > 0)
+      metrics.push({ label: labels.rework || "Rework", value: t.qty_rework, unit: t.unit, tone: "warn" });
 
     events.push({
       id: `txn-${t.id}`,

@@ -11,8 +11,9 @@ import {
   diffFields,
   type NewTxn,
 } from "../../../hooks/useProductionChain";
-import type { ChainStage } from "../../../lib/chain";
+import type { ChainStage, LotFlow, LotSizeCell } from "../../../lib/chain";
 import { formatDisplayDate } from "../../../lib/workflow";
+import { stageQtyLabels } from "../../../lib/stageLabels";
 import { applyExtraPercent } from "../../../lib/sizes";
 import { getOrderProductionQty } from "../../../lib/orderQty";
 import { Button } from "../../ui/Button";
@@ -155,18 +156,23 @@ export function OrderQtyBanner({ order, assignment }: { order: Order; assignment
 // Lot-wise and size-wise roll-ups
 // ---------------------------------------------------------------------------
 
+/** Column headings come from the stage's own vocabulary -  a Knitting row
+ * reads Sent/Received, not In/Out. See lib/stageLabels.ts. */
 export function LotSummaryTable({ cs }: { cs: ChainStage }) {
+  const labels = stageQtyLabels(cs.stage.key);
   if (cs.byLot.length === 0) return null;
+  const showRework = !!labels.rework && cs.byLot.some((l) => l.qtyRework > 0);
   return (
     <div className="overflow-x-auto rounded-xl border border-ink-100">
       <table className="w-full min-w-[460px] text-sm">
         <thead>
           <tr className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500">
             <th className="px-3 py-2 text-left font-semibold">Lot</th>
-            <th className="px-3 py-2 text-right font-semibold">In</th>
-            <th className="px-3 py-2 text-right font-semibold">Out</th>
-            <th className="px-3 py-2 text-right font-semibold">Rejected</th>
-            <th className="px-3 py-2 text-right font-semibold">Balance</th>
+            <th className="px-3 py-2 text-right font-semibold">{labels.in}</th>
+            <th className="px-3 py-2 text-right font-semibold">{labels.out}</th>
+            <th className="px-3 py-2 text-right font-semibold">{labels.rejected}</th>
+            {showRework && <th className="px-3 py-2 text-right font-semibold">{labels.rework}</th>}
+            <th className="px-3 py-2 text-right font-semibold">{labels.balance}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-ink-100">
@@ -176,6 +182,9 @@ export function LotSummaryTable({ cs }: { cs: ChainStage }) {
               <td className="px-3 py-2 text-right tabular-nums">{l.qtyIn.toLocaleString()}</td>
               <td className="px-3 py-2 text-right tabular-nums text-status-good">{l.qtyOut.toLocaleString()}</td>
               <td className="px-3 py-2 text-right tabular-nums text-status-bad">{l.qtyRejected.toLocaleString()}</td>
+              {showRework && (
+                <td className="px-3 py-2 text-right tabular-nums text-amber-600">{l.qtyRework.toLocaleString()}</td>
+              )}
               <td className={`px-3 py-2 text-right font-semibold tabular-nums ${l.balance > 0 ? "text-amber-600" : "text-status-good"}`}>
                 {l.balance.toLocaleString()}
               </td>
@@ -188,6 +197,7 @@ export function LotSummaryTable({ cs }: { cs: ChainStage }) {
 }
 
 export function SizeSummaryTable({ cs }: { cs: ChainStage }) {
+  const labels = stageQtyLabels(cs.stage.key);
   if (cs.bySize.length === 0) return null;
   return (
     <div className="overflow-x-auto rounded-xl border border-ink-100">
@@ -196,10 +206,10 @@ export function SizeSummaryTable({ cs }: { cs: ChainStage }) {
           <tr className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500">
             <th className="px-3 py-2 text-left font-semibold">Size</th>
             <th className="px-3 py-2 text-right font-semibold">PO Qty</th>
-            <th className="px-3 py-2 text-right font-semibold">In</th>
-            <th className="px-3 py-2 text-right font-semibold">Done</th>
-            <th className="px-3 py-2 text-right font-semibold">Rejected</th>
-            <th className="px-3 py-2 text-right font-semibold">Balance</th>
+            <th className="px-3 py-2 text-right font-semibold">{labels.in}</th>
+            <th className="px-3 py-2 text-right font-semibold">{labels.out}</th>
+            <th className="px-3 py-2 text-right font-semibold">{labels.rejected}</th>
+            <th className="px-3 py-2 text-right font-semibold">{labels.balance}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-ink-100">
@@ -373,9 +383,33 @@ export interface LedgerConfig {
    * total, without either seeing the other's rows. */
   filterByTxnType?: boolean;
   /** Render size entry as one row per size against a chosen lot, instead of a
-   * size dropdown per draft row. Used by Cutting, where every size of a lot is
-   * entered together. */
+   * size dropdown per draft row. Used by Cutting and every stage after it,
+   * where a lot's sizes are always entered together and re-picking a size per
+   * row is just friction. */
   sizeGrid?: boolean;
+  /**
+   * This stage ORIGINATES the size axis (Cutting). It measures against the
+   * PO's ordered quantity and has nothing upstream to carry forward from;
+   * every later grid stage measures against Cutting's output instead.
+   */
+  sizeGridOrigin?: boolean;
+  /**
+   * Show each lot's carried-forward available quantity beside the picker, and
+   * refuse to send more of it than the previous stage handed over.
+   *
+   * Set on the Sending ledger of a round-trip stage. Not on Receiving: what
+   * comes back is measured against what went out (the "with vendor" figure
+   * already on screen), and a receipt is a fact to record rather than a
+   * quantity to ration.
+   */
+  lotAvailable?: boolean;
+  /**
+   * Same idea one axis finer, for a stage that records size-wise in draft rows
+   * rather than a grid (Embroidery's dispatch): once lot AND size are chosen,
+   * show what that exact cell has available from the previous section, and cap
+   * the entry at it.
+   */
+  lotSizeAvailable?: boolean;
   /**
    * Whether this ledger's lot picker may raise a brand new lot.
    *
@@ -388,6 +422,53 @@ export interface LedgerConfig {
    * fork the lot register.
    */
   allowCreateLot?: boolean;
+}
+
+/** One editable size row in the grid. Only the columns the stage's config
+ * turns on are ever rendered or read. */
+export interface GridCell {
+  qtyIn: string;
+  qtyOut: string;
+  rejected: string;
+  rework: string;
+}
+
+const BLANK_CELL: GridCell = { qtyIn: "", qtyOut: "", rejected: "", rework: "" };
+
+/**
+ * A size row's read-only context.
+ *
+ * Deliberately reduced to one target and one done figure. The previous shape
+ * carried both a pre-netted "available" AND a separate done figure, and the
+ * balance calculation subtracted the done amount from a number that already
+ * excluded it -  which is why a fully-cut size showed −102 instead of 0.
+ */
+interface GridRow {
+  sizeCode: string;
+  /** The ceiling for this size: the PO's production quantity at Cutting, or
+   * whatever the previous section passed on after that. */
+  target: number;
+  /** Cutting's output for this (lot, size) -  the fixed reference downstream.
+   * Equals target at Cutting itself. */
+  cutQty: number;
+  /** Already recorded against the target: output plus rejected, since both
+   * consume the allowance. Rework does not -  it is still owed here. */
+  done: number;
+  /** Held back for repair. Shown separately; not counted as consumed. */
+  rework: number;
+  /** max(target − done, 0). What may still be entered. */
+  remaining: number;
+  /**
+   * max(done − target, 0). Recorded beyond what this size was given.
+   *
+   * Tracked explicitly because flooring the remainder at zero HIDES it: a size
+   * with 408 available and 814 recorded reported "Remaining 0 · Complete",
+   * which reads as healthy when it is the opposite. Over-recording is almost
+   * always a batch entered twice, and it has to be visible to be corrected.
+   */
+  over: number;
+  /** Target met exactly -  nothing left to enter, nothing in excess. */
+  isComplete: boolean;
 }
 
 export interface DraftRow {
@@ -428,6 +509,19 @@ function blankDraft(overrides: Partial<DraftRow> = {}): DraftRow {
 
 function draftHasValue(d: DraftRow): boolean {
   return [d.qtyIn, d.qtyOut, d.rejected, d.rework].some((v) => Number(v) > 0);
+}
+
+function cellHasValue(c: GridCell | undefined): boolean {
+  if (!c) return false;
+  return [c.qtyIn, c.qtyOut, c.rejected, c.rework].some((v) => Number(v) > 0);
+}
+
+/** Keeps the override visible in the record itself, not just in the audit
+ * summary -  whoever reads the entry later sees why it exceeded the ceiling. */
+function overrideNote(notes: string, overridden: boolean): string | null {
+  const base = notes.trim();
+  if (!overridden) return base || null;
+  return `${base}${base ? " · " : ""}[Over available -  recorded as recovered rework / extra source]`;
 }
 
 // ---------------------------------------------------------------------------
@@ -485,8 +579,105 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<DraftRow | null>(null);
   const [gridLotId, setGridLotId] = useState("");
-  const [gridQty, setGridQty] = useState<Record<string, string>>({});
+  const [gridCells, setGridCells] = useState<Record<string, GridCell>>({});
   const [gridNotes, setGridNotes] = useState("");
+  /** Deliberate override of the available-quantity ceiling -  pieces recovered
+   * from rework, or genuinely arriving from another source. */
+  const [allowOverLimit, setAllowOverLimit] = useState(false);
+  /** Which lots' size-wise entry rows are expanded in the history table. */
+  const [expandedLots, setExpandedLots] = useState<Set<string>>(new Set());
+
+  /**
+   * The rows of the size grid for the selected lot.
+   *
+   * Cutting is the origin of the size axis, so it measures against the PO's
+   * ordered quantity. Every stage after it measures against what Cutting
+   * actually produced for that exact (lot, size) and what the stage before it
+   * handed over -  which is what stops each stage inventing its own quantity.
+   */
+  const gridRows = useMemo<GridRow[]>(() => {
+    if (!gridLotId) return [];
+
+    if (config.sizeGridOrigin) {
+      // Cutting's ceiling is the PO's production quantity per size -  which
+      // already includes the extra % added at planning, so there is no reason
+      // to cut beyond it. The target is order-level, so what counts against it
+      // is everything cut for that size across EVERY lot, not just this one.
+      return sizes.map((s) => {
+        const doneAllLots = cs.bySize.find((x) => x.sizeCode === s.size_code)?.qtyOut ?? 0;
+        const remaining = Math.max(s.quantity - doneAllLots, 0);
+        const over = Math.max(doneAllLots - s.quantity, 0);
+        return {
+          sizeCode: s.size_code,
+          target: s.quantity,
+          cutQty: s.quantity,
+          done: doneAllLots,
+          rework: 0,
+          remaining,
+          over,
+          isComplete: remaining === 0 && over === 0,
+        };
+      });
+    }
+
+    return cs.byLotSize
+      .filter((c) => c.lotId === gridLotId)
+      .map((c) => {
+        const done = c.qtyOut + c.qtyRejected;
+        const remaining = Math.max(c.available - done, 0);
+        const over = Math.max(done - c.available, 0);
+        return {
+          sizeCode: c.sizeCode,
+          target: c.available,
+          cutQty: c.cutQty,
+          done,
+          rework: c.qtyRework,
+          remaining,
+          over,
+          isComplete: remaining === 0 && over === 0,
+        };
+      });
+  }, [gridLotId, sizes, cs.byLotSize, cs.bySize, config.sizeGridOrigin]);
+
+  /** What has already happened to this lot at this stage, before anything new
+   * is typed -  the "what did I miss?" answer the operator needs first. */
+  const lotSummary = useMemo(() => {
+    if (!gridLotId || gridRows.length === 0) return null;
+
+    const cells = cs.byLotSize.filter((c) => c.lotId === gridLotId);
+    const entered = cells.reduce(
+      (acc, c) => ({
+        qtyIn: acc.qtyIn + c.qtyIn,
+        qtyOut: acc.qtyOut + c.qtyOut,
+        qtyRejected: acc.qtyRejected + c.qtyRejected,
+      }),
+      { qtyIn: 0, qtyOut: 0, qtyRejected: 0 },
+    );
+
+    // Target / remaining / status come from the same rows the table renders, so
+    // the card can never contradict the grid underneath it.
+    const rolled = gridRows.reduce(
+      (acc, r) => ({
+        target: acc.target + r.target,
+        remaining: acc.remaining + r.remaining,
+        rework: acc.rework + r.rework,
+        over: acc.over + r.over,
+      }),
+      { target: 0, remaining: 0, rework: 0, over: 0 },
+    );
+
+    // Over-recorded outranks Complete: a lot with more entered than it was
+    // given is not finished, it needs a correction.
+    const status = rolled.over > 0
+      ? "Over-recorded"
+      : gridRows.every((r) => r.isComplete)
+        ? "Complete"
+        : gridRows.some((r) => r.done > 0)
+          ? "In Progress"
+          : "Not Started";
+
+    return { ...entered, ...rolled, status };
+  }, [gridLotId, gridRows, cs.byLotSize]);
 
   const visibleTxns = useMemo(
     () =>
@@ -502,6 +693,44 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
     for (const t of cs.txns) if (t.ref_name) seen.add(t.ref_name);
     return Array.from(seen);
   }, [config.ref, cs.txns]);
+
+  /** Lot-level roll-up of the entry history, for the collapsed view. */
+  const entryLotGroups = useMemo(() => {
+    const map = new Map<
+      string,
+      { lotId: string; lotNo: string; sizes: Set<string>; qtyIn: number; qtyOut: number; qtyRejected: number; qtyRework: number; lastDate: string }
+    >();
+    for (const t of visibleTxns) {
+      const lotId = t.lot_id ?? "";
+      const row = map.get(lotId) ?? {
+        lotId,
+        lotNo: lots.find((l) => l.id === lotId)?.lot_no ?? "No lot",
+        sizes: new Set<string>(),
+        qtyIn: 0,
+        qtyOut: 0,
+        qtyRejected: 0,
+        qtyRework: 0,
+        lastDate: t.entry_date,
+      };
+      if (t.size_code) row.sizes.add(t.size_code);
+      row.qtyIn += t.qty_in;
+      row.qtyOut += t.qty_out;
+      row.qtyRejected += t.qty_rejected;
+      row.qtyRework += t.qty_rework;
+      if (t.entry_date > row.lastDate) row.lastDate = t.entry_date;
+      map.set(lotId, row);
+    }
+    return Array.from(map.values())
+      .map((r) => ({ ...r, sizeCount: r.sizes.size }))
+      .sort((a, b) => a.lotNo.localeCompare(b.lotNo));
+  }, [visibleTxns, lots]);
+
+  /** Which rows the detail table shows: in grid mode only the lots the user
+   * has opened, so a size-wise stage doesn't dump fifty rows on arrival. */
+  const detailTxns = useMemo(
+    () => (config.sizeGrid ? visibleTxns.filter((t) => expandedLots.has(t.lot_id ?? "")) : visibleTxns),
+    [config.sizeGrid, visibleTxns, expandedLots],
+  );
 
   const isSaving = createTxns.isPending || updateTxn.isPending;
 
@@ -523,6 +752,17 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
 
   function removeDraft(key: string) {
     setDrafts((prev) => prev.filter((d) => d.key !== key));
+  }
+
+  const lotFlow = (lotId: string) => cs.byLot.find((l) => l.lotId === lotId) ?? null;
+  const lotSizeCell = (lotId: string, sizeCode: string) =>
+    cs.byLotSize.find((c) => c.lotId === lotId && c.sizeCode === sizeCode) ?? null;
+
+  function patchCell(sizeCode: string, patch: Partial<GridCell>) {
+    setGridCells((prev) => ({
+      ...prev,
+      [sizeCode]: { ...BLANK_CELL, ...prev[sizeCode], ...patch },
+    }));
   }
 
   // --- Saving --------------------------------------------------------------
@@ -567,6 +807,63 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
       return false;
     }
 
+    // --- Lot + size availability ------------------------------------------
+    //
+    // Embroidery dispatches per (lot, size), so the ceiling is that cell's
+    // carried-forward figure -  what Panel Checking accepted for it.
+    if (config.lotSizeAvailable && !allowOverLimit) {
+      const addedPerCell = new Map<string, number>();
+      for (const d of usable) {
+        if (!d.lotId || !d.sizeCode) continue;
+        const key = `${d.lotId}::${d.sizeCode}`;
+        const qty = (Number(d.qtyOut) || 0) + (Number(d.qtyIn) || 0);
+        addedPerCell.set(key, (addedPerCell.get(key) ?? 0) + qty);
+      }
+      for (const [key, adding] of addedPerCell) {
+        const [lotId, sizeCode] = key.split("::");
+        const cell = lotSizeCell(lotId, sizeCode);
+        if (!cell || cell.available <= 0) continue;
+        const remaining = Math.max(cell.available - cell.qtyOut - cell.qtyRejected, 0);
+        if (adding > remaining) {
+          toast.show(
+            `${cell.lotNo} / size ${sizeCode}: only ${remaining.toLocaleString()} ${unit} of the ${cell.available.toLocaleString()} accepted by the previous section can still be sent -  you entered ${adding.toLocaleString()}.`,
+            "error",
+          );
+          return false;
+        }
+      }
+    }
+
+    // --- Lot availability -----------------------------------------------
+    //
+    // A lot can only send on what it actually has. Batches accumulate, so the
+    // check is against everything already sent for that lot at this stage,
+    // not against this row alone.
+    if (config.lotAvailable) {
+      // Measure whichever column this stage actually records against: its
+      // intake where it has one, otherwise its output (Fabric Store).
+      const fieldOf = (d: DraftRow) => (config.inLabel ? Number(d.qtyIn) : Number(d.qtyOut)) || 0;
+
+      const addedPerLot = new Map<string, number>();
+      for (const d of usable) {
+        if (!d.lotId) continue;
+        addedPerLot.set(d.lotId, (addedPerLot.get(d.lotId) ?? 0) + fieldOf(d));
+      }
+      for (const [lotId, adding] of addedPerLot) {
+        const flow = lotFlow(lotId);
+        // A lot with no carried-forward figure yet (nothing received upstream)
+        // is not blocked -  there is nothing to measure it against.
+        if (!flow || flow.available <= 0) continue;
+        if (adding > flow.remainingAvailable) {
+          toast.show(
+            `Lot ${flow.lotNo}: only ${flow.remainingAvailable.toLocaleString()} ${unit} still available of the ${flow.available.toLocaleString()} ${unit} received from the previous section -  you entered ${adding.toLocaleString()}.`,
+            "error",
+          );
+          return false;
+        }
+      }
+    }
+
     try {
       const rows = usable.map(toTxn);
       await createTxns.mutateAsync(rows);
@@ -597,13 +894,14 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
     }
   }
 
-  /** Cutting-style: one lot, a quantity per size, saved as one row per size so
-   * every size stays independently traceable. */
+  /** One lot, a quantity per size, saved as one row per size so every size
+   * stays independently traceable through the rest of the line. */
   async function saveGrid(): Promise<boolean> {
     if (!appUser) return false;
-    const typed = sizes.some((s) => Number(gridQty[s.size_code]) > 0);
+
+    const typedRows = gridRows.filter((r) => cellHasValue(gridCells[r.sizeCode]));
     // Nothing typed is not an error -  see saveDrafts.
-    if (!typed) return true;
+    if (typedRows.length === 0) return true;
     if (!gridLotId) {
       toast.show("Select a lot first.", "error");
       return false;
@@ -612,28 +910,62 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
       toast.show("Add a note for this entry.", "error");
       return false;
     }
-    const rows: NewTxn[] = sizes
-      .filter((s) => Number(gridQty[s.size_code]) > 0)
-      .map((s) => ({
+
+    // --- Quantity ceiling ---------------------------------------------------
+    //
+    // Applies at Cutting too, not only after it. Cutting's ceiling is the PO's
+    // production quantity per size -  which already carries the extra % added
+    // at planning, so cutting past it is an error rather than a decision.
+    // Downstream the ceiling is whatever the previous section passed on.
+    // Without this, entering 30 against a size that already has its full 102
+    // silently becomes 132 and every later figure inherits the error.
+    if (!allowOverLimit) {
+      const breaches = typedRows
+        .map((r) => {
+          const cell = gridCells[r.sizeCode] ?? BLANK_CELL;
+          const adding = (Number(cell.qtyOut) || 0) + (Number(cell.rejected) || 0);
+          return { row: r, adding, excess: adding - r.remaining };
+        })
+        .filter((b) => b.excess > 0);
+
+      if (breaches.length > 0) {
+        const { row, adding } = breaches[0];
+        const ceiling = config.sizeGridOrigin
+          ? `the ${row.target.toLocaleString()} planned for that size`
+          : `the ${row.target.toLocaleString()} the previous section sent on`;
+        toast.show(
+          `Size ${row.sizeCode}: only ${row.remaining.toLocaleString()} ${unit} left of ${ceiling} -  you entered ${adding.toLocaleString()}.${
+            config.sizeGridOrigin ? "" : ' Tick "recovered rework / extra source" if this is genuinely extra.'
+          }`,
+          "error",
+        );
+        return false;
+      }
+    }
+
+    const rows: NewTxn[] = typedRows.map((r) => {
+      const cell = gridCells[r.sizeCode] ?? BLANK_CELL;
+      return {
         order_id: orderId,
         po_id: poId,
         section_id: sectionId,
         lot_id: gridLotId,
-        size_code: s.size_code,
+        size_code: r.sizeCode,
         txn_type: config.txnType ?? "process",
         unit,
-        qty_in: 0,
-        qty_out: Number(gridQty[s.size_code]) || 0,
-        qty_rejected: 0,
-        qty_rework: 0,
+        qty_in: config.inLabel ? Number(cell.qtyIn) || 0 : 0,
+        qty_out: config.outLabel ? Number(cell.qtyOut) || 0 : 0,
+        qty_rejected: config.rejectedLabel ? Number(cell.rejected) || 0 : 0,
+        qty_rework: config.reworkLabel ? Number(cell.rework) || 0 : 0,
         ref_name: null,
         doc_no: null,
         entry_date: new Date().toISOString().slice(0, 10),
-        notes: gridNotes.trim() || null,
+        notes: overrideNote(gridNotes, allowOverLimit),
         entered_by: appUser.id,
-      }));
+      };
+    });
 
-    const total = rows.reduce((sum, r) => sum + r.qty_out, 0);
+    const total = rows.reduce((sum, r) => sum + (r.qty_out || r.qty_in), 0);
     const lotNo = lots.find((l) => l.id === gridLotId)?.lot_no ?? "";
 
     try {
@@ -645,13 +977,16 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
         entity: "production_txn",
         entity_id: null,
         action: "create",
-        summary: `Lot ${lotNo}: ${total.toLocaleString()} ${unit} across ${rows.length} size${rows.length === 1 ? "" : "s"}`,
+        summary: `Lot ${lotNo}: ${total.toLocaleString()} ${unit} across ${rows.length} size${rows.length === 1 ? "" : "s"}${
+          allowOverLimit ? " (over available -  override)" : ""
+        }`,
         changes: null,
-        notes: gridNotes.trim() || null,
+        notes: overrideNote(gridNotes, allowOverLimit),
         user_id: appUser.id,
       });
-      setGridQty({});
+      setGridCells({});
       setGridNotes("");
+      setAllowOverLimit(false);
       onSaved();
       toast.show(`Lot ${lotNo} recorded -  ${total.toLocaleString()} ${unit}.`, "success");
       return true;
@@ -669,11 +1004,11 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
       save: () => (config.sizeGrid ? saveGrid() : saveDrafts()),
       hasPending: () =>
         config.sizeGrid
-          ? sizes.some((s) => Number(gridQty[s.size_code]) > 0)
+          ? gridRows.some((r) => cellHasValue(gridCells[r.sizeCode]))
           : drafts.some(draftHasValue),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [config.sizeGrid, drafts, gridQty, gridLotId, gridNotes, sizes],
+    [config.sizeGrid, drafts, gridCells, gridRows, gridLotId, gridNotes, allowOverLimit],
   );
 
   // --- Editing an existing row ---------------------------------------------
@@ -794,11 +1129,88 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
       {/* ---------------- Entry history ---------------- */}
       <Section
         title="Entries"
-        subtitle="Every entry is kept. Corrections are recorded against the original, never in place of it."
+        subtitle={
+          config.sizeGrid
+            ? "One row per lot. Open a lot to see its size-wise detail; every entry is kept and corrections are recorded against the original."
+            : "Every entry is kept. Corrections are recorded against the original, never in place of it."
+        }
       >
-        {visibleTxns.length === 0 ? (
+        {/* A size-wise stage writes one row per size per lot, which runs to
+            dozens of near-identical lines. Lot level is what's readable at a
+            glance; the size detail is one click away. */}
+        {config.sizeGrid && entryLotGroups.length > 0 && (
+          <div className="mb-3 overflow-x-auto rounded-xl border border-ink-100">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead>
+                <tr className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500">
+                  <th className="px-3 py-2 text-left font-semibold">Lot</th>
+                  <th className="px-3 py-2 text-right font-semibold">Sizes</th>
+                  {config.inLabel && <th className="px-3 py-2 text-right font-semibold">{config.inLabel}</th>}
+                  {config.outLabel && <th className="px-3 py-2 text-right font-semibold">{config.outLabel}</th>}
+                  {config.rejectedLabel && (
+                    <th className="px-3 py-2 text-right font-semibold">{config.rejectedLabel}</th>
+                  )}
+                  {config.reworkLabel && <th className="px-3 py-2 text-right font-semibold">{config.reworkLabel}</th>}
+                  <th className="px-3 py-2 text-left font-semibold">Last entry</th>
+                  <th className="px-3 py-2" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-ink-100">
+                {entryLotGroups.map((g) => {
+                  const open = expandedLots.has(g.lotId);
+                  return (
+                    <tr key={g.lotId} className="bg-white">
+                      <td className="px-3 py-2 font-semibold text-ink-900">{g.lotNo}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-ink-500">{g.sizeCount}</td>
+                      {config.inLabel && (
+                        <td className="px-3 py-2 text-right tabular-nums">{g.qtyIn.toLocaleString()}</td>
+                      )}
+                      {config.outLabel && (
+                        <td className="px-3 py-2 text-right tabular-nums text-status-good">
+                          {g.qtyOut.toLocaleString()}
+                        </td>
+                      )}
+                      {config.rejectedLabel && (
+                        <td className="px-3 py-2 text-right tabular-nums text-status-bad">
+                          {g.qtyRejected.toLocaleString()}
+                        </td>
+                      )}
+                      {config.reworkLabel && (
+                        <td className="px-3 py-2 text-right tabular-nums text-amber-600">
+                          {g.qtyRework.toLocaleString()}
+                        </td>
+                      )}
+                      <td className="whitespace-nowrap px-3 py-2 text-ink-500">{formatDisplayDate(g.lastDate)}</td>
+                      <td className="px-3 py-2 text-right">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setExpandedLots((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(g.lotId)) next.delete(g.lotId);
+                              else next.add(g.lotId);
+                              return next;
+                            })
+                          }
+                        >
+                          {open ? "Hide" : "Show More"}
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {detailTxns.length === 0 ? (
           <p className="rounded-xl border border-dashed border-ink-200 px-3 py-6 text-center text-sm text-ink-400">
-            Nothing recorded here yet.
+            {config.sizeGrid && entryLotGroups.length > 0
+              ? "Open a lot above to see its size-wise entries."
+              : "Nothing recorded here yet."}
           </p>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-ink-100">
@@ -818,7 +1230,8 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">
-                {visibleTxns.map((t, i) => {
+                {detailTxns.map((t) => {
+                  const i = visibleTxns.indexOf(t);
                   const cumulative = visibleTxns
                     .slice(0, i + 1)
                     .reduce((total, x) => total + (config.outLabel ? x.qty_out : x.qty_in), 0);
@@ -955,7 +1368,10 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
 
       {/* ---------------- New entry ---------------- */}
       {config.sizeGrid ? (
-        <Section title="Add new entry" subtitle="Pick the lot, then enter the pieces produced in each size.">
+        <Section
+          title="Add new entry"
+          subtitle="Pick the lot -  its sizes and quantities are already known, so there's nothing to re-select."
+        >
           <div className="space-y-3 rounded-xl border border-ink-100 bg-ink-50/60 p-3">
             <LotSelect
               lots={lots}
@@ -965,49 +1381,198 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
               poId={poId}
               allowCreate={config.allowCreateLot ?? false}
             />
-            <div className="overflow-x-auto rounded-lg border border-ink-100 bg-white">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500">
-                    <th className="px-3 py-2 text-left font-semibold">Size</th>
-                    <th className="px-3 py-2 text-right font-semibold">PO Qty</th>
-                    <th className="px-3 py-2 text-right font-semibold">Done so far</th>
-                    <th className="px-3 py-2 text-right font-semibold">This entry</th>
-                    <th className="px-3 py-2 text-right font-semibold">Balance after</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-ink-100">
-                  {sizes.map((s) => {
-                    const done = cs.bySize.find((x) => x.sizeCode === s.size_code)?.qtyOut ?? 0;
-                    const now = Number(gridQty[s.size_code]) || 0;
-                    const balance = s.quantity - done - now;
-                    return (
-                      <tr key={s.size_code}>
-                        <td className="px-3 py-1.5 font-semibold text-ink-900">{s.size_code}</td>
-                        <td className="px-3 py-1.5 text-right tabular-nums text-ink-500">{s.quantity.toLocaleString()}</td>
-                        <td className="px-3 py-1.5 text-right tabular-nums">{done.toLocaleString()}</td>
-                        <td className="px-3 py-1.5 text-right">
-                          <input
-                            type="number"
-                            min={0}
-                            value={gridQty[s.size_code] ?? ""}
-                            onChange={(e) => setGridQty((prev) => ({ ...prev, [s.size_code]: e.target.value }))}
-                            className="w-24 rounded-lg border border-ink-200 px-2 py-1 text-right text-sm outline-none focus:border-brand"
-                          />
-                        </td>
+
+            {/* What already happened to this lot here, before anything new is typed. */}
+            {lotSummary && (
+              <div className="rounded-lg border border-white/80 bg-white p-2.5">
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-400">
+                  This lot so far, at this stage
+                </p>
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                  <MiniStat
+                    label={config.sizeGridOrigin ? "Target" : "Available"}
+                    value={lotSummary.target}
+                    unit={unit}
+                  />
+                  {config.inLabel && <MiniStat label={config.inLabel} value={lotSummary.qtyIn} unit={unit} />}
+                  {config.outLabel && (
+                    <MiniStat label={config.outLabel} value={lotSummary.qtyOut} unit={unit} tone="good" />
+                  )}
+                  {config.rejectedLabel && (
+                    <MiniStat label={config.rejectedLabel} value={lotSummary.qtyRejected} unit={unit} tone="bad" />
+                  )}
+                  {config.reworkLabel && (
+                    <MiniStat label={config.reworkLabel} value={lotSummary.rework} unit={unit} tone="warn" />
+                  )}
+                  <MiniStat
+                    label="Remaining"
+                    value={lotSummary.remaining}
+                    unit={unit}
+                    tone={lotSummary.remaining > 0 ? "warn" : "good"}
+                  />
+                  <div className="flex flex-col justify-center">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-400">Status</p>
+                    <Badge
+                      tone={
+                        lotSummary.status === "Over-recorded"
+                          ? "bad"
+                          : lotSummary.status === "Complete"
+                            ? "good"
+                            : lotSummary.status === "In Progress"
+                              ? "warn"
+                              : "neutral"
+                      }
+                    >
+                      {lotSummary.status}
+                    </Badge>
+                  </div>
+                </div>
+
+                {lotSummary.over > 0 && (
+                  <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] leading-snug text-red-800">
+                    <b>{lotSummary.over.toLocaleString()} {unit} more has been recorded than this lot was given.</b>{" "}
+                    Almost always a batch entered twice -  open the lot in the Entries list above and correct or
+                    remove the duplicate. New entries are blocked for the affected sizes until the totals agree.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {gridLotId && gridRows.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-ink-200 px-3 py-5 text-center text-sm text-ink-400">
+                Nothing has reached this lot yet -  Cutting hasn't recorded any sizes for it.
+              </p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-ink-100 bg-white">
+                <table className="w-full min-w-[640px] text-sm">
+                  <thead>
+                    <tr className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500">
+                      <th className="px-3 py-2 text-left font-semibold">Size</th>
+                      <th className="px-3 py-2 text-right font-semibold">
+                        {config.sizeGridOrigin ? "Target Qty" : "Cut Qty"}
+                      </th>
+                      {!config.sizeGridOrigin && <th className="px-3 py-2 text-right font-semibold">Available</th>}
+                      <th className="px-3 py-2 text-right font-semibold">Done so far</th>
+                      <th className="px-3 py-2 text-right font-semibold">Remaining</th>
+                      {config.reworkLabel && (
+                        <th className="px-3 py-2 text-right font-semibold">{config.reworkLabel} held</th>
+                      )}
+                      {config.inLabel && <th className="px-3 py-2 text-right font-semibold">{config.inLabel}</th>}
+                      {config.outLabel && <th className="px-3 py-2 text-right font-semibold">{config.outLabel}</th>}
+                      {config.rejectedLabel && (
+                        <th className="px-3 py-2 text-right font-semibold">{config.rejectedLabel}</th>
+                      )}
+                      {config.reworkLabel && <th className="px-3 py-2 text-right font-semibold">{config.reworkLabel}</th>}
+                      <th className="px-3 py-2 text-right font-semibold">Balance after</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink-100">
+                    {gridRows.map((r) => {
+                      const cell = gridCells[r.sizeCode] ?? BLANK_CELL;
+                      const adding = (Number(cell.qtyOut) || 0) + (Number(cell.rejected) || 0);
+                      const balance = r.remaining - adding;
+                      const over = balance < 0;
+                      // A size whose target is met has no input left to give.
+                      // Showing empty boxes there is what let the original
+                      // quantity be re-entered as if it were still available.
+                      const closed = r.remaining === 0;
+                      const inputCells = closed ? (
                         <td
-                          className={`px-3 py-1.5 text-right font-semibold tabular-nums ${
-                            balance < 0 ? "text-status-bad" : balance > 0 ? "text-amber-600" : "text-status-good"
-                          }`}
+                          className="px-3 py-1.5 text-right"
+                          colSpan={
+                            (config.inLabel ? 1 : 0) +
+                            (config.outLabel ? 1 : 0) +
+                            (config.rejectedLabel ? 1 : 0) +
+                            (config.reworkLabel ? 1 : 0)
+                          }
                         >
-                          {balance.toLocaleString()}
+                          {r.over > 0 ? (
+                            <Badge tone="bad">Over by {r.over.toLocaleString()}</Badge>
+                          ) : (
+                            <Badge tone="good">Complete</Badge>
+                          )}
                         </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                      ) : (
+                        <>
+                          {config.inLabel && (
+                            <GridInput value={cell.qtyIn} onChange={(v) => patchCell(r.sizeCode, { qtyIn: v })} />
+                          )}
+                          {config.outLabel && (
+                            <GridInput
+                              value={cell.qtyOut}
+                              onChange={(v) => patchCell(r.sizeCode, { qtyOut: v })}
+                              invalid={over}
+                              max={r.remaining}
+                            />
+                          )}
+                          {config.rejectedLabel && (
+                            <GridInput
+                              value={cell.rejected}
+                              onChange={(v) => patchCell(r.sizeCode, { rejected: v })}
+                              invalid={over}
+                            />
+                          )}
+                          {config.reworkLabel && (
+                            <GridInput value={cell.rework} onChange={(v) => patchCell(r.sizeCode, { rework: v })} />
+                          )}
+                        </>
+                      );
+
+                      return (
+                        <tr
+                          key={r.sizeCode}
+                          className={
+                            over || r.over > 0
+                              ? "bg-red-50/50"
+                              : r.isComplete
+                                ? "bg-green-50/40"
+                                : undefined
+                          }
+                        >
+                          <td className="px-3 py-1.5 font-semibold text-ink-900">{r.sizeCode}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums text-ink-500">
+                            {r.cutQty.toLocaleString()}
+                          </td>
+                          {!config.sizeGridOrigin && (
+                            <td className="px-3 py-1.5 text-right font-medium tabular-nums text-ink-700">
+                              {r.target.toLocaleString()}
+                            </td>
+                          )}
+                          <td
+                            className={`px-3 py-1.5 text-right tabular-nums ${
+                              r.over > 0 ? "font-semibold text-status-bad" : ""
+                            }`}
+                          >
+                            {r.done.toLocaleString()}
+                          </td>
+                          <td
+                            className={`px-3 py-1.5 text-right font-semibold tabular-nums ${
+                              r.remaining > 0 ? "text-amber-600" : "text-status-good"
+                            }`}
+                          >
+                            {r.remaining.toLocaleString()}
+                          </td>
+                          {config.reworkLabel && (
+                            <td className="px-3 py-1.5 text-right tabular-nums text-amber-600">
+                              {r.rework > 0 ? r.rework.toLocaleString() : "- "}
+                            </td>
+                          )}
+                          {inputCells}
+                          <td
+                            className={`px-3 py-1.5 text-right font-semibold tabular-nums ${
+                              over ? "text-status-bad" : balance > 0 ? "text-amber-600" : "text-status-good"
+                            }`}
+                          >
+                            {balance.toLocaleString()}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             <Textarea
               label="Notes"
               required
@@ -1016,10 +1581,34 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
               onChange={(e) => setGridNotes(e.target.value)}
               placeholder="Anything the next stage should know about this lot"
             />
-            <p className="text-[11px] text-ink-500">
-              Use <b>Save Plan</b> at the bottom to record this without moving on, or either{" "}
-              <b>Move Forward</b> button to record it and hand off in one step.
-            </p>
+
+            {/* The escape hatch for genuinely-extra pieces. Off by default, and
+                what it records is written into the entry's own notes. */}
+            {!config.sizeGridOrigin && (
+              <label className="flex items-start gap-2 text-[11px] text-ink-600">
+                <input
+                  type="checkbox"
+                  checked={allowOverLimit}
+                  onChange={(e) => setAllowOverLimit(e.target.checked)}
+                  className="mt-0.5 h-3.5 w-3.5 accent-amber-600"
+                />
+                <span>
+                  <b>Recovered rework / extra source.</b> Tick only if this quantity genuinely comes from
+                  outside what the previous stage sent on -  it lifts the available-quantity limit and is
+                  recorded on the entry.
+                </span>
+              </label>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" size="sm" onClick={saveGrid} isLoading={isSaving}>
+                Save Entry
+              </Button>
+              <p className="text-[11px] text-ink-500">
+                Saves this lot without moving the stage on. Use the <b>Move Forward</b> buttons below to
+                record and hand off in one step.
+              </p>
+            </div>
           </div>
         </Section>
       ) : (
@@ -1050,21 +1639,33 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                         poId={poId}
                         allowCreate={config.allowCreateLot ?? false}
                       />
+                      {/* The lot's quantity travels with its number: what the
+                          previous stage received against this lot is what
+                          there is to send here, less whatever earlier batches
+                          already took. */}
+                      {config.lotAvailable && d.lotId && <LotAvailableHint flow={lotFlow(d.lotId)} unit={unit} />}
                     </div>
                   )}
                   {showSize && (
-                    <Select
-                      label="Size"
-                      value={d.sizeCode}
-                      onChange={(e) => patchDraft(d.key, { sizeCode: e.target.value })}
-                    >
-                      <option value="">-  Select - </option>
-                      {sizes.map((s) => (
-                        <option key={s.size_code} value={s.size_code}>
-                          {s.size_code}
-                        </option>
-                      ))}
-                    </Select>
+                    <div>
+                      <Select
+                        label="Size"
+                        value={d.sizeCode}
+                        onChange={(e) => patchDraft(d.key, { sizeCode: e.target.value })}
+                      >
+                        <option value="">-  Select - </option>
+                        {sizes.map((s) => (
+                          <option key={s.size_code} value={s.size_code}>
+                            {s.size_code}
+                          </option>
+                        ))}
+                      </Select>
+                      {/* Lot + size together identify the cell, so this is the
+                          point at which the sendable quantity is knowable. */}
+                      {config.lotSizeAvailable && d.lotId && d.sizeCode && (
+                        <CellAvailableHint cell={lotSizeCell(d.lotId, d.sizeCode)} unit={unit} />
+                      )}
+                    </div>
                   )}
                   {config.ref && (
                     <div>
@@ -1149,10 +1750,19 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                 + Add New Entry
               </Button>
               {drafts.length > 0 && (
-                <p className="text-[11px] text-ink-500">
-                  Use <b>Save Plan</b> at the bottom to record these without moving on, or either{" "}
-                  <b>Move Forward</b> button to record them and hand off in one step.
-                </p>
+                <>
+                  {/* Saving a row is its own action, not a side effect of a
+                      workflow button. Save Plan also writes a gating entry to
+                      mark the stage as progressed, which is the wrong thing to
+                      do when all someone wants is to record what they typed. */}
+                  <Button type="button" size="sm" onClick={saveDrafts} isLoading={isSaving}>
+                    {drafts.length > 1 ? `Save ${drafts.length} Entries` : "Save Entry"}
+                  </Button>
+                  <p className="text-[11px] text-ink-500">
+                    Saves what you've typed without moving the stage on. Use a <b>Move Forward</b> button
+                    below to record and hand off in one step.
+                  </p>
+                </>
               )}
             </div>
           </div>
@@ -1161,6 +1771,143 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
     </div>
   );
 });
+
+/**
+ * The selected lot's carried-forward position, shown right under the picker.
+ *
+ * Answers "how much of this lot do I actually have?" at the moment the lot is
+ * chosen, which is the point at which the operator would otherwise have to go
+ * and look it up in the previous section.
+ */
+function LotAvailableHint({ flow, unit }: { flow: LotFlow | null; unit: UnitType }) {
+  if (!flow) return null;
+
+  if (flow.available <= 0) {
+    return (
+      <p className="mt-1 text-[11px] text-ink-400">
+        No quantity carried forward for this lot yet -  the previous section hasn't recorded what it
+        received.
+      </p>
+    );
+  }
+
+  const recorded = flow.qtyIn > 0 ? flow.qtyIn : flow.qtyOut;
+  const exhausted = flow.remainingAvailable <= 0;
+  return (
+    <p className="mt-1 text-[11px] leading-snug">
+      <span className="text-ink-500">Received from previous section </span>
+      <b className="tabular-nums text-ink-800">
+        {flow.available.toLocaleString()} {unit}
+      </b>
+      {recorded > 0 && (
+        <>
+          <span className="text-ink-500"> · already recorded here </span>
+          <b className="tabular-nums text-ink-800">
+            {recorded.toLocaleString()} {unit}
+          </b>
+        </>
+      )}
+      <span className="text-ink-500"> · </span>
+      <b className={`tabular-nums ${exhausted ? "text-status-good" : "text-amber-700"}`}>
+        {exhausted
+          ? "fully accounted for"
+          : `${flow.remainingAvailable.toLocaleString()} ${unit} still available`}
+      </b>
+    </p>
+  );
+}
+
+/** What one (lot, size) cell has available, shown once both are chosen. */
+function CellAvailableHint({ cell, unit }: { cell: LotSizeCell | null; unit: UnitType }) {
+  if (!cell) {
+    return (
+      <p className="mt-1 text-[11px] text-ink-400">
+        Nothing carried forward for this lot and size yet.
+      </p>
+    );
+  }
+  const done = cell.qtyOut + cell.qtyRejected;
+  const remaining = Math.max(cell.available - done, 0);
+  return (
+    <p className="mt-1 text-[11px] leading-snug">
+      <span className="text-ink-500">Available </span>
+      <b className="tabular-nums text-ink-800">
+        {cell.available.toLocaleString()} {unit}
+      </b>
+      {done > 0 && (
+        <>
+          <span className="text-ink-500"> · sent </span>
+          <b className="tabular-nums text-ink-800">{done.toLocaleString()}</b>
+        </>
+      )}
+      <span className="text-ink-500"> · </span>
+      <b className={`tabular-nums ${remaining > 0 ? "text-amber-700" : "text-status-good"}`}>
+        {remaining > 0 ? `${remaining.toLocaleString()} ${unit} can be sent` : "fully sent"}
+      </b>
+    </p>
+  );
+}
+
+/** One editable number in the size grid. */
+function GridInput({
+  value,
+  onChange,
+  invalid = false,
+  max,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  invalid?: boolean;
+  /** Browser-level hint only. The real ceiling is enforced on save, since a
+   * max attribute is trivially bypassed by typing or pasting. */
+  max?: number;
+}) {
+  return (
+    <td className="px-3 py-1.5 text-right">
+      <input
+        type="number"
+        min={0}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={`w-24 rounded-lg border px-2 py-1 text-right text-sm outline-none focus:border-brand ${
+          invalid ? "border-status-bad bg-red-50" : "border-ink-200"
+        }`}
+      />
+    </td>
+  );
+}
+
+/** Compact figure for the lot summary strip. */
+function MiniStat({
+  label,
+  value,
+  unit,
+  tone,
+}: {
+  label: string;
+  value: number;
+  unit: UnitType;
+  tone?: "good" | "bad" | "warn";
+}) {
+  const color =
+    tone === "good"
+      ? "text-status-good"
+      : tone === "bad"
+        ? "text-status-bad"
+        : tone === "warn"
+          ? "text-amber-600"
+          : "text-ink-900";
+  return (
+    <div>
+      <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-ink-400">{label}</p>
+      <p className={`text-sm font-bold tabular-nums ${color}`}>
+        {value.toLocaleString()}
+        <span className="ml-0.5 text-[9px] font-medium text-ink-400">{unit}</span>
+      </p>
+    </div>
+  );
+}
 
 export function Section({
   title,

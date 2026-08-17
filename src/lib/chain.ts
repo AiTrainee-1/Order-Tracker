@@ -170,6 +170,28 @@ export interface LotFlow {
   qtyRework: number;
   /** in − out − rejected, floored at 0. */
   balance: number;
+  /**
+   * What the previous comparable stage passed on for THIS lot -  its qty_out.
+   *
+   * This is the KG-side equivalent of LotSizeCell.available, and it is what
+   * makes the lot's quantity travel with its number: Knitting receives 19,500
+   * back against lot-1, so Dyeing has 19,500 of lot-1 to send out, without
+   * anyone re-typing it. 0 across the Cutting boundary, where kilograms stop
+   * converting into pieces.
+   */
+  available: number;
+  /**
+   * How much of what this stage was handed it has not accounted for yet.
+   *
+   * "Accounted for" is qty_in where the stage records an intake (Dyeing sends
+   * it out, In-House takes it in, Inspection sends it for testing), and
+   * qty_out where it doesn't -  Fabric Store has no intake step, so the final
+   * approved quantity it records IS its account of the lot.
+   *
+   * A lot can move in several batches, so this shrinks with each one rather
+   * than showing the whole lot every time.
+   */
+  remainingAvailable: number;
   lastEntryDate: string | null;
   entryCount: number;
 }
@@ -183,6 +205,46 @@ export interface SizeFlow {
   qtyOut: number;
   qtyRejected: number;
   balance: number;
+}
+
+export type CellStatus = "not_started" | "in_progress" | "complete";
+
+/**
+ * One (lot, size) cell at one stage -  the grain the garment floor actually
+ * works in from Cutting onwards.
+ *
+ * This exists because byLot and bySize are each a projection that loses the
+ * other axis, and the question every stage after Cutting has to answer is
+ * about both at once: "for THIS lot in THIS size, how many did Cutting make,
+ * how many did the stage before me hand over, and how many are left?"
+ */
+export interface LotSizeCell {
+  lotId: string;
+  lotNo: string;
+  sizeCode: string;
+  /** What Cutting produced for this cell -  the fixed reference every later
+   * stage measures against, and the number that stops each one inventing its
+   * own size quantity. */
+  cutQty: number;
+  /** What the previous PCS stage sent on for this cell; the cutQty at Cutting
+   * itself. This is the ceiling a new entry is validated against. */
+  available: number;
+  qtyIn: number;
+  qtyOut: number;
+  qtyRejected: number;
+  qtyRework: number;
+  /**
+   * available − out − rejected. Rework is deliberately NOT subtracted: it is
+   * work still owed at this stage, not a loss, and it becomes output once the
+   * pieces are repaired. Subtracting it here would write it off; adding it to
+   * output would count the same pieces twice when they are.
+   */
+  balance: number;
+  status: CellStatus;
+}
+
+function cellKey(lotId: string, sizeCode: string): string {
+  return `${lotId}::${sizeCode}`;
 }
 
 export interface ChainStage {
@@ -210,6 +272,9 @@ export interface ChainStage {
   txns: ProductionTxn[];
   byLot: LotFlow[];
   bySize: SizeFlow[];
+  /** Per (lot, size), for PCS stages. Empty for the KG stages, which have no
+   * size axis until Cutting creates one. */
+  byLotSize: LotSizeCell[];
   /** Populated for the three procurement stages only. */
   material: MaterialTotals | null;
   lastEntryDate: string | null;
@@ -250,6 +315,7 @@ function emptyStage(stage: WorkflowStage): Omit<ChainStage, "inherited" | "input
     txns: [],
     byLot: [],
     bySize: [],
+    byLotSize: [],
     material: null,
     lastEntryDate: null,
   };
@@ -288,6 +354,19 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
   };
 
   const result: ChainStage[] = [];
+
+  // What Cutting produced per (lot, size). Captured when the loop reaches
+  // Cutting -  which precedes every stage that reads it in sequence_no order -
+  // and used from then on as the fixed reference, so no later stage has to
+  // invent a size quantity or fall back to the PO's ordered figure.
+  const cutByCell = new Map<string, number>();
+  // The previous PCS stage's output per cell, i.e. what is actually available
+  // to the stage currently being built. Replaced at the end of each PCS stage.
+  let prevCellOutput = new Map<string, number>();
+  // The same idea one axis coarser: the previous stage's output per LOT, which
+  // is what the KG half of the line (Knitting → Fabric In-House) travels on,
+  // since it has no size axis until Cutting creates one.
+  let prevLotOutput = new Map<string, number>();
 
   sorted.forEach((stage, index) => {
     const base = emptyStage(stage);
@@ -370,11 +449,27 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
       if (!t.lot_id) continue;
       lotGroups.set(t.lot_id, [...(lotGroups.get(t.lot_id) ?? []), t]);
     }
-    base.byLot = Array.from(lotGroups.entries())
-      .map(([lotId, group]) => {
+
+    // Lots this stage should know about: the ones it has recorded against,
+    // plus every lot the previous comparable stage passed on. Without the
+    // second set, a stage that hasn't started yet would list no lots at all
+    // and the operator would have nothing to select or measure against.
+    const knownLots = new Set<string>([
+      ...lotGroups.keys(),
+      ...(sameUnit ? Array.from(prevLotOutput.keys()) : []),
+    ]);
+    const nextLotOutput = new Map<string, number>();
+
+    base.byLot = Array.from(knownLots)
+      .map((lotId) => {
+        const group = lotGroups.get(lotId) ?? [];
         const qtyIn = sum(group, (t) => t.qty_in);
         const qtyOut = sum(group, (t) => t.qty_out);
         const qtyRejected = sum(group, (t) => t.qty_rejected);
+        const available = sameUnit ? (prevLotOutput.get(lotId) ?? 0) : 0;
+
+        nextLotOutput.set(lotId, qtyOut);
+
         return {
           lotId,
           lotNo: lotsById.get(lotId)?.lot_no ?? "- ",
@@ -383,22 +478,106 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
           qtyRejected,
           qtyRework: sum(group, (t) => t.qty_rework),
           balance: Math.max(qtyIn - qtyOut - qtyRejected, 0),
-          lastEntryDate: group[group.length - 1].entry_date,
+          available,
+          // A stage that records an intake is measured by it; one that doesn't
+          // (Fabric Store) is measured by what it put out.
+          remainingAvailable: Math.max(available - (qtyIn > 0 ? qtyIn : qtyOut), 0),
+          lastEntryDate: group.length ? group[group.length - 1].entry_date : null,
           entryCount: group.length,
         };
       })
       .sort((a, b) => a.lotNo.localeCompare(b.lotNo));
 
+    // Knitting is where a lot's quantity originates -  there is no upstream lot
+    // figure to inherit, so its own received quantity seeds the chain.
+    prevLotOutput = nextLotOutput;
+
+    // --- Lot × size ---------------------------------------------------------
+    //
+    // The grain the garment floor works in. Built for every PCS stage; the KG
+    // stages have no size axis until Cutting creates one.
+    if (stage.unit_type === "PCS") {
+      const isCutting = stage.key === STAGE.cutting;
+
+      // Every cell this stage should show: the ones it has recorded against,
+      // plus every cell Cutting created (so a stage that hasn't started yet
+      // still lists the sizes it is expected to handle, rather than nothing).
+      const cellTxns = new Map<string, ProductionTxn[]>();
+      for (const t of stageTxns) {
+        if (!t.lot_id || !t.size_code) continue;
+        const key = cellKey(t.lot_id, t.size_code);
+        cellTxns.set(key, [...(cellTxns.get(key) ?? []), t]);
+      }
+
+      const knownCells = new Set<string>([...cellTxns.keys(), ...(isCutting ? [] : cutByCell.keys())]);
+      const nextCellOutput = new Map<string, number>();
+
+      base.byLotSize = Array.from(knownCells)
+        .map((key) => {
+          const [lotId, sizeCode] = key.split("::");
+          const group = cellTxns.get(key) ?? [];
+          const qtyIn = sum(group, (t) => t.qty_in);
+          const qtyOut = sum(group, (t) => t.qty_out);
+          const qtyRejected = sum(group, (t) => t.qty_rejected);
+          const qtyRework = sum(group, (t) => t.qty_rework);
+
+          // Cutting is the origin of the size axis, so it has no upstream cell
+          // to measure against -  its own output IS the reference.
+          const cutQty = isCutting ? qtyOut : (cutByCell.get(key) ?? 0);
+          const available = isCutting ? cutQty : (prevCellOutput.get(key) ?? cutQty);
+
+          nextCellOutput.set(key, qtyOut);
+
+          const balance = Math.max(available - qtyOut - qtyRejected, 0);
+          const status: CellStatus =
+            qtyOut === 0 && qtyRejected === 0 && qtyIn === 0
+              ? "not_started"
+              : balance === 0
+                ? "complete"
+                : "in_progress";
+
+          return {
+            lotId,
+            lotNo: lotsById.get(lotId)?.lot_no ?? "- ",
+            sizeCode,
+            cutQty,
+            available,
+            qtyIn,
+            qtyOut,
+            qtyRejected,
+            qtyRework,
+            balance,
+            status,
+          };
+        })
+        .sort((a, b) => a.lotNo.localeCompare(b.lotNo) || a.sizeCode.localeCompare(b.sizeCode));
+
+      if (isCutting) {
+        for (const cell of base.byLotSize) cutByCell.set(cellKey(cell.lotId, cell.sizeCode), cell.qtyOut);
+      }
+      prevCellOutput = nextCellOutput;
+    }
+
     // --- Size-wise ----------------------------------------------------------
     if (stage.unit_type === "PCS") {
+      // Cutting's output per size -  the reference the size roll-up measures
+      // against from Cutting onwards, so it agrees with byLotSize instead of
+      // silently falling back to the PO's ordered quantity.
+      const cutBySize = new Map<string, number>();
+      for (const [key, qty] of cutByCell) {
+        const sizeCode = key.split("::")[1];
+        cutBySize.set(sizeCode, (cutBySize.get(sizeCode) ?? 0) + qty);
+      }
+
       base.bySize = sizes.map((s) => {
         const group = stageTxns.filter((t) => t.size_code === s.size_code);
         const qtyIn = sum(group, (t) => t.qty_in);
         const qtyOut = sum(group, (t) => t.qty_out);
         const qtyRejected = sum(group, (t) => t.qty_rejected);
-        // A PCS stage's own size target is what the previous stage produced in
-        // that size, falling back to the ordered quantity at Cutting.
-        const sizeInput = qtyIn > 0 ? qtyIn : s.quantity;
+        // What this size is measured against: what was counted in, else what
+        // Cutting produced for it, else the ordered quantity (Cutting itself,
+        // before anything has been cut).
+        const sizeInput = qtyIn > 0 ? qtyIn : (cutBySize.get(s.size_code) || s.quantity);
         return {
           sizeCode: s.size_code,
           poQty: s.quantity,
