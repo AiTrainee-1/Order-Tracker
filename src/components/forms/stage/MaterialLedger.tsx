@@ -71,7 +71,7 @@ function totalsColumns(
 function balanceFor(entryTypes: MaterialEntryType[], totals: MaterialTotals): number | null {
   if (entryTypes.length === 0) return null;
   if (entryTypes.includes("dc")) return Math.max(totals.required - totals.dc, 0);
-  return Math.max(totals.dc - totals.inward, 0);
+  return Math.max(totals.dc - (totals.inward + totals.received), 0);
 }
 
 export interface MaterialLedgerProps {
@@ -571,7 +571,7 @@ function RequirementRow({
           <EntryLedger
             requirementId={req.id}
             requirementName={req.name}
-            entries={flow.entries}
+            flow={flow}
             entryTypes={entryTypes}
             orderId={orderId}
             poId={poId}
@@ -598,10 +598,68 @@ function Figure({ label, value, tone }: { label: string; value: number; tone?: "
 // The per-requirement entry ledger
 // ---------------------------------------------------------------------------
 
+/**
+ * How much of the upstream figure this entry type is still allowed to consume.
+ *
+ * Procurement is a chain of three figures -  required → planned → received -
+ * and each step is capped by the one before it: you cannot order more than the
+ * plan calls for, and the store cannot take in more than the supplier was ever
+ * asked for. Without this, a second receipt of the same delivery silently
+ * doubled the received total and nothing on any screen contradicted it.
+ *
+ * `null` means there is nothing upstream to measure against yet (no plan, no
+ * purchase), in which case blocking the entry would be obstruction rather than
+ * validation -  the figure is simply recorded.
+ */
+interface EntryCeiling {
+  /** The upstream figure this type is capped by. */
+  limit: number;
+  /** Already recorded of this type, excluding the row being edited. */
+  used: number;
+  remaining: number;
+  /** What the cap is, in the words of the screen the operator came from. */
+  limitLabel: string;
+}
+
+function ceilingFor(
+  entryType: MaterialEntryType,
+  flow: RequirementFlow,
+  editingId: string | null,
+): EntryCeiling | null {
+  const editingQty = editingId
+    ? flow.entries.find((e) => e.id === editingId && e.entry_type === entryType)?.qty ?? 0
+    : 0;
+
+  if (entryType === "dc") {
+    const limit = flow.totals.required;
+    if (limit <= 0) return null;
+    const used = Math.max(flow.totals.dc - editingQty, 0);
+    return { limit, used, remaining: Math.max(limit - used, 0), limitLabel: "required quantity" };
+  }
+
+  if (entryType === "inward" || entryType === "receipt") {
+    const limit = flow.plannedQty;
+    if (limit <= 0) return null;
+    const used = Math.max(flow.receivedQty - editingQty, 0);
+    return { limit, used, remaining: Math.max(limit - used, 0), limitLabel: "planned quantity" };
+  }
+
+  return null;
+}
+
+/** Keeps the override in the record itself, not just the audit summary, so
+ * whoever reads the entry later sees why it went past the ceiling. Mirrors
+ * chainShared's overrideNote for the post-Knitting stages. */
+function overrideNote(notes: string, overridden: boolean): string | null {
+  const base = notes.trim();
+  if (!overridden) return base || null;
+  return `${base}${base ? " · " : ""}[Over the upstream quantity -  recorded as an extra / recovered source]`;
+}
+
 function EntryLedger({
   requirementId,
   requirementName,
-  entries,
+  flow,
   entryTypes,
   orderId,
   poId,
@@ -610,13 +668,14 @@ function EntryLedger({
 }: {
   requirementId: string;
   requirementName: string;
-  entries: MaterialEntry[];
+  flow: RequirementFlow;
   entryTypes: MaterialEntryType[];
   orderId: string;
   poId: string | null;
   sectionId: string;
   onSaved: () => void;
 }) {
+  const entries = flow.entries;
   const appUser = useEntryUser();
   const toast = useToast();
   const confirm = useConfirm();
@@ -627,11 +686,17 @@ function EntryLedger({
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(() => blankEntryForm(entryTypes[0]));
+  /** Deliberate override of the upstream ceiling -  material that genuinely
+   * came from outside the plan or the purchase order. */
+  const [allowOverLimit, setAllowOverLimit] = useState(false);
+
+  const ceiling = ceilingFor(form.entryType, flow, editingId);
 
   function reset() {
     setForm(blankEntryForm(entryTypes[0]));
     setAdding(false);
     setEditingId(null);
+    setAllowOverLimit(false);
   }
 
   async function submit() {
@@ -645,6 +710,17 @@ function EntryLedger({
       toast.show("Add a note before saving.", "error");
       return;
     }
+    if (ceiling && !allowOverLimit && qty > ceiling.remaining) {
+      toast.show(
+        ceiling.remaining === 0
+          ? `${requirementName}: the whole ${ceiling.limit.toLocaleString()} KG ${ceiling.limitLabel} is already accounted for -  there is no balance left to record against.`
+          : `${requirementName}: only ${ceiling.remaining.toLocaleString()} KG of the ${ceiling.limit.toLocaleString()} KG ${ceiling.limitLabel} is still outstanding -  you entered ${qty.toLocaleString()} KG.`,
+        "error",
+      );
+      return;
+    }
+
+    const notes = overrideNote(form.notes, allowOverLimit && !!ceiling && qty > ceiling.remaining);
 
     const input = {
       requirement_id: requirementId,
@@ -655,7 +731,7 @@ function EntryLedger({
       doc_no: form.docNo.trim() || null,
       doc_date: form.docDate || null,
       lot_ref: form.lotRef.trim() || null,
-      notes: form.notes.trim() || null,
+      notes,
       entered_by: appUser.id,
     };
 
@@ -675,7 +751,7 @@ function EntryLedger({
           action: "update",
           summary: `${requirementName}: ${ENTRY_LABEL[form.entryType]} entry corrected`,
           changes,
-          notes: form.notes.trim() || null,
+          notes,
           user_id: appUser.id,
         });
       } else {
@@ -687,9 +763,11 @@ function EntryLedger({
           entity: "material_entry",
           entity_id: null,
           action: "create",
-          summary: `${requirementName}: ${ENTRY_LABEL[form.entryType]} ${qty.toLocaleString()} KG`,
+          summary: `${requirementName}: ${ENTRY_LABEL[form.entryType]} ${qty.toLocaleString()} KG${
+            allowOverLimit && ceiling && qty > ceiling.remaining ? " (over the upstream quantity -  override)" : ""
+          }`,
           changes: null,
-          notes: form.notes.trim() || null,
+          notes,
           user_id: appUser.id,
         });
       }
@@ -729,6 +807,7 @@ function EntryLedger({
   function beginEdit(entry: MaterialEntry) {
     setEditingId(entry.id);
     setAdding(true);
+    setAllowOverLimit(false);
     setForm({
       entryType: entry.entry_type,
       qty: String(entry.qty),
@@ -824,14 +903,36 @@ function EntryLedger({
                 ))}
               </Select>
             )}
-            <Input
-              label={`${ENTRY_LABEL[form.entryType]} Quantity (KG)`}
-              type="number"
-              min={0}
-              value={form.qty}
-              onChange={(e) => setForm({ ...form, qty: e.target.value })}
-              autoFocus
-            />
+            <div>
+              <Input
+                label={`${ENTRY_LABEL[form.entryType]} Quantity (KG)`}
+                type="number"
+                min={0}
+                max={ceiling && !allowOverLimit ? ceiling.remaining : undefined}
+                value={form.qty}
+                onChange={(e) => setForm({ ...form, qty: e.target.value })}
+                autoFocus
+              />
+              {/* The ceiling, stated before it is hit rather than only as an
+                  error afterwards -  the operator can see the outstanding
+                  figure while typing. */}
+              {ceiling && (
+                <p className={`mt-1 text-[11px] ${ceiling.remaining > 0 ? "text-ink-500" : "text-amber-700"}`}>
+                  {ceiling.remaining > 0 ? (
+                    <>
+                      <b className="tabular-nums">{ceiling.remaining.toLocaleString()} KG</b> of the{" "}
+                      {ceiling.limit.toLocaleString()} KG {ceiling.limitLabel} still outstanding
+                      {ceiling.used > 0 && <> · {ceiling.used.toLocaleString()} KG already recorded</>}
+                    </>
+                  ) : (
+                    <>
+                      The full {ceiling.limit.toLocaleString()} KG {ceiling.limitLabel} is already
+                      accounted for -  nothing outstanding
+                    </>
+                  )}
+                </p>
+              )}
+            </div>
             <Input
               label="Date"
               type="date"
@@ -868,6 +969,25 @@ function EntryLedger({
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
             placeholder="e.g. Additional yarn received against short supply on DC 1180"
           />
+
+          {/* The escape hatch for material that genuinely came from outside the
+              plan or the purchase order. Off by default, and what it records is
+              written into the entry's own notes. */}
+          {ceiling && (
+            <label className="flex items-start gap-2 text-[11px] text-ink-600">
+              <input
+                type="checkbox"
+                checked={allowOverLimit}
+                onChange={(e) => setAllowOverLimit(e.target.checked)}
+                className="mt-0.5 h-3.5 w-3.5 accent-amber-600"
+              />
+              <span>
+                <b>Extra / recovered source.</b> Tick only if this quantity genuinely comes from outside
+                the {ceiling.limitLabel} -  it lifts the limit and is recorded on the entry.
+              </span>
+            </label>
+          )}
+
           <div className="flex gap-2">
             <Button type="button" size="sm" onClick={submit} isLoading={saveEntry.isPending}>
               Update

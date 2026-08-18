@@ -36,7 +36,7 @@ export function MaterialInwardForm(props: StageFormProps) {
 
   const flows = requirements.map((r) => buildRequirementFlow(r, materialEntries));
   const totals = flows.reduce(
-    (acc, f) => ({ planned: acc.planned + f.totals.dc, received: acc.received + f.totals.inward }),
+    (acc, f) => ({ planned: acc.planned + f.plannedQty, received: acc.received + f.receivedQty }),
     { planned: 0, received: 0 },
   );
   const pending = Math.max(totals.planned - totals.received, 0);
@@ -105,21 +105,21 @@ export function MaterialInwardForm(props: StageFormProps) {
                   </thead>
                   <tbody className="divide-y divide-ink-100">
                     {flows.map((f) => {
-                      const balance = Math.max(f.totals.dc - f.totals.inward, 0);
+                      const balance = f.balance;
                       return (
                         <tr key={f.requirement.id} className="bg-white">
                           <td className="px-3 py-2 font-semibold text-ink-900">{f.requirement.name}</td>
                           <td className="px-3 py-2 capitalize text-ink-500">{f.requirement.category}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{f.totals.dc.toLocaleString()}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{f.plannedQty.toLocaleString()}</td>
                           <td className="px-3 py-2 text-right font-semibold tabular-nums text-status-good">
-                            {f.totals.inward.toLocaleString()}
+                            {f.receivedQty.toLocaleString()}
                           </td>
                           <td className={`px-3 py-2 text-right font-semibold tabular-nums ${balance > 0 ? "text-amber-600" : "text-status-good"}`}>
                             {balance.toLocaleString()}
                           </td>
                           <td className="px-3 py-2">
-                            <Badge tone={balance === 0 ? "good" : f.totals.inward > 0 ? "warn" : "neutral"}>
-                              {balance === 0 ? "Full" : f.totals.inward > 0 ? "Partial" : "Pending"}
+                            <Badge tone={balance === 0 ? "good" : f.receivedQty > 0 ? "warn" : "neutral"}>
+                              {balance === 0 ? "Full" : f.receivedQty > 0 ? "Partial" : "Pending"}
                             </Badge>
                           </td>
                         </tr>

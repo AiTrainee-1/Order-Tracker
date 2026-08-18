@@ -395,24 +395,37 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
       base.isStarted =
         base.isStarted || requirementFlows.length > 0 || totals.planned + totals.dc + totals.received + totals.inward > 0;
 
+      // Procurement is a chain of three DIFFERENT figures - required →
+      // planned → received - not one figure restated three times. Each stage
+      // takes the previous one's figure as its input and records its own as
+      // its output, exactly the way Knitting takes yarn in and gives fabric
+      // out.
+      //
+      // Putting the same number in both columns (which is what this did
+      // before) made one physical quantity read as both the input AND the
+      // output of the same section: 500 KG ordered once showed as "500 in,
+      // 500 out" on every procurement stage. Worse, it made the balance
+      // structurally zero, so a short delivery could never surface - the
+      // KG-side twin of the Embroidery send/receive collision.
       if (stage.key === STAGE.rawMaterialPlanning) {
-        // Required Plan -  a pass-through of what's needed, so Suppliers sees
-        // it as their input the moment it's set, before any purchase happens.
+        // The origin of the KG side of the line: nothing upstream to count in,
+        // and what it hands on is the requirement it has just written.
         inherited = 0;
-        base.recordedIn = totals.required;
+        base.recordedIn = 0;
         base.output = totals.required;
       } else if (stage.key === STAGE.poToSuppliers) {
-        // Purchase Quantity -  what's been raised against the requirement.
-        base.recordedIn = totals.dc;
+        // In: what Planning said the order needs. Out: what has actually been
+        // ordered against it. Balance = still to purchase.
+        base.recordedIn = totals.required;
         base.output = totals.dc;
       } else {
-        // Received into store -  what physically arrived against the purchase
-        // quantity, and what Knitting therefore has to draw from. Legacy
-        // 'receipt' rows fold in alongside 'inward' for the same reason
-        // RequirementFlow.receivedQty does: they are the same event.
-        const receivedIn = totals.inward + totals.received;
-        base.recordedIn = receivedIn;
-        base.output = receivedIn;
+        // In: the purchase quantity the supplier owes. Out: what physically
+        // arrived, and what Knitting therefore has to draw from. Balance =
+        // still owed by the supplier. Legacy 'receipt' rows fold in alongside
+        // 'inward' for the same reason RequirementFlow.receivedQty does: they
+        // are the same physical event under an older name.
+        base.recordedIn = totals.dc;
+        base.output = totals.inward + totals.received;
       }
       base.lastEntryDate = latestDate(materialEntries.map((e) => e.entry_date), base.lastEntryDate);
     }

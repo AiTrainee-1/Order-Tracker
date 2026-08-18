@@ -129,6 +129,8 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
     ],
     receives: "Planned quantities from Purchase Order to Suppliers",
     handsTo: "Knitting",
+    watchFor:
+      "You cannot receive more than the planned quantity for a material -  the entry is refused and the outstanding figure is named. If material genuinely arrived from outside the purchase order, tick Extra / recovered source and say why; the reason is stored on the entry.",
   },
 
   // ---------------------------------------------------- fabric processing

@@ -40,6 +40,31 @@ const DEFAULT_LABELS: StageQtyLabels = {
 };
 
 const LABELS: Record<string, StageQtyLabels> = {
+  // --- Procurement, KG. Three different figures in a row: what the order
+  // needs, what was ordered against it, what actually turned up. Each stage's
+  // "in" is the stage before it, so no figure is ever its own input. --------
+  [STAGE.rawMaterialPlanning]: {
+    in: "Input",
+    out: "Required Plan",
+    rejected: "Dropped",
+    rework: false,
+    balance: "Not Planned",
+  },
+  [STAGE.poToSuppliers]: {
+    in: "Required",
+    out: "Planned",
+    rejected: "Cancelled",
+    rework: false,
+    balance: "Yet to Order",
+  },
+  [STAGE.rawMaterialInward]: {
+    in: "Planned",
+    out: "Received",
+    rejected: "Rejected",
+    rework: false,
+    balance: "Yet to Arrive",
+  },
+
   // --- Fabric, KG. All three are round trips to an outside unit. -----------
   [STAGE.knitting]: {
     in: "Sent",

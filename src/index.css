@@ -56,6 +56,45 @@
     @apply bg-ink-300;
   }
 
+  /* A tall pane that scrolls inside itself -  the section detail beside the
+     workflow rail. The default browser scrollbar is a heavy grey channel that
+     cuts a hard edge down the middle of a soft card, so this replaces it with
+     a thin floating thumb over a transparent track: barely there at rest,
+     clearly grabbable on hover. Firefox gets the same via scrollbar-color,
+     which is the only control it offers. */
+  .scroll-panel {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(203 213 225 / 0.9) transparent;
+    /* Deliberately NOT overscroll-behavior: contain. This pane is a region of
+       an ordinary page, not a modal: containing the scroll swallows the wheel
+       event whenever the pane has nothing left to scroll -  including when its
+       content is shorter than the pane -  so the cursor sitting over it froze
+       the page entirely. Default chaining lets the page take over at the
+       boundary, which is what a reader expects. */
+  }
+  .scroll-panel::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scroll-panel::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scroll-panel::-webkit-scrollbar-thumb {
+    background-color: rgb(203 213 225 / 0.85);
+    border-radius: 9999px;
+    /* A transparent border with background-clip is the standard way to inset a
+       webkit thumb -  there is no padding property for it. */
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  .scroll-panel::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(148 163 184 / 0.95);
+    background-clip: content-box;
+  }
+  .scroll-panel::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
   /* Scrollable but with no visible scrollbar -  used for the compact stage
      strips inside cards, where a native scrollbar looks broken. */
   .no-scrollbar {

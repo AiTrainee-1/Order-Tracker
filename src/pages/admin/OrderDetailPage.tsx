@@ -3,10 +3,10 @@ import { useParams, useLocation } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { useOrderDetail } from "../../hooks/useOrderDetail";
 import { useProductionChain } from "../../hooks/useProductionChain";
+import { STAGE } from "../../lib/chain";
 import { useOrderAssignments } from "../../hooks/useAssignments";
 import { publicImageUrl } from "../../lib/supabaseClient";
 import { deliveryUrgency, formatDisplayDate, urgencyTextClasses } from "../../lib/workflow";
-import { buildOrderProgress } from "../../lib/progress";
 import { getCombinedCutQuantity } from "../../lib/orderQty";
 import { orderTrackingBasePath } from "../../lib/routing";
 import { Card, CardBody, CardHeader } from "../../components/ui/Card";
@@ -15,15 +15,13 @@ import { Button } from "../../components/ui/Button";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import { Loader } from "../../components/ui/Loader";
 import { Table } from "../../components/ui/Table";
-import { FilterTabs } from "../../components/ui/FilterTabs";
-import { GameLevelPath } from "../../components/dashboard/GameLevelPath";
+import { WorkflowRail } from "../../components/dashboard/WorkflowRail";
 import { StageDetailPanel } from "../../components/dashboard/StageDetailPanel";
 import { GarmentPlaceholder } from "../../components/ui/GarmentPlaceholder";
 import { BackButton } from "../../components/ui/BackButton";
 import type { AppUser } from "../../lib/types";
 
 const HISTORY_PAGE_SIZE = 15;
-const ALL_POS = "all";
 
 export function OrderDetailPage() {
   const { orderId } = useParams<{ orderId: string }>();
@@ -35,41 +33,15 @@ export function OrderDetailPage() {
   // Collapsed by default -  it's a full cross-section log and pushes everything
   // above it off the screen on a long order.
   const [showHistory, setShowHistory] = useState(false);
-  const [poScope, setPoScope] = useState<string>(ALL_POS);
   const assignmentsQuery = useOrderAssignments(order?.id);
 
-  const selectedPo = poScope === ALL_POS ? null : purchaseOrders.find((p) => p.id === poScope) ?? null;
-
-  // The quantity layer, scoped to whichever PO tab is open. progress (below)
-  // still drives which stages are open/complete; this drives what the numbers
-  // actually are, lot by lot and size by size.
-  const { chain } = useProductionChain({
-    orderId,
-    purchaseOrders,
-    poId: selectedPo?.id ?? null,
-  });
+  // The quantity layer for the whole order -  every PO combined, which is what
+  // this page has always defaulted to. progress (below) still drives which
+  // stages are open/complete; this drives what the numbers actually are, lot by
+  // lot and size by size.
+  const { chain } = useProductionChain({ orderId, purchaseOrders, poId: null });
   const selectedSectionId = progress?.stages[selectedIndex]?.stage.id;
   const selectedChainStage = chain?.stages.find((s) => s.stage.id === selectedSectionId) ?? null;
-
-  // Recompute progress scoped to just the chosen PO's own entries/quantities - 
-  // this is what makes "how much has been completed for THIS PO" possible,
-  // vs. the combined view which merges every PO's movement together.
-  const scopedProgress = useMemo(() => {
-    if (!order || !progress) return null;
-    if (!selectedPo) return progress;
-    const poEntries = entries.filter((e) => e.po_id === selectedPo.id);
-    return buildOrderProgress(
-      { ...order, delivery_date: selectedPo.delivery_date },
-      progress.stages.map((s) => s.stage),
-      poEntries,
-      { totalQty: selectedPo.quantity, cutQuantity: selectedPo.cut_quantity },
-    );
-  }, [order, progress, entries, selectedPo]);
-
-  const scopedEntries = useMemo(
-    () => (selectedPo ? entries.filter((e) => e.po_id === selectedPo.id) : entries),
-    [entries, selectedPo],
-  );
 
   /** Names for the workflow tooltips / responsible-person panels. */
   const nameOf = useMemo(
@@ -84,40 +56,46 @@ export function OrderDetailPage() {
   }, [progress]);
 
   if (isLoading) return <Loader full label="Loading order…" />;
-  if (isError || !order || !progress || !scopedProgress) {
+  if (isError || !order || !progress) {
     return <p className="text-sm text-status-bad">Couldn't load this order.</p>;
   }
 
   const imageUrl = publicImageUrl(order.image_path);
-  const urgency = deliveryUrgency(scopedProgress.order.delivery_date);
-  const selectedStage = scopedProgress.stages[selectedIndex];
+  const urgency = deliveryUrgency(progress.order.delivery_date);
+  const selectedStage = progress.stages[selectedIndex];
 
-  const plannedQty = selectedPo ? selectedPo.quantity : order.total_qty;
-  const fixedQty = selectedPo
-    ? selectedPo.cut_quantity
-    : getCombinedCutQuantity(order, purchaseOrders);
+  const plannedQty = order.total_qty;
+  const fixedQty = getCombinedCutQuantity(order, purchaseOrders);
+  const productionQty = chain?.totalPcs ?? plannedQty;
+
+  // --- Order Overview KPIs ------------------------------------------------
+  // Every figure below is read straight off the chain / progress objects that
+  // already drive the tables further down. Nothing new is computed here beyond
+  // subtracting one existing total from another.
+  const yarnRequiredKg = chain?.materialTotals.yarn.required ?? 0;
+  const yarnCountsPlanned = chain
+    ? chain.requirementFlows.filter((f) => f.requirement.category === "yarn").length
+    : 0;
+  const cutPcs = chain?.byKey.get(STAGE.cutting)?.output ?? 0;
+  const packedPcs = chain?.byKey.get(STAGE.packing)?.output ?? 0;
+  const notYetCut = Math.max(productionQty - cutPcs, 0);
+  const cutNotPacked = Math.max(cutPcs - packedPcs, 0);
 
   // Who is scheduled to run the NEXT stage -  from the assignment roster rather
   // than only from whoever happened to be named on the last entry.
-  const nextStage = scopedProgress.stages[selectedIndex + 1];
+  const nextStage = progress.stages[selectedIndex + 1];
   const nextStageAssignees = (assignmentsQuery.data ?? [])
-    .filter((a) => a.section_id === nextStage?.stage.id && (!selectedPo || !a.po_id || a.po_id === selectedPo.id))
+    .filter((a) => a.section_id === nextStage?.stage.id)
     .map((a) => usersById.get(a.user_id))
     .filter((u): u is AppUser => !!u);
 
-  const history = [...scopedEntries].reverse();
+  const history = [...entries].reverse();
   const historyTotalPages = Math.max(1, Math.ceil(history.length / HISTORY_PAGE_SIZE));
   const historyCurrentPage = Math.min(historyPage, historyTotalPages);
   const historyRows = history.slice(
     (historyCurrentPage - 1) * HISTORY_PAGE_SIZE,
     historyCurrentPage * HISTORY_PAGE_SIZE,
   );
-
-  function selectPoScope(next: string) {
-    setPoScope(next);
-    setHistoryPage(1);
-    setSelectedIndex(0);
-  }
 
   return (
     <div className="space-y-6">
@@ -143,9 +121,9 @@ export function OrderDetailPage() {
               <h1 className="text-lg font-semibold text-ink-900">{order.style}</h1>
               <Badge tone="neutral">IO {order.io_no}</Badge>
               <Badge tone="neutral">{order.color}</Badge>
-              {scopedProgress.partialStagesCount > 0 && (
+              {progress.partialStagesCount > 0 && (
                 <Badge tone="warn">
-                  {scopedProgress.partialStagesCount} stage{scopedProgress.partialStagesCount === 1 ? "" : "s"}{" "}
+                  {progress.partialStagesCount} stage{progress.partialStagesCount === 1 ? "" : "s"}{" "}
                   moved on unfinished
                 </Badge>
               )}
@@ -155,138 +133,225 @@ export function OrderDetailPage() {
 
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
               <Metric
-                label={selectedPo ? `PO ${selectedPo.po_number} -  Buyer Qty` : "Buyer Order Qty (All POs)"}
+                label="Buyer Order Qty (All POs)"
                 value={plannedQty.toLocaleString() + " PCS"}
               />
-              <Metric label="Extra %" value={`${selectedPo?.extra_percent ?? 0}%`} />
+              <Metric label="Extra %" value={`${purchaseOrders[0]?.extra_percent ?? 0}%`} />
               <Metric
                 label="Extra Qty"
-                value={Math.max((chain?.totalPcs ?? plannedQty) - plannedQty, 0).toLocaleString() + " PCS"}
+                value={Math.max(productionQty - plannedQty, 0).toLocaleString() + " PCS"}
               />
               <Metric
                 label="Final Production Qty"
-                value={(chain?.totalPcs ?? plannedQty).toLocaleString() + " PCS"}
+                value={productionQty.toLocaleString() + " PCS"}
                 tone="text-brand"
               />
               <Metric
                 label="Fixed Qty (Post-Cutting)"
                 value={fixedQty != null ? fixedQty.toLocaleString() + " PCS" : "Not cut yet"}
               />
-              <Metric label="Delivery" value={formatDisplayDate(scopedProgress.order.delivery_date)} />
+              <Metric label="Delivery" value={formatDisplayDate(progress.order.delivery_date)} />
               <Metric
                 label="Days Remaining"
                 value={
-                  scopedProgress.daysRemaining !== null
-                    ? scopedProgress.daysRemaining >= 0
-                      ? `${scopedProgress.daysRemaining} days`
-                      : `${Math.abs(scopedProgress.daysRemaining)} days overdue`
+                  progress.daysRemaining !== null
+                    ? progress.daysRemaining >= 0
+                      ? `${progress.daysRemaining} days`
+                      : `${Math.abs(progress.daysRemaining)} days overdue`
                     : "No date set"
                 }
                 tone={urgencyTextClasses[urgency]}
               />
-              <Metric label="Overall Progress" value={`${scopedProgress.overallProgressPct}%`} />
+              <Metric label="Overall Progress" value={`${progress.overallProgressPct}%`} />
             </div>
-            <ProgressBar value={scopedProgress.overallProgressPct} className="mt-3" />
+            <ProgressBar value={progress.overallProgressPct} className="mt-3" />
           </div>
         </CardBody>
       </Card>
 
-      {purchaseOrders.length > 0 && (
-        <Card>
-          <CardBody className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-              Track by Purchase Order
-            </p>
-            <FilterTabs
-              value={poScope}
-              onChange={selectPoScope}
-              tabs={[
-                { key: ALL_POS, label: "All POs (combined)" },
-                ...purchaseOrders.map((po) => ({
-                  key: po.id,
-                  label: `PO ${po.po_number}`,
-                })),
-              ]}
-            />
-          </CardBody>
-        </Card>
-      )}
-
       <Card>
         <CardHeader
-          title="Production Workflow"
-          subtitle={`${scopedProgress.completedStagesCount} completed · ${scopedProgress.pendingStagesCount} pending${
-            scopedProgress.partialStagesCount ? ` · ${scopedProgress.partialStagesCount} moved on unfinished` : ""
-          }${selectedPo ? ` · PO ${selectedPo.po_number}` : " · all POs combined"}`}
+          title="Order Overview"
+          subtitle="Scope, then the order's journey left to right, then where it has got to overall."
         />
         <CardBody>
-          <GameLevelPath
-            stages={scopedProgress.stages}
-            currentStageIndex={scopedProgress.currentStageIndex}
-            selectedIndex={selectedIndex}
-            onSelect={setSelectedIndex}
-            userNameById={nameOf}
-          />
+          {/* Deliberately in the order the quantity actually travels, so the
+              row can be read straight across rather than jumped around:
+
+                  scope   -  what was ordered, and across how many POs
+                  input   -  the yarn bought to make it
+                  funnel  -  not yet cut  →  cut but unpacked  →  packed
+                  summary -  how far the whole order has got
+
+              Which is also why the colours run neutral → indigo → amber →
+              amber → green: the row visibly resolves from outstanding to
+              done as the eye moves right. */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7">
+            <Kpi
+              label="Order Count"
+              value={productionQty.toLocaleString()}
+              unit="PCS"
+              hint={`buyer ${plannedQty.toLocaleString()} + extra`}
+              tone="brand"
+            />
+            <Kpi
+              label="Active Programs"
+              value={purchaseOrders.length.toLocaleString()}
+              unit={purchaseOrders.length === 1 ? "PO" : "POs"}
+              hint="POs in this style"
+              tone="neutral"
+            />
+            <Kpi
+              label="Yarn Count"
+              value={yarnRequiredKg.toLocaleString()}
+              unit="KG"
+              hint={
+                yarnCountsPlanned
+                  ? `${yarnCountsPlanned} count${yarnCountsPlanned === 1 ? "" : "s"} planned`
+                  : "nothing planned yet"
+              }
+              tone="indigo"
+            />
+            <Kpi
+              label="Not Yet Cut"
+              value={notYetCut.toLocaleString()}
+              unit="PCS"
+              hint={cutPcs > 0 ? `${cutPcs.toLocaleString()} cut so far` : "cutting not started"}
+              tone={notYetCut > 0 ? "warn" : "good"}
+            />
+            <Kpi
+              label="Cut, Not Yet Packed"
+              value={cutNotPacked.toLocaleString()}
+              unit="PCS"
+              hint="work in progress"
+              tone={cutNotPacked > 0 ? "warn" : "good"}
+            />
+            <Kpi
+              label="Packed / Ship-Ready"
+              value={packedPcs.toLocaleString()}
+              unit="PCS"
+              hint={`${pctOf(packedPcs, productionQty)}% of the order`}
+              tone="good"
+            />
+            <Kpi
+              label="Overall Completion"
+              value={`${progress.overallProgressPct}%`}
+              hint={`${progress.completedStagesCount} of ${progress.stages.length} sections closed`}
+              tone="brand"
+            />
+          </div>
         </CardBody>
       </Card>
 
-      {selectedStage && (
-        <Card>
-          <CardHeader
-            title={selectedStage.stage.label}
-            subtitle={
-              selectedStage.isCompleted
-                ? `Completed by ${selectedStage.completedBy ? nameOf(selectedStage.completedBy) : "- "} on ${formatDisplayDate(selectedStage.completedOn)}`
-                : selectedStage.isPartial
-                  ? `Moved on without completing · last update ${formatDisplayDate(selectedStage.lastEntryDate)}`
-                  : selectedStage.entries.length
-                    ? `In progress · last update ${formatDisplayDate(selectedStage.lastEntryDate)}`
-                    : "Not started yet"
-            }
-            action={
-              <Badge
-                tone={
-                  selectedStage.isCompleted
-                    ? "good"
-                    : selectedStage.isPartial
-                      ? "warn"
-                      : selectedStage.entries.length
-                        ? "info"
-                        : "neutral"
-                }
-              >
-                {selectedStage.isCompleted
-                  ? "Completed"
-                  : selectedStage.isPartial
-                    ? "Moved on -  not completed"
-                    : selectedStage.entries.length
-                      ? "In Progress"
-                      : "Pending"}
-              </Badge>
-            }
-          />
-          <CardBody className="space-y-5">
-            <StageDetailPanel
-              orderId={orderId}
-              stage={selectedStage}
-              chainStage={selectedChainStage}
-              chain={chain}
-              nameOf={nameOf}
-              usersById={usersById}
-              nextStage={nextStage}
-              nextStageAssignees={nextStageAssignees}
-              nextStageAssigneesLoading={assignmentsQuery.isLoading}
-            />
-          </CardBody>
-        </Card>
-      )}
+      {/* The workflow and the section it opens sit SIDE BY SIDE. Previously the
+          detail unrolled below the stage path, so the moment you scrolled into
+          a section's numbers you lost sight of which of the eighteen you were
+          reading. The rail stays put; only the right-hand pane changes. */}
+      <Card>
+        <CardHeader
+          title="Complete Production Workflow"
+          subtitle={`${progress.completedStagesCount} completed · ${progress.pendingStagesCount} pending${
+            progress.partialStagesCount ? ` · ${progress.partialStagesCount} moved on unfinished` : ""
+          } · all POs combined`}
+        />
+        <CardBody>
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-[19rem_minmax(0,1fr)] xl:grid-cols-[21rem_minmax(0,1fr)]">
+            {/* Left: the stage list, in full. All 18 render -  no inner scroll
+                here, so the rail is never truncated and its height is what sets
+                the card's height. The detail pane opposite does the scrolling. */}
+            <div>
+              <div className="rounded-2xl border border-white/70 bg-white/60 p-2.5">
+                <WorkflowRail
+                  stages={progress.stages}
+                  currentStageIndex={progress.currentStageIndex}
+                  selectedIndex={selectedIndex}
+                  onSelect={setSelectedIndex}
+                  userNameById={nameOf}
+                />
+              </div>
+            </div>
+
+            {/* Right: whatever the rail has selected.
+                
+                On desktop the pane is absolutely positioned inside its grid
+                cell, which is the point: an absolute child contributes nothing
+                to the row's height, so the row is sized purely by the rail
+                beside it and the pane then fills exactly that. A section uses
+                the whole 18-stage height before a scrollbar exists at all, and
+                only genuinely longer content scrolls -  rather than the pane
+                being cut to the viewport and leaving the rest of the card
+                empty. Below lg it returns to normal flow and the page scrolls. */}
+            <div className="min-w-0 lg:relative lg:min-h-0">
+              {selectedStage ? (
+                <div className="scroll-panel rounded-2xl border border-white/70 bg-white/60 lg:absolute lg:inset-0 lg:overflow-y-auto">
+                  {/* Stays put at the top of the scrolling pane -  on a long
+                      section you would otherwise scroll past the only label
+                      saying which of the eighteen you are reading. */}
+                  <div className="sticky top-0 z-10 flex flex-wrap items-start justify-between gap-3 rounded-t-2xl border-b border-ink-100 bg-white/85 px-4 py-3 backdrop-blur-sm">
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">
+                        Section {selectedIndex + 1} of {progress.stages.length}
+                      </p>
+                      <h3 className="text-base font-bold text-ink-900">{selectedStage.stage.label}</h3>
+                      <p className="text-xs text-ink-500">
+                        {selectedStage.isCompleted
+                          ? `Completed by ${selectedStage.completedBy ? nameOf(selectedStage.completedBy) : "- "} on ${formatDisplayDate(selectedStage.completedOn)}`
+                          : selectedStage.isPartial
+                            ? `Moved on without completing · last update ${formatDisplayDate(selectedStage.lastEntryDate)}`
+                            : selectedStage.entries.length
+                              ? `In progress · last update ${formatDisplayDate(selectedStage.lastEntryDate)}`
+                              : "Not started yet"}
+                      </p>
+                    </div>
+                    <Badge
+                      tone={
+                        selectedStage.isCompleted
+                          ? "good"
+                          : selectedStage.isPartial
+                            ? "warn"
+                            : selectedStage.entries.length
+                              ? "info"
+                              : "neutral"
+                      }
+                    >
+                      {selectedStage.isCompleted
+                        ? "Completed"
+                        : selectedStage.isPartial
+                          ? "Moved on -  not completed"
+                          : selectedStage.entries.length
+                            ? "In Progress"
+                            : "Pending"}
+                    </Badge>
+                  </div>
+
+                  <div className="space-y-4 p-4">
+                    <StageDetailPanel
+                      orderId={orderId}
+                      stage={selectedStage}
+                      chainStage={selectedChainStage}
+                      chain={chain}
+                      nameOf={nameOf}
+                      usersById={usersById}
+                      nextStage={nextStage}
+                      nextStageAssignees={nextStageAssignees}
+                      nextStageAssigneesLoading={assignmentsQuery.isLoading}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <p className="rounded-2xl border border-dashed border-ink-200 px-4 py-10 text-center text-sm text-ink-400">
+                  Pick a section on the left to see its detail here.
+                </p>
+              )}
+            </div>
+          </div>
+        </CardBody>
+      </Card>
 
       <Card>
         <CardHeader
           title="Complete Movement History"
-          subtitle={`${scopedEntries.length} entries logged across all stages${
-            selectedPo ? ` · PO ${selectedPo.po_number}` : " · all POs combined"
-          }`}
+          subtitle={`${entries.length} entries logged across all stages · all POs combined`}
         />
         <CardBody className="space-y-3">
           {!showHistory ? (
@@ -355,6 +420,49 @@ export function OrderDetailPage() {
           )}
         </CardBody>
       </Card>
+    </div>
+  );
+}
+
+/** Share of a total, floored at 0 and guarded against a zero denominator so an
+ * order with nothing entered yet reads 0% rather than NaN. */
+function pctOf(part: number, whole: number): number {
+  if (whole <= 0) return 0;
+  return Math.round((part / whole) * 100);
+}
+
+const KPI_SKIN: Record<string, { rail: string; value: string; chip: string }> = {
+  brand: { rail: "border-l-brand", value: "text-brand", chip: "bg-brand/10" },
+  good: { rail: "border-l-status-good", value: "text-status-good", chip: "bg-status-good/10" },
+  warn: { rail: "border-l-amber-500", value: "text-amber-600", chip: "bg-amber-500/10" },
+  indigo: { rail: "border-l-indigo-500", value: "text-indigo-700", chip: "bg-indigo-500/10" },
+  neutral: { rail: "border-l-ink-300", value: "text-ink-900", chip: "bg-ink-100" },
+};
+
+/** One Order Overview tile. Colour is a status cue, not decoration: amber means
+ * a quantity is still outstanding, green means it has landed. */
+function Kpi({
+  label,
+  value,
+  unit,
+  hint,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  unit?: string;
+  hint?: string;
+  tone?: keyof typeof KPI_SKIN | string;
+}) {
+  const skin = KPI_SKIN[tone] ?? KPI_SKIN.neutral;
+  return (
+    <div className={`rounded-xl border border-white/70 border-l-4 ${skin.rail} ${skin.chip} px-3 py-2.5`}>
+      <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-ink-500">{label}</p>
+      <p className="mt-1 flex items-baseline gap-1">
+        <span className={`text-lg font-bold tabular-nums ${skin.value}`}>{value}</span>
+        {unit && <span className="text-[11px] font-semibold text-ink-400">{unit}</span>}
+      </p>
+      {hint && <p className="mt-0.5 truncate text-[11px] text-ink-500">{hint}</p>}
     </div>
   );
 }
