@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import { STAGE_GUIDE } from "../src/lib/stageGuide";
 
-// Source of truth: the stage keys migration 011 actually inserts, minus
-// whatever a later migration removes -  currently just 018, which deletes
-// Setting and Raising. Expected count is 20 (migration 011) - 2 (018).
+// Source of truth: the stage keys migration 011 inserts, minus whatever a
+// later migration removes (018 deletes Setting and Raising), plus whatever a
+// later migration adds (020 inserts Brushing).
+// Expected count is 20 (011) - 2 (018) + 1 (020) = 19.
 const sql = readFileSync("./supabase/migrations/011_production_chain.sql", "utf8");
 const block = sql.split("insert into public.workflow_stages")[1].split(";")[0];
 const insertedKeys = [...block.matchAll(/\('([a-z_]+)',\s*'/g)].map((m) => m[1]);
@@ -12,14 +13,24 @@ const migration018 = readFileSync("./supabase/migrations/018_workflow_restructur
 const deleteLine = migration018.match(/delete from public\.workflow_stages where key in \(([^)]+)\);/);
 const removed = deleteLine ? [...deleteLine[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]) : [];
 
-const keys = insertedKeys.filter((k) => !removed.includes(k));
+const migration020 = readFileSync("./supabase/migrations/020_add_brushing_stage.sql", "utf8");
+// 020 inserts via INSERT ... SELECT rather than VALUES -  it has to be plain
+// statements with no DO block, because the Supabase SQL Editor mis-splits
+// dollar-quoted bodies. Match the key literal in the select list.
+const added = [
+  ...migration020.matchAll(/insert into public\.workflow_stages[^;]*?select\s+'([a-z_]+)'/gis),
+].map((m) => m[1]);
 
-console.log(`workflow_stages inserts ${insertedKeys.length} stages, ${removed.length} removed by migration 018 -  ${keys.length} active`);
+const keys = [...insertedKeys.filter((k) => !removed.includes(k)), ...added];
+
+console.log(
+  `workflow_stages inserts ${insertedKeys.length} stages, ${removed.length} removed by 018, ${added.length} added by 020 -  ${keys.length} active`,
+);
 const missing = keys.filter((k) => !STAGE_GUIDE[k]);
 const extra = Object.keys(STAGE_GUIDE).filter((k) => !keys.includes(k));
 
 let fails = 0;
-if (keys.length !== 18) { console.log(`FAIL  expected 18 active stages, got ${keys.length}`); fails++; }
+if (keys.length !== 19) { console.log(`FAIL  expected 19 active stages, got ${keys.length}`); fails++; }
 if (missing.length) { console.log(`FAIL  no guide for: ${missing.join(", ")}`); fails++; }
 else console.log("PASS  every stage has a guide");
 if (extra.length) { console.log(`FAIL  guide for non-existent stage: ${extra.join(", ")}`); fails++; }

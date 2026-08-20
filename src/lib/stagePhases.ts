@@ -71,6 +71,7 @@ const PROCUREMENT_KEYS: string[] = [
 const FABRIC_KEYS: string[] = [
   STAGE.knitting,
   STAGE.dyeing,
+  STAGE.brushing,
   STAGE.compacting,
   STAGE.fabricInhouse,
   STAGE.fabricInspection,

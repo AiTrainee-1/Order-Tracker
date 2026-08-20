@@ -43,6 +43,7 @@ export const STAGE = {
   rawMaterialInward: "raw_material_inward",
   knitting: "knitting",
   dyeing: "dyeing",
+  brushing: "brushing",
   compacting: "compacting",
   fabricInhouse: "fabric_inhouse",
   fabricInspection: "fabric_inspection",

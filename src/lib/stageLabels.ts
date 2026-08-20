@@ -80,6 +80,13 @@ const LABELS: Record<string, StageQtyLabels> = {
     rework: false,
     balance: "With Dyer",
   },
+  [STAGE.brushing]: {
+    in: "Sent",
+    out: "Received",
+    rejected: "Reject",
+    rework: false,
+    balance: "With Brusher",
+  },
   [STAGE.compacting]: {
     in: "Sent",
     out: "Received",

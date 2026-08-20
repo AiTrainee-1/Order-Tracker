@@ -362,6 +362,16 @@ const SEND_RECEIVE_COPY: Record<string, SendReceiveCopy> = {
     presets: [],
     allowCreateLot: false,
   },
+  [STAGE.brushing]: {
+    intro:
+      "Each dyed lot is sent out to be brushed -  the fleece is raised on the back of the fabric -  and comes back a slightly lighter lot. It sits between Dyeing and Compacting, so what it receives is what the dyer returned, and what it returns is what the compactor gets.",
+    sendingHeading: "Sending to the brushing unit",
+    receivingHeading: "Brushed fabric received back",
+    withPartyLabel: "With Brusher",
+    rejectedLabel: "Rejected",
+    presets: [],
+    allowCreateLot: false,
+  },
   [STAGE.compacting]: {
     intro: "Each lot is sent out for compacting to its final GSM and width, and comes back a slightly lighter lot.",
     sendingHeading: "Sending to the compacting unit",

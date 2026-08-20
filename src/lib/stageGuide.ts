@@ -167,10 +167,30 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
       "In Sending, press “+ Add New Entry”, pick the lot from the dropdown -  Knitting has already created it -  and enter the quantity sent and where it went.",
       "When the dyed fabric comes back, use the Receiving panel -  same lot, quantity received, and anything rejected.",
       "One entry per lot in each panel. Never merge two lots into one row.",
-      "Move forward when Compacting can take the fabric.",
+      "Move forward when Brushing can take the fabric.",
     ],
     receives: "Greige fabric from Knitting",
+    handsTo: "Brushing",
+  },
+
+  brushing: {
+    owns: "Sending each dyed lot out to be brushed -  the fleece raised on the back of the fabric -  and reconciling what comes back.",
+    records: [
+      "Sending: lot, quantity sent, unit/party it went to",
+      "Receiving: lot, quantity received back, rejected KG",
+    ],
+    maintains: ["Each lot's balance through this stage"],
+    steps: [
+      "There are two panels: Sending and Receiving.",
+      "In Sending, press “+ Add New Entry”, pick the lot, and enter the quantity sent and where it went.",
+      "The quantity available is what Dyeing returned for that lot -  you cannot send more than that without ticking the override.",
+      "When the brushed fabric comes back, use the Receiving panel -  same lot, quantity received, and anything rejected.",
+      "Move forward once the lot is ready for compacting.",
+    ],
+    receives: "Dyed fabric from Dyeing",
     handsTo: "Compacting",
+    watchFor:
+      "Brushing raises the pile, it does not add weight -  a lot should come back slightly lighter, never heavier. A gain means the wrong lot was picked or the same receipt was entered twice.",
   },
 
   compacting: {
@@ -187,7 +207,7 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
       "One entry per lot in each panel.",
       "Move forward when the fabric is ready to come back in-house.",
     ],
-    receives: "Dyed fabric from Dyeing",
+    receives: "Brushed fabric from Brushing",
     handsTo: "In-House",
   },
 

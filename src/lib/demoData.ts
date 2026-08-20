@@ -153,6 +153,7 @@ export const DEMO_MATERIAL_ENTRIES: MaterialEntry[] = DEMO_REQUIREMENTS.flatMap(
 const KG_FLOW: [string, number][] = [
   [STAGE.knitting, 0.015],
   [STAGE.dyeing, 0.02],
+  [STAGE.brushing, 0.012],
   [STAGE.compacting, 0.01],
   [STAGE.fabricInhouse, 0.004],
   [STAGE.fabricInspection, 0.006],
