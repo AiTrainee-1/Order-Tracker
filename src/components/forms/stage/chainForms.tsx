@@ -181,9 +181,10 @@ export function LotProcessForm(props: StageFormProps) {
  * reported a round trip as two productions -  200 sent plus the same 200 back
  * read as 400. Every round-trip stage now follows this split.
  *
- * Only Knitting's Sending ledger may raise a brand new lot (migration 018
- * enforces this server-side too) -  Dyeing and Compacting always pick from the
- * existing register.
+ * Only Dyeing's Sending ledger may raise a brand new lot (migration 021
+ * enforces this server-side too) -  Knitting has no lot dimension at all (see
+ * SEND_RECEIVE_COPY below, lotMode: "none"), and Compacting/Brushing always
+ * pick from the existing register.
  */
 export function LotSendReceiveForm(props: StageFormProps) {
   const { order, assignment, stageProgress, onForwarded } = props;
@@ -272,7 +273,7 @@ export function LotSendReceiveForm(props: StageFormProps) {
           onSaved={onForwarded}
           showDetails={props.showDetails}
           config={{
-            lot: "required",
+            lot: copy.lotMode ?? "required",
             size: "none",
             inLabel: labels.in,
             outLabel: false,
@@ -283,9 +284,11 @@ export function LotSendReceiveForm(props: StageFormProps) {
             txnType: "send",
             filterByTxnType: true,
             allowCreateLot: copy.allowCreateLot,
-            // Knitting originates a lot's quantity, so there is nothing
-            // upstream to ration it against. From Dyeing onward the lot can
-            // only send on what the previous section received for it.
+            // Dyeing originates a lot's quantity, so there is nothing
+            // upstream to ration it against. From Brushing onward the lot can
+            // only send on what the previous section received for it. Knitting
+            // has no lot dimension (lotMode "none"), so this never applies to
+            // it either way.
             lotAvailable: !copy.allowCreateLot,
           }}
         />
@@ -304,7 +307,7 @@ export function LotSendReceiveForm(props: StageFormProps) {
           onSaved={onForwarded}
           showDetails={props.showDetails}
           config={{
-            lot: "required",
+            lot: copy.lotMode ?? "required",
             size: "none",
             inLabel: false,
             outLabel: labels.out,
@@ -340,27 +343,37 @@ interface SendReceiveCopy {
   rejectedLabel: string;
   presets: string[];
   allowCreateLot: boolean;
+  /** "none" removes the lot picker from both panels entirely -  used only by
+   * Knitting, which tracks a total quantity and has no lot of its own to
+   * select or create. Every other stage defaults to "required" via the
+   * `copy.lotMode ?? "required"` fallback where this is read. */
+  lotMode?: "required" | "none";
 }
 
 const SEND_RECEIVE_COPY: Record<string, SendReceiveCopy> = {
   [STAGE.knitting]: {
     intro:
-      "Yarn is sent out to be knitted and fabric comes back as a physical batch. Raise a lot when you send it -  every stage after this one, right through to Packing, is traced by that lot number.",
+      "Yarn is sent out to be knitted and fabric comes back as a physical batch. This stage tracks the total quantity sent and received -  the lot number isn't raised until Dyeing, once the fabric moves on from here.",
     sendingHeading: "Sending yarn to the knitting unit",
     receivingHeading: "Fabric received back",
     withPartyLabel: "With Knitter",
     rejectedLabel: "Wastage",
     presets: ["JKR", "Texwell"],
-    allowCreateLot: true,
+    allowCreateLot: false,
+    // Yarn hasn't become a traceable batch yet -  that happens at Dyeing.
+    // Removing the lot picker entirely (rather than just disabling creation)
+    // is what keeps this stage a plain total-quantity round trip.
+    lotMode: "none",
   },
   [STAGE.dyeing]: {
-    intro: "Each lot is sent out to be dyed and comes back a slightly lighter lot -  the difference is this stage's process loss.",
+    intro:
+      "Raise a lot when you send fabric out to be dyed -  every stage after this one, right through to Packing, is traced by that lot number. Each lot comes back a slightly lighter lot; the difference is this stage's process loss.",
     sendingHeading: "Sending to the dyeing unit",
     receivingHeading: "Dyed fabric received back",
     withPartyLabel: "With Dyer",
     rejectedLabel: "Rejected",
     presets: [],
-    allowCreateLot: false,
+    allowCreateLot: true,
   },
   [STAGE.brushing]: {
     intro:

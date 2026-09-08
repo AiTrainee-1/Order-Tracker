@@ -181,8 +181,8 @@ export interface PoSizeQuantity {
   created_at: string;
 }
 
-/** A physical batch of fabric, created at Knitting or Dyeing and referenced by
- * every stage after it. po_id null = the lot serves the whole order. */
+/** A physical batch of fabric, created at Dyeing and referenced by every stage
+ * after it. po_id null = the lot serves the whole order. */
 export interface ProductionLot {
   id: string;
   order_id: string;

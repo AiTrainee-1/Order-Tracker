@@ -206,11 +206,32 @@ export function buildDemoTxns(stages: WorkflowStage[]): ProductionTxn[] {
   const byKey = new Map(stages.map((s) => [s.key, s]));
 
   const yarnKg = DEMO_REQUIREMENTS.reduce((sum, r) => sum + r.required_qty, 0);
-  const carry = [Math.round(yarnKg * 0.55), yarnKg - Math.round(yarnKg * 0.55)];
+  // Two-element per stage from here on -  one per DEMO_LOT -  except Knitting,
+  // which has no lot dimension and is handled separately below.
+  let carry = [0, 0];
 
   for (const [key, loss] of KG_FLOW) {
     const stage = byKey.get(key);
     if (!stage) continue;
+
+    if (key === STAGE.knitting) {
+      // Knitting no longer creates or selects a lot -  it's a plain total
+      // quantity round trip, same as the real form. What it produces is what
+      // gets split across the two demo lots below, once Dyeing raises them.
+      const qtyOut = Math.round(yarnKg * (1 - loss));
+      rows.push(
+        txn({
+          section_id: stage.id,
+          unit: "KG",
+          lot_id: null,
+          qty_in: yarnKg,
+          qty_out: qtyOut,
+        }),
+      );
+      carry = [Math.round(qtyOut * 0.55), qtyOut - Math.round(qtyOut * 0.55)];
+      continue;
+    }
+
     DEMO_LOTS.forEach((lot, i) => {
       const qtyIn = carry[i];
       const rejected = key === STAGE.fabricInspection ? Math.round(qtyIn * 0.004) : 0;
@@ -224,7 +245,7 @@ export function buildDemoTxns(stages: WorkflowStage[]): ProductionTxn[] {
           qty_in: qtyIn,
           qty_out: qtyOut,
           qty_rejected: rejected,
-          ref_name: key === STAGE.knitting ? (i === 0 ? "JKR" : "Texwell") : null,
+          ref_name: null,
         }),
       );
     });

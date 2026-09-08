@@ -135,42 +135,42 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
 
   // ---------------------------------------------------- fabric processing
   knitting: {
-    owns: "Sending yarn out to be knitted, giving each batch the lot number the whole factory will track it by, and reconciling the fabric that comes back.",
+    owns: "Sending yarn out to be knitted and reconciling the fabric that comes back. This stage tracks the total quantity only -  the lot number isn't raised until Dyeing.",
     records: [
-      "Sending: a new lot number, knitting unit -  JKR, Texwell, or a new one you type in -  and quantity sent",
-      "Receiving: the same lot, quantity received back, and any wastage",
+      "Sending: knitting unit -  JKR, Texwell, or a new one you type in -  and quantity sent",
+      "Receiving: quantity received back, and any wastage",
     ],
-    maintains: ["The lot register -  every stage after this picks from the lots you create here"],
+    maintains: ["Sent vs received staying true as fabric comes back in batches"],
     steps: [
-      "In the Sending panel, press “+ New Lot”, type the lot number for this batch, and press Create.",
-      "Pick the knitting unit, or type a new company name -  it's remembered for next time.",
-      "Enter the yarn quantity sent.",
-      "When the fabric comes back, use the Receiving panel -  pick the same lot, and enter the fabric received and any wastage.",
-      "Add a separate entry for each batch. Different lots always mean different rows.",
+      "In the Sending panel, press “+ Add New Entry”, pick the knitting unit -  or type a new company name, it's remembered for next time -  and enter the yarn quantity sent.",
+      "When the fabric comes back, use the Receiving panel and enter the quantity received and any wastage.",
+      "There is no lot to pick here -  this stage records the total quantity only. Add a separate entry for each batch sent or received.",
       "Move forward when Dyeing can start.",
     ],
     receives: "Yarn from the store",
     handsTo: "Dyeing",
     watchFor:
-      "Lots can only be created here, at Knitting -  every later stage picks from this register rather than starting its own. Use the lot number written on the physical fabric, not a new one.",
+      "This stage no longer creates or selects lots -  that starts at Dyeing. If you're expecting to see a lot number here, it won't exist until Dyeing raises one.",
   },
 
   dyeing: {
-    owns: "Sending each lot out for dyeing and reconciling what comes back.",
+    owns: "Raising the lot number each batch of fabric is tracked by from here on, sending it out for dyeing, and reconciling what comes back.",
     records: [
-      "Sending: lot, quantity sent, unit/party it went to",
-      "Receiving: lot, quantity received back, rejected KG",
+      "Sending: a new lot number, quantity sent, unit/party it went to",
+      "Receiving: the same lot, quantity received back, rejected KG",
     ],
-    maintains: ["Each lot's balance -  sent minus received is this stage's process loss"],
+    maintains: ["The lot register -  every stage after this picks from the lots you create here"],
     steps: [
-      "There are two panels: Sending and Receiving.",
-      "In Sending, press “+ Add New Entry”, pick the lot from the dropdown -  Knitting has already created it -  and enter the quantity sent and where it went.",
-      "When the dyed fabric comes back, use the Receiving panel -  same lot, quantity received, and anything rejected.",
-      "One entry per lot in each panel. Never merge two lots into one row.",
+      "In Sending, press “+ New Lot”, type the lot number for this batch, and press Create.",
+      "Enter the quantity sent and which unit or party it went to.",
+      "When the dyed fabric comes back, use the Receiving panel -  pick the same lot, and enter the quantity received and anything rejected.",
+      "Add a separate entry for each batch. Different lots always mean different rows.",
       "Move forward when Brushing can take the fabric.",
     ],
     receives: "Greige fabric from Knitting",
     handsTo: "Brushing",
+    watchFor:
+      "Lots can only be created here, at Dyeing -  every later stage picks from this register rather than starting its own. Use the lot number written on the physical fabric, not a new one.",
   },
 
   brushing: {

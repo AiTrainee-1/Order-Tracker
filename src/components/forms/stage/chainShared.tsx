@@ -253,12 +253,12 @@ function sumBy<T>(rows: T[], pick: (row: T) => number): number {
  * Selects a lot from the register, and -  only where explicitly allowed -
  * raises a new one inline.
  *
- * A lot is created exactly once, at Knitting, where the fabric physically
- * becomes a batch; every stage after it selects from that register so the
- * whole line traces the same number. `allowCreate` therefore defaults to
- * false: creation is opted into in one place rather than switched off in
- * fifteen. Migration 018 enforces the same rule at the database level, so a
- * picker that somehow offered creation still could not write the row.
+ * A lot is created exactly once, at Dyeing, where the fabric is first sent
+ * out as an identifiable batch; every stage after it selects from that
+ * register so the whole line traces the same number. `allowCreate` therefore
+ * defaults to false: creation is opted into in one place rather than switched
+ * off in fifteen. Migration 021 enforces the same rule at the database level,
+ * so a picker that somehow offered creation still could not write the row.
  */
 export function LotSelect({
   lots,
@@ -351,7 +351,7 @@ export function LotSelect({
       </div>
       {!allowCreate && lots.length === 0 && (
         <p className="text-[11px] text-amber-700">
-          No lots on this order yet. Lots are created at Knitting -  once Knitting raises one, it appears here.
+          No lots on this order yet. Lots are created at Dyeing -  once Dyeing raises one, it appears here.
         </p>
       )}
     </div>
@@ -413,13 +413,15 @@ export interface LedgerConfig {
   /**
    * Whether this ledger's lot picker may raise a brand new lot.
    *
-   * Defaults to FALSE -  deny by default. Lots originate at Knitting and
-   * nowhere else (migration 018 enforces the same rule server-side), so every
-   * other stage, including Knitting's own Receiving ledger, can only select
-   * from the register Knitting created. The default is deliberately the
-   * restrictive one: a stage added later that forgets to think about lots
-   * inherits the safe behaviour rather than silently gaining the ability to
-   * fork the lot register.
+   * Defaults to FALSE -  deny by default. Lots originate at Dyeing and
+   * nowhere else (migration 021 enforces the same rule server-side), so every
+   * other stage, including Dyeing's own Receiving ledger, can only select
+   * from the register Dyeing created. Knitting has no lot dimension at all -
+   * see chainForms.tsx's SEND_RECEIVE_COPY, where its ledgers set lot: "none"
+   * rather than merely leaving creation switched off. The default is
+   * deliberately the restrictive one: a stage added later that forgets to
+   * think about lots inherits the safe behaviour rather than silently
+   * gaining the ability to fork the lot register.
    */
   allowCreateLot?: boolean;
 }

@@ -175,8 +175,8 @@ export interface LotFlow {
    * What the previous comparable stage passed on for THIS lot -  its qty_out.
    *
    * This is the KG-side equivalent of LotSizeCell.available, and it is what
-   * makes the lot's quantity travel with its number: Knitting receives 19,500
-   * back against lot-1, so Dyeing has 19,500 of lot-1 to send out, without
+   * makes the lot's quantity travel with its number: Dyeing receives 19,500
+   * back against lot-1, so Brushing has 19,500 of lot-1 to send out, without
    * anyone re-typing it. 0 across the Cutting boundary, where kilograms stop
    * converting into pieces.
    */
@@ -502,8 +502,10 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
       })
       .sort((a, b) => a.lotNo.localeCompare(b.lotNo));
 
-    // Knitting is where a lot's quantity originates -  there is no upstream lot
-    // figure to inherit, so its own received quantity seeds the chain.
+    // Dyeing is where a lot's quantity originates -  there is no upstream lot
+    // figure to inherit, so its own received quantity seeds the chain. Knitting
+    // has no lot dimension at all, so it never populates this map; it stays
+    // empty until Dyeing's own txns (which do carry lot_id) fill it in.
     prevLotOutput = nextLotOutput;
 
     // --- Lot × size ---------------------------------------------------------
@@ -636,7 +638,7 @@ export interface LotJourney {
   totalLoss: number;
 }
 
-/** Follows a single lot from Knitting to Packing. This is what the lot number
+/** Follows a single lot from Dyeing to Packing. This is what the lot number
  * exists for -  without it a shortage can be seen but not located. */
 export function buildLotJourney(lot: ProductionLot, chain: ProductionChain): LotJourney {
   const steps: LotJourneyStep[] = [];
