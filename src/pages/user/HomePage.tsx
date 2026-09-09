@@ -9,7 +9,7 @@ import { Badge } from "../../components/ui/Badge";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import { Loader } from "../../components/ui/Loader";
 import { GarmentPlaceholder } from "../../components/ui/GarmentPlaceholder";
-import { Input } from "../../components/ui/FormControls";
+import { Input, Select } from "../../components/ui/FormControls";
 import { FilterTabs } from "../../components/ui/FilterTabs";
 import { Button } from "../../components/ui/Button";
 import { NextStagesStrip } from "../../components/dashboard/NextStagesStrip";
@@ -22,6 +22,7 @@ import {
 } from "../../lib/theme";
 
 const PAGE_SIZE = 9;
+const ALL_ORDERS = "all";
 
 type StatusFilter = "all" | "active" | "locked" | "completed" | "monitor";
 
@@ -66,6 +67,7 @@ export function HomePage() {
   const { workItems, isLoading, isError } = useMyWork(appUser?.id);
 
   const [query, setQuery] = useState("");
+  const [orderId, setOrderId] = useState(ALL_ORDERS);
   const [status, setStatus] = useState<StatusFilter>("all");
   const [page, setPage] = useState(1);
 
@@ -74,27 +76,61 @@ export function HomePage() {
     [workItems, query],
   );
 
+  // Every order the user has any assignment in, regardless of the current
+  // search or status tab -  a stable pick list rather than one that shrinks
+  // out from under the dropdown as other filters change. One person can be
+  // assigned several roles across several orders (Fabric Store on one,
+  // Brushing on another, three sections on a third), and once that list gets
+  // past a handful of cards the same order's assignments end up scattered
+  // across the grid instead of sitting together -  this is what lets it be
+  // read one order at a time.
+  const orderOptions = useMemo(() => {
+    const byId = new Map<string, { id: string; label: string; io_no: string }>();
+    for (const item of workItems) {
+      const order = item.assignment.order;
+      if (!order || byId.has(order.id)) continue;
+      byId.set(order.id, {
+        id: order.id,
+        label: `${order.style} · IO ${order.io_no}${order.color ? ` · ${order.color}` : ""}`,
+        io_no: order.io_no,
+      });
+    }
+    return Array.from(byId.values()).sort((a, b) =>
+      a.io_no.localeCompare(b.io_no, undefined, { numeric: true }),
+    );
+  }, [workItems]);
+
+  const scoped = useMemo(
+    () =>
+      orderId === ALL_ORDERS
+        ? searched
+        : searched.filter((item) => item.assignment.order?.id === orderId),
+    [searched, orderId],
+  );
+
   const filtered = useMemo(() => {
-    return searched
+    return scoped
       .filter((item) => matchesStatus(item, status))
       // Your Turn → Waiting → Completed, so the work needing action is on top.
       .sort((a, b) => GATE_PRIORITY[a.gateStatus] - GATE_PRIORITY[b.gateStatus]);
-  }, [searched, status]);
+  }, [scoped, status]);
 
+  // Scoped to the chosen order, so picking one narrows the tab counts to it
+  // too -  "Your Turn" then means "your turn on THIS order", not the other 27.
   const counts = useMemo(() => {
     const next: Record<StatusFilter, number> = {
-      all: searched.length,
+      all: scoped.length,
       active: 0,
       locked: 0,
       completed: 0,
       monitor: 0,
     };
-    for (const item of searched) {
+    for (const item of scoped) {
       next[item.gateStatus]++;
       if (!item.assignment.can_enter_data) next.monitor++;
     }
     return next;
-  }, [searched]);
+  }, [scoped]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -102,6 +138,11 @@ export function HomePage() {
 
   function updateQuery(value: string) {
     setQuery(value);
+    setPage(1);
+  }
+
+  function updateOrder(value: string) {
+    setOrderId(value);
     setPage(1);
   }
 
@@ -131,13 +172,21 @@ export function HomePage() {
       ) : (
         <>
           <Card>
-            <CardBody>
+            <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_16rem]">
               <Input
                 label="Find an order"
                 placeholder="Type a style, IO number, color, PO, or section…"
                 value={query}
                 onChange={(e) => updateQuery(e.target.value)}
               />
+              <Select label="Choose Order" value={orderId} onChange={(e) => updateOrder(e.target.value)}>
+                <option value={ALL_ORDERS}>All orders ({orderOptions.length})</option>
+                {orderOptions.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
             </CardBody>
           </Card>
 

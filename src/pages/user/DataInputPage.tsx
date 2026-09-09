@@ -4,7 +4,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useMyWork, workBadge, type GateStatus, type WorkItem } from "../../hooks/useMyWork";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardBody, CardHeader } from "../../components/ui/Card";
-import { Input } from "../../components/ui/FormControls";
+import { Input, Select } from "../../components/ui/FormControls";
 import { Button } from "../../components/ui/Button";
 import { Loader } from "../../components/ui/Loader";
 import { Badge } from "../../components/ui/Badge";
@@ -31,6 +31,7 @@ import {
 const GATE_PRIORITY: Record<GateStatus, number> = { active: 0, locked: 1, completed: 2 };
 
 type StatusFilter = "all" | "active" | "locked" | "completed";
+const ALL_ORDERS = "all";
 
 const STATUS_TABS: { key: StatusFilter; label: string }[] = [
   { key: "all", label: "All" },
@@ -73,6 +74,7 @@ export function DataInputPage() {
 
   const [selectedAssignmentId, setSelectedAssignmentId] = useState(searchParams.get("assignment") ?? "");
   const [query, setQuery] = useState("");
+  const [orderId, setOrderId] = useState(ALL_ORDERS);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [page, setPage] = useState(1);
 
@@ -85,19 +87,47 @@ export function DataInputPage() {
   const selected = workItems.find((w) => w.assignment.id === selectedAssignmentId);
 
   const searched = useMemo(() => workItems.filter((w) => matchesQuery(w, query)), [workItems, query]);
+
+  // Every order the user has any assignment in, regardless of the current
+  // search or status tab -  a stable pick list, same as the Home page's. One
+  // person can hold several roles across several orders, and once the list
+  // runs past a handful this is what lets it be worked one order at a time.
+  const orderOptions = useMemo(() => {
+    const byId = new Map<string, { id: string; label: string; io_no: string }>();
+    for (const w of workItems) {
+      const order = w.assignment.order;
+      if (!order || byId.has(order.id)) continue;
+      byId.set(order.id, {
+        id: order.id,
+        label: `${order.style} · IO ${order.io_no}${order.color ? ` · ${order.color}` : ""}`,
+        io_no: order.io_no,
+      });
+    }
+    return Array.from(byId.values()).sort((a, b) =>
+      a.io_no.localeCompare(b.io_no, undefined, { numeric: true }),
+    );
+  }, [workItems]);
+
+  const scoped = useMemo(
+    () => (orderId === ALL_ORDERS ? searched : searched.filter((w) => w.assignment.order?.id === orderId)),
+    [searched, orderId],
+  );
+
   const filtered = useMemo(
     () =>
-      searched
+      scoped
         .filter((w) => matchesStatus(w, statusFilter))
         // Surface actionable work first: Your Turn → Waiting → Completed.
         .sort((a, b) => GATE_PRIORITY[a.gateStatus] - GATE_PRIORITY[b.gateStatus]),
-    [searched, statusFilter],
+    [scoped, statusFilter],
   );
+  // Scoped to the chosen order, so the tabs count within it -  "Your Turn"
+  // means your turn on THIS order, not across every assignment.
   const tabCounts = useMemo(() => {
-    const counts: Record<StatusFilter, number> = { all: searched.length, active: 0, locked: 0, completed: 0 };
-    for (const w of searched) counts[w.gateStatus]++;
+    const counts: Record<StatusFilter, number> = { all: scoped.length, active: 0, locked: 0, completed: 0 };
+    for (const w of scoped) counts[w.gateStatus]++;
     return counts;
-  }, [searched]);
+  }, [scoped]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -109,6 +139,11 @@ export function DataInputPage() {
 
   function updateQuery(value: string) {
     setQuery(value);
+    setPage(1);
+  }
+
+  function updateOrder(value: string) {
+    setOrderId(value);
     setPage(1);
   }
 
@@ -142,7 +177,7 @@ export function DataInputPage() {
       ) : (
         <>
           <Card>
-            <CardBody>
+            <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_16rem]">
               <Input
                 label="Find an order"
                 placeholder="Type a style, IO number, color, PO, or section…"
@@ -150,6 +185,14 @@ export function DataInputPage() {
                 onChange={(e) => updateQuery(e.target.value)}
                 autoFocus
               />
+              <Select label="Choose Order" value={orderId} onChange={(e) => updateOrder(e.target.value)}>
+                <option value={ALL_ORDERS}>All orders ({orderOptions.length})</option>
+                {orderOptions.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
             </CardBody>
           </Card>
 
