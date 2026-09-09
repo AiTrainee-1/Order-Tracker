@@ -769,6 +769,19 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
 
   // --- Saving --------------------------------------------------------------
 
+  /**
+   * Writes ONLY the columns this ledger's config actually exposes -  mirrors
+   * saveGrid's already-correct pattern below. A round-trip stage's Sending
+   * ledger has outLabel: false specifically so its rows can never carry a
+   * qty_out; but a plain `Number(d.qtyOut) || 0` here would write whatever
+   * happened to be sitting in that draft row's state regardless, which is
+   * exactly the Embroidery-style bug (both directions landing on one column)
+   * in a different shape -  the column split existed, but nothing enforced it
+   * at the point of writing the row. Gating every field by its own config key
+   * is what makes "this ledger doesn't show a Received box" mean "this ledger
+   * cannot possibly write a received quantity", not just "the box is hidden
+   * today while the underlying field could still be smuggled through".
+   */
   function toTxn(d: DraftRow): NewTxn {
     return {
       order_id: orderId,
@@ -778,10 +791,10 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
       size_code: d.sizeCode || null,
       txn_type: d.txnType,
       unit,
-      qty_in: Number(d.qtyIn) || 0,
-      qty_out: Number(d.qtyOut) || 0,
-      qty_rejected: Number(d.rejected) || 0,
-      qty_rework: Number(d.rework) || 0,
+      qty_in: config.inLabel ? Number(d.qtyIn) || 0 : 0,
+      qty_out: config.outLabel ? Number(d.qtyOut) || 0 : 0,
+      qty_rejected: config.rejectedLabel ? Number(d.rejected) || 0 : 0,
+      qty_rework: config.reworkLabel ? Number(d.rework) || 0 : 0,
       ref_name: d.ref.trim() || null,
       doc_no: d.doc.trim() || null,
       entry_date: d.entryDate,
@@ -1040,13 +1053,18 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
       return;
     }
 
+    // Same gating as toTxn above -  a correction can only touch the columns
+    // this ledger's config exposes, so editing a Sending-panel entry can never
+    // write a received quantity even though editDraft's underlying state has
+    // a qtyOut field (unused, hidden, kept only so the same DraftRow shape
+    // works for both panels).
     const patch = {
       lot_id: editDraft.lotId || null,
       size_code: editDraft.sizeCode || null,
-      qty_in: Number(editDraft.qtyIn) || 0,
-      qty_out: Number(editDraft.qtyOut) || 0,
-      qty_rejected: Number(editDraft.rejected) || 0,
-      qty_rework: Number(editDraft.rework) || 0,
+      qty_in: config.inLabel ? Number(editDraft.qtyIn) || 0 : 0,
+      qty_out: config.outLabel ? Number(editDraft.qtyOut) || 0 : 0,
+      qty_rejected: config.rejectedLabel ? Number(editDraft.rejected) || 0 : 0,
+      qty_rework: config.reworkLabel ? Number(editDraft.rework) || 0 : 0,
       ref_name: editDraft.ref.trim() || null,
       doc_no: editDraft.doc.trim() || null,
       entry_date: editDraft.entryDate,
