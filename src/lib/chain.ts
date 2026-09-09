@@ -701,6 +701,7 @@ const OUTPUT_STAGE_KEYS: string[] = [
   STAGE.rawMaterialPlanning,
   STAGE.knitting,
   STAGE.dyeing,
+  STAGE.brushing,
   STAGE.compacting,
   STAGE.fabricInhouse,
   STAGE.fabricInspection,
