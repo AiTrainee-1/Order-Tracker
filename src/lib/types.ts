@@ -281,40 +281,13 @@ export interface ProductionTxn {
   created_at: string;
   updated_by: string | null;
   updated_at: string;
-}
-
-/** 'total' -  one overall quantity for the section. 'size' -  broken down by
- * size_code, one row per size. A section's total is always sum(qty) across
- * every row regardless of mode; its size-wise breakdown is sum(qty) grouped
- * by size_code among 'size' rows only -  mixing modes for the same section is
- * safe, they always agree at the total level. */
-export type JobWorkMode = "size" | "total";
-
-/**
- * One externally-manufactured (job work) quantity logged against an order and
- * one of the 19 stages -  entirely separate from ProductionTxn/chain.ts's
- * in-house calculation (migration 023). Never read by the in-house chain;
- * only folded into Output & Reports' final Packed/Shortfall figures and shown
- * on its own "Job Work" breakdown there.
- */
-export interface JobWorkEntry {
-  id: string;
-  order_id: string;
-  po_id: string | null;
-  section_id: string;
-  mode: JobWorkMode;
-  /** Null when mode is 'total'. */
-  size_code: string | null;
-  unit: UnitType;
-  qty: number;
-  vendor_name: string | null;
-  doc_no: string | null;
-  entry_date: string;
-  notes: string | null;
-  entered_by: string;
-  created_at: string;
-  updated_by: string | null;
-  updated_at: string;
+  /** True for a row logged through Job Work Access (migration 024) rather
+   * than by a floor worker assigned to this section -  counts toward this
+   * section's real output/balance exactly like any other row (chain.ts has
+   * no idea this flag exists); it's read only for provenance/display, e.g.
+   * the "Source: Job Work" chip in StageDetailPanel's activity timeline and
+   * Output & Reports' Job Work breakdown card. */
+  is_job_work: boolean;
 }
 
 /** Append-only history. Written by the app on every create/update so a

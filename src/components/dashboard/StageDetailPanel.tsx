@@ -675,6 +675,7 @@ function buildActivityEvents(
       chips.push({ label, value: t.ref_name });
     }
     if (t.doc_no) chips.push({ label: "Doc", value: t.doc_no });
+    if (t.is_job_work) chips.push({ label: "Source", value: "Job Work" });
 
     const metrics: ActivityMetric[] = [];
     if (t.qty_in > 0) metrics.push({ label: labels.in, value: t.qty_in, unit: t.unit });

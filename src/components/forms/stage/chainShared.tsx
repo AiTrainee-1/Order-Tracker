@@ -982,6 +982,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
       entry_date: d.entryDate,
       notes: d.notes.trim() || null,
       entered_by: appUser?.id ?? "",
+      is_job_work: false,
     };
   }
 
@@ -1161,6 +1162,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
         entry_date: entryDate,
         notes: overrideNote(gridNotes, allowOverLimit),
         entered_by: appUser.id,
+        is_job_work: false,
       };
     });
 
@@ -1191,6 +1193,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
           entry_date: entryDate,
           notes: gridNotes.trim() || null,
           entered_by: appUser.id,
+          is_job_work: false,
         },
       ];
     });
