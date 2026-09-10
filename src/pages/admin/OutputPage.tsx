@@ -6,6 +6,7 @@ import {
   CartesianGrid,
   Cell,
   ComposedChart,
+  LabelList,
   Legend,
   Line,
   Pie,
@@ -14,6 +15,7 @@ import {
   Tooltip,
   XAxis,
   YAxis,
+  type TooltipProps,
 } from "recharts";
 import { useToast } from "../../context/ToastContext";
 import { useOrderDetail } from "../../hooks/useOrderDetail";
@@ -65,6 +67,71 @@ function yieldColor(pct: number): string {
   if (pct >= 98) return CHART_GREEN;
   if (pct >= 95) return CHART_AMBER;
   return CHART_RED;
+}
+
+/**
+ * Tooltip for a chart where a Bar and a Line share the same dataKey -  the
+ * bar carries the reading, the line carries the trend across stages, and
+ * both are the same number. Recharts renders one tooltip row per graphical
+ * component regardless, so without this every value would print twice.
+ */
+function comboTooltip(unit: string) {
+  return function ComboTooltip({ active, payload, label }: TooltipProps<number, string>) {
+    if (!active || !payload?.length) return null;
+    const seen = new Set<string>();
+    const rows = payload.filter((p) => {
+      const key = String(p.dataKey ?? p.name);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return (
+      <div className="rounded-xl border border-ink-100 bg-white px-3 py-2 text-xs shadow-md">
+        <p className="mb-1 font-semibold text-ink-800">{label}</p>
+        {rows.map((r) => (
+          <p key={String(r.dataKey)} style={{ color: r.color }}>
+            {r.name}: {Number(r.value ?? 0).toLocaleString()} {unit}
+          </p>
+        ))}
+      </div>
+    );
+  };
+}
+
+/**
+ * A stage's name, printed vertically inside its own bar rather than only on
+ * the (small, rotated) axis label below it -  the bar a figure belongs to
+ * should be readable without tracing a line down to the axis. Skipped for a
+ * bar too short to hold the text without spilling out the top or clipping.
+ */
+function RotatedBarLabel(props: {
+  x?: string | number;
+  y?: string | number;
+  width?: string | number;
+  height?: string | number;
+  value?: string | number;
+}) {
+  const x = Number(props.x ?? 0);
+  const y = Number(props.y ?? 0);
+  const width = Number(props.width ?? 0);
+  const height = Number(props.height ?? 0);
+  const { value } = props;
+  if (!value || height < 60) return null;
+  const cx = x + width / 2 + 4;
+  const cy = y + height - 10;
+  return (
+    <text
+      x={cx}
+      y={cy}
+      textAnchor="start"
+      fill="#fff"
+      fontSize={11}
+      fontWeight={600}
+      transform={`rotate(-90, ${cx}, ${cy})`}
+    >
+      {value}
+    </text>
+  );
 }
 
 export function OutputPage() {
@@ -169,6 +236,36 @@ export function OutputPage() {
     }))
     .slice(0, 20);
 
+  /**
+   * Fabric flow trend, Order Confirmation → Fabric Store, in KG.
+   *
+   * Reads chain.stages directly rather than summary.rows -  buildOutputSummary
+   * filters to a curated loss-analysis subset (OUTPUT_STAGE_KEYS) that skips
+   * PO to Suppliers, Raw Material Inward and Fabric Store entirely, and this
+   * chart's whole point is showing a mismatch ANYWHERE in the chain, including
+   * those. Order Confirmation itself is PCS, not KG, so it has no send/receive
+   * figure of its own; the line simply starts at the first KG stage after it.
+   */
+  const fabricStoreSeq = chain.byKey.get(STAGE.fabricStore)?.stage.sequence_no ?? Infinity;
+  const kgTrendRows = chain.stages
+    .filter((cs) => cs.unit === "KG" && cs.stage.sequence_no <= fabricStoreSeq)
+    .map((cs) => ({ name: cs.stage.label, Send: cs.input, Receive: cs.output }));
+
+  /**
+   * Order/Excess vs Output trend, Cutting → Packing, in PCS.
+   *
+   * "Order/Excess Qty" is chain.totalPcs held flat across every stage -  the
+   * same ordered-pieces baseline (PO quantity plus the extra % margin) shown
+   * elsewhere on this page as summary.orderedPcs -  plotted against what each
+   * stage actually output, so the stage where the line first dips below the
+   * order is visible at a glance.
+   */
+  const cuttingSeq = chain.byKey.get(STAGE.cutting)?.stage.sequence_no ?? 0;
+  const packingSeq = chain.byKey.get(STAGE.packing)?.stage.sequence_no ?? Infinity;
+  const pcsTrendRows = chain.stages
+    .filter((cs) => cs.unit === "PCS" && cs.stage.sequence_no >= cuttingSeq && cs.stage.sequence_no <= packingSeq)
+    .map((cs) => ({ name: cs.stage.label, "Order/Excess Qty": chain.totalPcs, Output: cs.output }));
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -192,6 +289,178 @@ export function OutputPage() {
           {order.style} · IO {order.io_no} · {selectedPo ? `PO ${selectedPo.po_number}` : "all POs combined"}
         </p>
       </div>
+
+      {/* ------------------------- Fabric flow trend (KG) ------------------------- */}
+      <Card>
+        <CardHeader
+          title="Fabric Flow Trend: Send vs Receive (KG)"
+          subtitle="Order Confirmation → Fabric Store. What each stage sent on against what came back, stage by stage -  a gap between the two lines is where a section's numbers stop carrying through to the next."
+        />
+        <CardBody className="p-2 sm:p-3">
+          {kgTrendRows.length === 0 ? (
+            <p className="py-10 text-center text-sm text-ink-400">Nothing recorded yet for the fabric stages.</p>
+          ) : (
+            <div className="h-[32rem] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart
+                  data={kgTrendRows}
+                  margin={{ top: 28, right: 16, left: -8, bottom: 8 }}
+                  barCategoryGap="16%"
+                  barGap={4}
+                >
+                  <defs>
+                    <linearGradient id="gradKgSend" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={CHART_BLUE_LIGHT} />
+                      <stop offset="100%" stopColor={CHART_BLUE} />
+                    </linearGradient>
+                    <linearGradient id="gradKgReceive" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={CHART_GREEN_LIGHT} />
+                      <stop offset="100%" stopColor={CHART_GREEN} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#EAECF0" vertical={false} />
+                  <XAxis
+                    dataKey="name"
+                    angle={-35}
+                    textAnchor="end"
+                    interval={0}
+                    height={72}
+                    tick={{ fontSize: 11, fill: "#667085" }}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 12, fill: "#667085" }}
+                    tickFormatter={(v: number) => compactNumber(v)}
+                    width={52}
+                  />
+                  <Tooltip content={comboTooltip("KG")} />
+                  <Legend wrapperStyle={{ fontSize: 13, fontWeight: 600, paddingTop: 8 }} iconType="circle" />
+                  <Bar dataKey="Send" fill="url(#gradKgSend)" radius={[6, 6, 0, 0]} maxBarSize={52}>
+                    <LabelList dataKey="name" content={RotatedBarLabel} />
+                    <LabelList
+                      dataKey="Send"
+                      position="top"
+                      formatter={(v: number) => compactNumber(v)}
+                      style={{ fontSize: 10, fontWeight: 600, fill: CHART_BLUE }}
+                    />
+                  </Bar>
+                  <Bar dataKey="Receive" fill="url(#gradKgReceive)" radius={[6, 6, 0, 0]} maxBarSize={52}>
+                    <LabelList
+                      dataKey="Receive"
+                      position="top"
+                      formatter={(v: number) => compactNumber(v)}
+                      style={{ fontSize: 10, fontWeight: 600, fill: CHART_GREEN }}
+                    />
+                  </Bar>
+                  <Line
+                    type="monotone"
+                    dataKey="Send"
+                    stroke={CHART_BLUE}
+                    strokeWidth={2.5}
+                    dot={{ r: 4, fill: CHART_BLUE, stroke: "#fff", strokeWidth: 1.5 }}
+                    activeDot={{ r: 6 }}
+                    legendType="none"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="Receive"
+                    stroke={CHART_GREEN}
+                    strokeWidth={2.5}
+                    dot={{ r: 4, fill: CHART_GREEN, stroke: "#fff", strokeWidth: 1.5 }}
+                    activeDot={{ r: 6 }}
+                    legendType="none"
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </CardBody>
+      </Card>
+
+      {/* ------------------------- Garment output trend (PCS) ------------------------- */}
+      <Card>
+        <CardHeader
+          title="Cutting → Packing Trend: Order/Excess vs Output (PCS)"
+          subtitle="The order's quantity, including the extra % margin, held flat against what each stage actually turned out -  the stage where the line first dips below it is where pieces are being lost."
+        />
+        <CardBody className="p-2 sm:p-3">
+          {pcsTrendRows.length === 0 ? (
+            <p className="py-10 text-center text-sm text-ink-400">Nothing recorded yet for the garment stages.</p>
+          ) : (
+            <div className="h-[32rem] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart
+                  data={pcsTrendRows}
+                  margin={{ top: 28, right: 16, left: -8, bottom: 8 }}
+                  barCategoryGap="16%"
+                  barGap={4}
+                >
+                  <defs>
+                    <linearGradient id="gradPcsOrder" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#E4E7EC" />
+                      <stop offset="100%" stopColor={CHART_SLATE} />
+                    </linearGradient>
+                    <linearGradient id="gradPcsOutput" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#FCD34D" />
+                      <stop offset="100%" stopColor={CHART_AMBER} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#EAECF0" vertical={false} />
+                  <XAxis
+                    dataKey="name"
+                    angle={-35}
+                    textAnchor="end"
+                    interval={0}
+                    height={72}
+                    tick={{ fontSize: 11, fill: "#667085" }}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 12, fill: "#667085" }}
+                    tickFormatter={(v: number) => compactNumber(v)}
+                    width={52}
+                  />
+                  <Tooltip content={comboTooltip("PCS")} />
+                  <Legend wrapperStyle={{ fontSize: 13, fontWeight: 600, paddingTop: 8 }} iconType="circle" />
+                  <Bar dataKey="Order/Excess Qty" fill="url(#gradPcsOrder)" radius={[6, 6, 0, 0]} maxBarSize={52}>
+                    <LabelList dataKey="name" content={RotatedBarLabel} />
+                    <LabelList
+                      dataKey="Order/Excess Qty"
+                      position="top"
+                      formatter={(v: number) => compactNumber(v)}
+                      style={{ fontSize: 10, fontWeight: 600, fill: "#667085" }}
+                    />
+                  </Bar>
+                  <Bar dataKey="Output" fill="url(#gradPcsOutput)" radius={[6, 6, 0, 0]} maxBarSize={52}>
+                    <LabelList
+                      dataKey="Output"
+                      position="top"
+                      formatter={(v: number) => compactNumber(v)}
+                      style={{ fontSize: 10, fontWeight: 600, fill: CHART_AMBER }}
+                    />
+                  </Bar>
+                  <Line
+                    type="monotone"
+                    dataKey="Order/Excess Qty"
+                    stroke={CHART_SLATE}
+                    strokeWidth={2.5}
+                    strokeDasharray="6 4"
+                    dot={false}
+                    legendType="none"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="Output"
+                    stroke={CHART_AMBER}
+                    strokeWidth={2.5}
+                    dot={{ r: 4, fill: CHART_AMBER, stroke: "#fff", strokeWidth: 1.5 }}
+                    activeDot={{ r: 6 }}
+                    legendType="none"
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </CardBody>
+      </Card>
 
       {purchaseOrders.length > 0 && (
         <Card>
