@@ -479,6 +479,16 @@ export interface LedgerConfig {
    * in. Off by default: most sizeGrid stages are fine with "today".
    */
   dateField?: boolean;
+  /**
+   * Show the Rework / Rework Solved side-ledger columns (see chain.ts's
+   * ReworkSizeFlow). Deliberately its own flag rather than reusing
+   * `lot === "none"` -  Cutting and Panel Checking are also no-lot, sizeGrid
+   * stages, but this feature was requested only for Embroidery, Sewing,
+   * Checking, Ironing and Packing, and Panel Checking already has its own,
+   * older single-column `reworkLabel`; showing both would be confusing
+   * clutter neither asked for.
+   */
+  reworkTracking?: boolean;
 }
 
 /** One editable size row in the grid. Only the columns the stage's config
@@ -1773,7 +1783,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                         <th className="px-3 py-2 text-right font-semibold">{config.rejectedLabel}</th>
                       )}
                       {config.reworkLabel && <th className="px-3 py-2 text-right font-semibold">{config.reworkLabel}</th>}
-                      {config.lot === "none" && (
+                      {config.reworkTracking && (
                         <>
                           <th className="px-3 py-2 text-right font-semibold">Rework</th>
                           <th className="px-3 py-2 text-right font-semibold">Rework Solved</th>
@@ -1891,7 +1901,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                             </td>
                           )}
                           {inputCells}
-                          {config.lot === "none" && (
+                          {config.reworkTracking && (
                             <>
                               <GridInput
                                 value={cell.reworkAdd}

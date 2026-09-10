@@ -67,17 +67,26 @@ const MATERIAL_STAGES: string[] = [
 ];
 
 /**
- * Stages that record Vendor Name, DC Name and a size-wise quantity table, but
- * no lot -  Embroidery, Sewing, Checking, Ironing and Packing. byLot and
- * byLotSize must come back genuinely empty for these, not a lot (or lot×size
- * cell) carried forward from Panel Checking with every figure sitting at
- * zero. bySize is NOT affected by this set -  these stages still track size,
- * same as every other PCS stage, measured against SizeFlow.cutQty exactly
- * the way Cutting itself is -  not against what the immediately previous
- * no-lot stage happens to have recorded, since these 5 aren't necessarily
- * filled in strict lockstep with each other.
+ * Every PCS stage, Cutting through Packing -  the whole garment side of the
+ * line. Lot tracking ends where fabric becomes pieces: a lot follows a
+ * physical roll of fabric through the KG stages (Knitting → Fabric Store),
+ * but once it's cut, what matters is the SIZE, not which specific roll a
+ * piece came from. Cutting and Panel Checking record Vendor Name, DC Name
+ * and a size-wise quantity table with no lot to pick, exactly like the five
+ * stages after them.
+ *
+ * byLot and byLotSize must come back genuinely empty for every stage here -
+ * not a lot (or lot×size cell) carried forward from the previous stage with
+ * every figure sitting at zero. bySize is NOT affected by this set -  every
+ * stage here still tracks size, measured against SizeFlow.cutQty (Cutting's
+ * own output, captured once when the loop reaches Cutting -  see
+ * cutBySizeGlobal) rather than against what the immediately previous stage
+ * happens to have recorded, since these stages aren't necessarily filled in
+ * strict lockstep with each other.
  */
 const NO_LOT_STAGES = new Set<string>([
+  STAGE.cutting,
+  STAGE.panelChecking,
   STAGE.embroidery,
   STAGE.sewing,
   STAGE.checking,
@@ -408,11 +417,19 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
 
   const result: ChainStage[] = [];
 
-  // What Cutting produced per (lot, size). Captured when the loop reaches
-  // Cutting -  which precedes every stage that reads it in sequence_no order -
-  // and used from then on as the fixed reference, so no later stage has to
-  // invent a size quantity or fall back to the PO's ordered figure.
+  // What Cutting produced per (lot, size). Cutting is itself a no-lot stage
+  // now (see NO_LOT_STAGES), so its byLotSize block never runs and this map
+  // is never actually populated any more -  kept only because byLotSize's
+  // still-generic code reads it for whichever stage isn't in NO_LOT_STAGES.
+  // The real, currently-used reference is cutBySizeGlobal below.
   const cutByCell = new Map<string, number>();
+  // What Cutting produced per SIZE, across every lot -  captured when the loop
+  // reaches Cutting (which precedes every stage that reads it in sequence_no
+  // order) and used from then on as the fixed reference every later PCS
+  // stage's cutQty measures against, so no stage has to invent a size
+  // quantity or fall back to the PO's ordered figure just because it (or
+  // Cutting itself) doesn't track lots any more.
+  const cutBySizeGlobal = new Map<string, number>();
   // The previous PCS stage's output per cell, i.e. what is actually available
   // to the stage currently being built. Replaced at the end of each PCS stage.
   let prevCellOutput = new Map<string, number>();
@@ -647,24 +664,23 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
 
     // --- Size-wise ----------------------------------------------------------
     if (stage.unit_type === "PCS") {
-      // Cutting's output per size -  the reference the size roll-up measures
-      // against from Cutting onwards, so it agrees with byLotSize instead of
-      // silently falling back to the PO's ordered quantity.
-      const cutBySize = new Map<string, number>();
-      for (const [key, qty] of cutByCell) {
-        const sizeCode = key.split("::")[1];
-        cutBySize.set(sizeCode, (cutBySize.get(sizeCode) ?? 0) + qty);
-      }
+      const isCutting = stage.key === STAGE.cutting;
 
       base.bySize = sizes.map((s) => {
         const group = stageTxns.filter((t) => t.size_code === s.size_code);
         const qtyIn = sum(group, (t) => t.qty_in);
         const qtyOut = sum(group, (t) => t.qty_out);
         const qtyRejected = sum(group, (t) => t.qty_rejected);
-        // What this size is measured against: what was counted in, else what
-        // Cutting produced for it, else the ordered quantity (Cutting itself,
-        // before anything has been cut).
-        const sizeInput = qtyIn > 0 ? qtyIn : (cutBySize.get(s.size_code) || s.quantity);
+        // Cutting's own output per size IS the reference (it originates the
+        // size axis); every stage after it reads what was captured into
+        // cutBySizeGlobal when the loop reached Cutting. `||`, not `??`: a
+        // captured 0 (nothing cut for this size yet) must still fall back to
+        // the PO's ordered quantity, the same as never having captured
+        // anything at all.
+        const cutQty = isCutting ? qtyOut || s.quantity : (cutBySizeGlobal.get(s.size_code) || s.quantity);
+        // What this size is measured against: what was counted in, else the
+        // cut reference above.
+        const sizeInput = qtyIn > 0 ? qtyIn : cutQty;
 
         return {
           sizeCode: s.size_code,
@@ -673,9 +689,13 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
           qtyOut,
           qtyRejected,
           balance: Math.max(sizeInput - qtyOut - qtyRejected, 0),
-          cutQty: cutBySize.get(s.size_code) || s.quantity,
+          cutQty,
         };
       });
+
+      if (isCutting) {
+        for (const s of base.bySize) cutBySizeGlobal.set(s.sizeCode, s.qtyOut);
+      }
     }
 
     // --- Rework side ledger --------------------------------------------------

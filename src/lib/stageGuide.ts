@@ -273,34 +273,31 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
 
   // ------------------------------------------------------------- garment
   cutting: {
-    owns: "Cutting fabric into panels, lot by lot, and counting them size by size. This is where KG becomes PCS.",
-    records: ["The lot being cut", "Vendor Name, DC Name and Date", "Pieces cut for each size"],
+    owns: "Cutting fabric into panels and counting them size by size -  no lot to pick. This is where KG becomes PCS.",
+    records: ["Vendor Name, DC Name and Date", "Pieces cut for each size in one table"],
     maintains: ["Cut quantity per size against the PO's ordered quantity"],
     steps: [
-      "Under “Add new entry”, pick the lot you're cutting.",
       "Enter the vendor name, DC name and date for this lay.",
       "A size table appears showing the PO quantity, what's already done, and a box for this entry.",
       "Type the pieces cut for each size. “Balance after” updates as you type.",
       "Press “Save Plan” to record the lay without moving on, or a Move Forward button to record and hand off in one step.",
-      "Cut the next lot as a separate entry -  never add two lots together.",
+      "Add a fresh entry for the next lay -  every entry accumulates, nothing is overwritten.",
     ],
     receives: "Fabric issued by the store",
     handsTo: "Panel Checking",
     watchFor:
-      "If “Balance after” goes negative you've cut more than the PO ordered for that size. Check before saving.",
+      "If “Balance after” goes negative you've cut more than the PO ordered for that size. Check before saving. There's no lot recorded here any more, so a shortfall can only be traced to a size, not to a specific fabric roll.",
   },
 
   panel_checking: {
-    owns: "Checking cut panels before they reach the sewing line.",
+    owns: "Checking cut panels before they reach the sewing line -  no lot to pick.",
     records: [
-      "The lot being checked",
       "Vendor Name, DC Name and Date",
-      "Checked / Accepted / Rejected / Rework pieces per size",
+      "Checked / Accepted / Rejected / Rework pieces per size, in one table",
       "The rejection reason, in Notes",
     ],
-    maintains: ["Accepted plus rejected adding up to what was checked"],
+    maintains: ["Accepted plus rejected adding up to what was checked, per size"],
     steps: [
-      "Pick the lot -  its sizes and quantities carry over from Cutting.",
       "Enter the vendor name, DC name and date for this entry.",
       "Enter how many were checked, accepted, rejected and sent for rework, size by size in the same table.",
       "Put the reason for rejection in Notes -  it's the only place it's recorded.",
@@ -308,6 +305,8 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
     ],
     receives: "Cut panels from Cutting",
     handsTo: "Embroidery",
+    watchFor:
+      "There's no lot recorded here any more -  a size's ceiling is what Cutting produced for it, not a specific fabric roll's cut quantity.",
   },
 
   embroidery: {

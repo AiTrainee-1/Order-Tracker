@@ -520,9 +520,9 @@ export function CuttingForm(props: StageFormProps) {
   return (
     <ChainStageForm
       props={props}
-      intro="Fabric becomes pieces here -  KG stops, PCS begins. Cut one lot at a time and enter the pieces for each size. What you enter here becomes the fixed reference quantity every stage after this one measures against."
+      intro="Fabric becomes pieces here -  KG stops, PCS begins. Enter the vendor, DC number and the pieces cut for each size in one table -  no lot to pick. What you enter here becomes the fixed reference quantity every stage after this one measures against."
       config={{
-        lot: "required",
+        lot: "none",
         size: "required",
         inLabel: false,
         outLabel: labels.out,
@@ -546,9 +546,9 @@ export function PanelCheckForm(props: StageFormProps) {
   return (
     <ChainStageForm
       props={props}
-      intro="Cut panels are checked before they reach the line. Pick the lot -  its sizes and quantities carry over from Cutting -  then record what was checked, accepted, rejected and sent for rework."
+      intro="Cut panels are checked before they reach the line. Enter the vendor, DC number and what was checked, accepted, rejected and sent for rework, size by size in one table -  no lot to pick."
       config={{
-        lot: "required",
+        lot: "none",
         size: "required",
         inLabel: labels.in,
         outLabel: labels.out,
@@ -565,13 +565,13 @@ export function PanelCheckForm(props: StageFormProps) {
 }
 
 /**
- * Embroidery, Sewing, Checking, Ironing and Packing all share this shape now:
- * pick nothing (there's no lot any more), enter Vendor Name / Line Name, DC
- * Name, and a quantity for every size in one table -  the same bulk layout
- * Cutting uses, minus the lot picker. Each size's ceiling is what the
- * previous size-tracking stage produced for it, summed across every lot
- * (chain.ts's SizeFlow.available) -  the size-wise equivalent of the
- * lot+size ceiling every stage used before this, just one axis coarser.
+ * Embroidery, Sewing, Checking, Ironing and Packing: pick nothing (no lot,
+ * same as Cutting and Panel Checking above), enter Vendor Name / Line Name,
+ * DC Name and a quantity for every size in one table. Each size's ceiling is
+ * cutQty -  Cutting's own output for that size (chain.ts's
+ * SizeFlow.cutQty) -  not what the immediately previous stage happens to
+ * have recorded, since none of these stages are necessarily filled in strict
+ * lockstep with each other.
  */
 
 /** Embroidery is still a round trip -  panels leave and come back -  so it
@@ -711,6 +711,10 @@ export function EmbroideryForm(props: StageFormProps) {
             txnType: "receive",
             filterByTxnType: true,
             sizeGrid: true,
+            // Rework is discovered on inspection at the point pieces come
+            // back, not while they're still with the vendor -  tracked here
+            // only, not on the Sending panel above.
+            reworkTracking: true,
           }}
         />
       </DirectionPanel>
@@ -746,6 +750,7 @@ export function SewingForm(props: StageFormProps) {
         dateField: true,
         txnType: "process",
         sizeGrid: true,
+        reworkTracking: true,
       }}
     />
   );
@@ -769,6 +774,7 @@ export function GarmentQcForm(props: StageFormProps) {
         dateField: true,
         txnType: "process",
         sizeGrid: true,
+        reworkTracking: true,
       }}
     />
   );
@@ -792,6 +798,7 @@ export function GarmentProcessForm(props: StageFormProps) {
         dateField: true,
         txnType: "process",
         sizeGrid: true,
+        reworkTracking: true,
       }}
     />
   );
@@ -815,6 +822,7 @@ export function PackingForm(props: StageFormProps) {
         dateField: true,
         txnType: "process",
         sizeGrid: true,
+        reworkTracking: true,
       }}
       extra={(cs, chain) => <PackedAgainstOrder cs={cs} chain={chain} />}
     />
