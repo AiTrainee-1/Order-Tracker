@@ -471,6 +471,14 @@ export interface LedgerConfig {
    * gaining the ability to fork the lot register.
    */
   allowCreateLot?: boolean;
+  /**
+   * Show an editable Date field on the grid entry, alongside ref/docLabel.
+   * Every grid entry has always been stamped with today's date regardless -
+   * this only makes that date editable and visible, for a stage where the
+   * paperwork (a DC) was often actually dated a day or more before it's typed
+   * in. Off by default: most sizeGrid stages are fine with "today".
+   */
+  dateField?: boolean;
 }
 
 /** One editable size row in the grid. Only the columns the stage's config
@@ -686,6 +694,9 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
    * set; both are ignored by saveGrid otherwise. */
   const [gridRef, setGridRef] = useState("");
   const [gridDoc, setGridDoc] = useState("");
+  /** Only shown/used where config.dateField is set; every other grid stage
+   * keeps stamping today's date the way it always has. */
+  const [gridDate, setGridDate] = useState(() => new Date().toISOString().slice(0, 10));
   /** Deliberate override of the available-quantity ceiling -  pieces recovered
    * from rework, or genuinely arriving from another source. */
   const [allowOverLimit, setAllowOverLimit] = useState(false);
@@ -1082,6 +1093,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
       toast.show("Select a lot first.", "error");
       return false;
     }
+    const entryDate = config.dateField ? gridDate : new Date().toISOString().slice(0, 10);
     if (!gridNotes.trim()) {
       toast.show("Add a note for this entry.", "error");
       return false;
@@ -1136,7 +1148,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
         qty_rework: config.reworkLabel ? Number(cell.rework) || 0 : 0,
         ref_name: config.ref ? gridRef.trim() || null : null,
         doc_no: config.docLabel ? gridDoc.trim() || null : null,
-        entry_date: new Date().toISOString().slice(0, 10),
+        entry_date: entryDate,
         notes: overrideNote(gridNotes, allowOverLimit),
         entered_by: appUser.id,
       };
@@ -1166,7 +1178,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
           qty_rework: 0,
           ref_name: config.ref ? gridRef.trim() || null : null,
           doc_no: config.docLabel ? gridDoc.trim() || null : null,
-          entry_date: new Date().toISOString().slice(0, 10),
+          entry_date: entryDate,
           notes: gridNotes.trim() || null,
           entered_by: appUser.id,
         },
@@ -1226,6 +1238,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
       setGridNotes("");
       setGridRef("");
       setGridDoc("");
+      setGridDate(new Date().toISOString().slice(0, 10));
       setAllowOverLimit(false);
       onSaved();
       toast.show(
@@ -1636,10 +1649,11 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
               />
             )}
 
-            {/* Vendor/line name and DC, one value per submission -  the grid
-                equivalent of the draft-row ref/doc inputs. */}
-            {(config.ref || config.docLabel) && (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {/* Vendor/line name, DC and (where enabled) date, one value per
+                submission -  the grid equivalent of the draft-row ref/doc/date
+                inputs. */}
+            {(config.ref || config.docLabel || config.dateField) && (
+              <div className={`grid grid-cols-1 gap-2 ${config.dateField ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
                 {config.ref && (
                   <Input
                     label={config.ref.label}
@@ -1658,6 +1672,14 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                 )}
                 {config.docLabel && (
                   <Input label={config.docLabel} value={gridDoc} onChange={(e) => setGridDoc(e.target.value)} />
+                )}
+                {config.dateField && (
+                  <Input
+                    label="Date"
+                    type="date"
+                    value={gridDate}
+                    onChange={(e) => setGridDate(e.target.value)}
+                  />
                 )}
               </div>
             )}

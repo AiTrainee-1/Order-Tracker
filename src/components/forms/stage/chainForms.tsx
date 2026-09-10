@@ -528,8 +528,9 @@ export function CuttingForm(props: StageFormProps) {
         outLabel: labels.out,
         rejectedLabel: false,
         reworkLabel: false,
-        ref: false,
-        docLabel: false,
+        ref: { label: "Vendor Name", presets: [], placeholder: "Unit / vendor name" },
+        docLabel: "DC Name",
+        dateField: true,
         txnType: "process",
         sizeGrid: true,
         // Cutting originates the size axis -  it measures against the PO, not
@@ -553,8 +554,9 @@ export function PanelCheckForm(props: StageFormProps) {
         outLabel: labels.out,
         rejectedLabel: labels.rejected,
         reworkLabel: labels.rework,
-        ref: false,
-        docLabel: false,
+        ref: { label: "Vendor Name", presets: [], placeholder: "Unit / vendor name" },
+        docLabel: "DC Name",
+        dateField: true,
         txnType: "process",
         sizeGrid: true,
       }}
@@ -741,6 +743,7 @@ export function SewingForm(props: StageFormProps) {
         reworkLabel: false,
         ref: { label: "Line Name", presets: ["Line 01", "Line 02", "Line 03"], placeholder: "e.g. Line 01" },
         docLabel: "DC Name",
+        dateField: true,
         txnType: "process",
         sizeGrid: true,
       }}
@@ -763,6 +766,7 @@ export function GarmentQcForm(props: StageFormProps) {
         reworkLabel: false,
         ref: { label: "Vendor Name", presets: [], placeholder: "Unit / vendor name" },
         docLabel: "DC Name",
+        dateField: true,
         txnType: "process",
         sizeGrid: true,
       }}
@@ -785,6 +789,7 @@ export function GarmentProcessForm(props: StageFormProps) {
         reworkLabel: false,
         ref: { label: "Vendor Name", presets: [], placeholder: "Unit / vendor name" },
         docLabel: "DC Name",
+        dateField: true,
         txnType: "process",
         sizeGrid: true,
       }}
@@ -807,6 +812,7 @@ export function PackingForm(props: StageFormProps) {
         reworkLabel: false,
         ref: { label: "Vendor Name", presets: [], placeholder: "Unit / vendor name" },
         docLabel: "DC Name",
+        dateField: true,
         txnType: "process",
         sizeGrid: true,
       }}

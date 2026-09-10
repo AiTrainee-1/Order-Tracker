@@ -274,10 +274,11 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
   // ------------------------------------------------------------- garment
   cutting: {
     owns: "Cutting fabric into panels, lot by lot, and counting them size by size. This is where KG becomes PCS.",
-    records: ["The lot being cut", "Pieces cut for each size"],
+    records: ["The lot being cut", "Vendor Name, DC Name and Date", "Pieces cut for each size"],
     maintains: ["Cut quantity per size against the PO's ordered quantity"],
     steps: [
       "Under “Add new entry”, pick the lot you're cutting.",
+      "Enter the vendor name, DC name and date for this lay.",
       "A size table appears showing the PO quantity, what's already done, and a box for this entry.",
       "Type the pieces cut for each size. “Balance after” updates as you type.",
       "Press “Save Plan” to record the lay without moving on, or a Move Forward button to record and hand off in one step.",
@@ -291,13 +292,18 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
 
   panel_checking: {
     owns: "Checking cut panels before they reach the sewing line.",
-    records: ["Lot and size", "Checked / Accepted / Rejected / Rework pieces", "The rejection reason, in Notes"],
+    records: [
+      "The lot being checked",
+      "Vendor Name, DC Name and Date",
+      "Checked / Accepted / Rejected / Rework pieces per size",
+      "The rejection reason, in Notes",
+    ],
     maintains: ["Accepted plus rejected adding up to what was checked"],
     steps: [
-      "Press “+ Add New Entry” and pick the lot and size.",
-      "Enter how many were checked, accepted, rejected and sent for rework.",
+      "Pick the lot -  its sizes and quantities carry over from Cutting.",
+      "Enter the vendor name, DC name and date for this entry.",
+      "Enter how many were checked, accepted, rejected and sent for rework, size by size in the same table.",
       "Put the reason for rejection in Notes -  it's the only place it's recorded.",
-      "Add a separate entry for each size.",
       "Move forward when the accepted panels can go on.",
     ],
     receives: "Cut panels from Cutting",
@@ -329,7 +335,7 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
     records: ["Line Name -  the line or unit that did the work", "DC Name", "Date", "Pieces produced for every size in one table"],
     maintains: ["Per-size Cut Qty -  the same reference Cutting itself measures against"],
     steps: [
-      "Enter the line name and DC name once for the entry.",
+      "Enter the line name, DC name and date once for the entry.",
       "Type the pieces produced for each size in the table -  all sizes together, the same way Cutting works.",
       "“Balance after” updates per size as you type. Add a fresh entry for the next batch.",
       "Move forward when Checking can start.",
@@ -345,7 +351,7 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
     records: ["Vendor Name", "DC Name", "Date", "Pieces checked and accepted for every size in one table"],
     maintains: ["Per-size Cut Qty -  the same reference Cutting itself measures against"],
     steps: [
-      "Enter the vendor name and DC name once for the entry.",
+      "Enter the vendor name, DC name and date once for the entry.",
       "Type the pieces accepted for each size in the table -  all sizes in one entry.",
       "Add a fresh entry for each batch.",
       "Move forward when the accepted garments can be pressed.",
@@ -361,7 +367,7 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
     records: ["Vendor Name", "DC Name", "Date", "Pieces pressed for every size in one table"],
     maintains: ["Per-size Cut Qty -  the same reference Cutting itself measures against"],
     steps: [
-      "Enter the vendor name and DC name once for the entry.",
+      "Enter the vendor name, DC name and date once for the entry.",
       "Type the pieces pressed for each size in the table -  all sizes in one entry.",
       "Add a fresh entry for each batch.",
       "Move forward when Packing can start.",
@@ -375,7 +381,7 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
     records: ["Vendor Name", "DC Name", "Date", "Pieces packed for every size in one table"],
     maintains: ["The final packed quantity against the order -  see “Against the order” below the form", "Per-size Cut Qty -  the same reference Cutting itself measures against"],
     steps: [
-      "Enter the vendor name and DC name once for the entry.",
+      "Enter the vendor name, DC name and date once for the entry.",
       "Type the pieces packed for each size in the table -  all sizes in one entry.",
       "Check the “Against the order” panel: ordered, packed, and how many are short.",
       "When the order is finished press “Completed – Move Forward”.",
