@@ -518,6 +518,46 @@ function cellHasValue(c: GridCell | undefined): boolean {
   return [c.qtyIn, c.qtyOut, c.rejected, c.rework].some((v) => Number(v) > 0);
 }
 
+/**
+ * How much of a (lot, size) cell's ceiling this ledger has already used up,
+ * read from whichever column it actually writes.
+ *
+ * Every grid stage built so far (Cutting, Panel Checking, Sewing, Garment QC,
+ * Packing) records its output on qty_out, so "done" has always meant
+ * qty_out + qty_rejected. A send-only grid -  the bulk equivalent of a
+ * round-trip stage's Sending panel, which writes qty_in and nothing else -
+ * has no qty_out of its own to read; measuring it by qty_out would read as
+ * permanently zero and the ceiling would never engage no matter how much had
+ * already been sent. Falling back to qty_in when there's no outLabel is what
+ * keeps the ceiling meaningful for that shape of ledger too.
+ */
+function gridCellDone(
+  outLabel: LedgerConfig["outLabel"],
+  inLabel: LedgerConfig["inLabel"],
+  // LotSizeCell for a lot-keyed grid, SizeFlow for a no-lot one -  both carry
+  // the same qtyIn/qtyOut/qtyRejected shape, which is all this reads.
+  cell: Pick<LotSizeCell, "qtyOut" | "qtyRejected" | "qtyIn">,
+): number {
+  if (outLabel) return cell.qtyOut + cell.qtyRejected;
+  if (inLabel) return cell.qtyIn;
+  return 0;
+}
+
+/** Same idea as gridCellDone, for a row of the grid still being typed (string
+ * values, not yet saved) -  used for the live ceiling check on save and the
+ * per-row balance preview while entering.
+ *
+ * Both take the two primitives directly rather than the whole LedgerConfig:
+ * config is a fresh object literal on every render (written inline as JSX
+ * props), so a useMemo that read config itself would recompute on every
+ * keystroke elsewhere on the page -  the same reason sizeGridOrigin is read
+ * as a primitive a few lines below rather than depending on config whole. */
+function gridCellAdding(outLabel: LedgerConfig["outLabel"], inLabel: LedgerConfig["inLabel"], cell: GridCell): number {
+  if (outLabel) return (Number(cell.qtyOut) || 0) + (Number(cell.rejected) || 0);
+  if (inLabel) return Number(cell.qtyIn) || 0;
+  return 0;
+}
+
 /** Keeps the override visible in the record itself, not just in the audit
  * summary -  whoever reads the entry later sees why it exceeded the ceiling. */
 function overrideNote(notes: string, overridden: boolean): string | null {
@@ -583,23 +623,35 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
   const [gridLotId, setGridLotId] = useState("");
   const [gridCells, setGridCells] = useState<Record<string, GridCell>>({});
   const [gridNotes, setGridNotes] = useState("");
+  /** One Vendor/Line-name and one DC value per grid submission -  entered once
+   * and written onto every size row it produces, the grid equivalent of the
+   * draft-row ref/doc inputs. Rendered only where config.ref/docLabel are
+   * set; both are ignored by saveGrid otherwise. */
+  const [gridRef, setGridRef] = useState("");
+  const [gridDoc, setGridDoc] = useState("");
   /** Deliberate override of the available-quantity ceiling -  pieces recovered
    * from rework, or genuinely arriving from another source. */
   const [allowOverLimit, setAllowOverLimit] = useState(false);
   /** Which lots' size-wise entry rows are expanded in the history table. */
   const [expandedLots, setExpandedLots] = useState<Set<string>>(new Set());
 
+  /** True once there's enough picked to show the grid: a lot, for a
+   * lot-keyed stage; immediately, for a no-lot stage -  there's nothing to
+   * pick, the grid is keyed by size alone from the moment sizes exist. */
+  const gridReady = config.lot === "none" || !!gridLotId;
+
   /**
-   * The rows of the size grid for the selected lot.
+   * The rows of the size grid.
    *
    * Cutting is the origin of the size axis, so it measures against the PO's
-   * ordered quantity. Every stage after it measures against what Cutting
-   * actually produced for that exact (lot, size) and what the stage before it
-   * handed over -  which is what stops each stage inventing its own quantity.
+   * ordered quantity. Every lot-keyed stage after it measures against what
+   * Cutting actually produced for that exact (lot, size) and what the stage
+   * before it handed over. A no-lot stage (Embroidery, Sewing, Checking,
+   * Ironing, Packing) has no lot to key by, so it measures the same way one
+   * axis coarser -  against what the previous SIZE-tracking stage produced
+   * for that size, summed across every lot (chain.ts's SizeFlow.available).
    */
   const gridRows = useMemo<GridRow[]>(() => {
-    if (!gridLotId) return [];
-
     if (config.sizeGridOrigin) {
       // Cutting's ceiling is the PO's production quantity per size -  which
       // already includes the extra % added at planning, so there is no reason
@@ -617,15 +669,40 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
           rework: 0,
           remaining,
           over,
-          isComplete: remaining === 0 && over === 0,
+          // A target of 0 with nothing done isn't "met" -  it's nothing to do
+          // yet. Only actually recording something (or going over) closes a row.
+          isComplete: remaining === 0 && over === 0 && (doneAllLots > 0 || over > 0),
         };
       });
     }
 
+    if (config.lot === "none") {
+      return cs.bySize.map((s) => {
+        const done = gridCellDone(config.outLabel, config.inLabel, s);
+        const remaining = Math.max(s.available - done, 0);
+        const over = Math.max(done - s.available, 0);
+        return {
+          sizeCode: s.sizeCode,
+          target: s.available,
+          cutQty: s.cutQty,
+          done,
+          rework: 0,
+          remaining,
+          over,
+          // Available can legitimately be 0 -  the previous stage simply hasn't
+          // sent this size yet -  and that is "not started", not "complete".
+          // Only mark a row done once something has actually been recorded.
+          isComplete: remaining === 0 && over === 0 && (done > 0 || over > 0),
+        };
+      });
+    }
+
+    if (!gridLotId) return [];
+
     return cs.byLotSize
       .filter((c) => c.lotId === gridLotId)
       .map((c) => {
-        const done = c.qtyOut + c.qtyRejected;
+        const done = gridCellDone(config.outLabel, config.inLabel, c);
         const remaining = Math.max(c.available - done, 0);
         const over = Math.max(done - c.available, 0);
         return {
@@ -636,17 +713,33 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
           rework: c.qtyRework,
           remaining,
           over,
-          isComplete: remaining === 0 && over === 0,
+          isComplete: remaining === 0 && over === 0 && (done > 0 || over > 0),
         };
       });
-  }, [gridLotId, sizes, cs.byLotSize, cs.bySize, config.sizeGridOrigin]);
+    // config is a fresh object literal on every render (it's written inline as
+    // JSX props), so depending on it directly would recompute this on every
+    // keystroke elsewhere on the page. Naming the specific primitives this
+    // memo actually reads keeps it stable the same way sizeGridOrigin already
+    // did before gridCellDone needed outLabel/inLabel too.
+  }, [
+    gridLotId,
+    sizes,
+    cs.byLotSize,
+    cs.bySize,
+    config.sizeGridOrigin,
+    config.lot,
+    config.outLabel,
+    config.inLabel,
+  ]);
 
-  /** What has already happened to this lot at this stage, before anything new
-   * is typed -  the "what did I miss?" answer the operator needs first. */
+  /** What has already happened -  at this lot, or at this stage as a whole for
+   * a no-lot stage -  before anything new is typed. The "what did I miss?"
+   * answer the operator needs first. */
   const lotSummary = useMemo(() => {
-    if (!gridLotId || gridRows.length === 0) return null;
+    if (!gridReady || gridRows.length === 0) return null;
 
-    const cells = cs.byLotSize.filter((c) => c.lotId === gridLotId);
+    const cells: { qtyIn: number; qtyOut: number; qtyRejected: number }[] =
+      config.lot === "none" ? cs.bySize : cs.byLotSize.filter((c) => c.lotId === gridLotId);
     const entered = cells.reduce(
       (acc, c) => ({
         qtyIn: acc.qtyIn + c.qtyIn,
@@ -679,7 +772,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
           : "Not Started";
 
     return { ...entered, ...rolled, status };
-  }, [gridLotId, gridRows, cs.byLotSize]);
+  }, [gridReady, gridLotId, gridRows, cs.byLotSize, cs.bySize, config.lot]);
 
   const visibleTxns = useMemo(
     () =>
@@ -917,7 +1010,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
     const typedRows = gridRows.filter((r) => cellHasValue(gridCells[r.sizeCode]));
     // Nothing typed is not an error -  see saveDrafts.
     if (typedRows.length === 0) return true;
-    if (!gridLotId) {
+    if (config.lot !== "none" && !gridLotId) {
       toast.show("Select a lot first.", "error");
       return false;
     }
@@ -938,7 +1031,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
       const breaches = typedRows
         .map((r) => {
           const cell = gridCells[r.sizeCode] ?? BLANK_CELL;
-          const adding = (Number(cell.qtyOut) || 0) + (Number(cell.rejected) || 0);
+          const adding = gridCellAdding(config.outLabel, config.inLabel, cell);
           return { row: r, adding, excess: adding - r.remaining };
         })
         .filter((b) => b.excess > 0);
@@ -964,7 +1057,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
         order_id: orderId,
         po_id: poId,
         section_id: sectionId,
-        lot_id: gridLotId,
+        lot_id: config.lot === "none" ? null : gridLotId,
         size_code: r.sizeCode,
         txn_type: config.txnType ?? "process",
         unit,
@@ -972,8 +1065,8 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
         qty_out: config.outLabel ? Number(cell.qtyOut) || 0 : 0,
         qty_rejected: config.rejectedLabel ? Number(cell.rejected) || 0 : 0,
         qty_rework: config.reworkLabel ? Number(cell.rework) || 0 : 0,
-        ref_name: null,
-        doc_no: null,
+        ref_name: config.ref ? gridRef.trim() || null : null,
+        doc_no: config.docLabel ? gridDoc.trim() || null : null,
         entry_date: new Date().toISOString().slice(0, 10),
         notes: overrideNote(gridNotes, allowOverLimit),
         entered_by: appUser.id,
@@ -982,6 +1075,10 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
 
     const total = rows.reduce((sum, r) => sum + (r.qty_out || r.qty_in), 0);
     const lotNo = lots.find((l) => l.id === gridLotId)?.lot_no ?? "";
+    // "Lot X: ..." for a lot-keyed stage; the vendor/line name (if given) for
+    // a no-lot one, so the summary still names what the entry is against
+    // instead of silently reading "undefined:" or nothing at all.
+    const subject = config.lot === "none" ? gridRef.trim() || "This entry" : `Lot ${lotNo}`;
 
     try {
       await createTxns.mutateAsync(rows);
@@ -992,7 +1089,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
         entity: "production_txn",
         entity_id: null,
         action: "create",
-        summary: `Lot ${lotNo}: ${total.toLocaleString()} ${unit} across ${rows.length} size${rows.length === 1 ? "" : "s"}${
+        summary: `${subject}: ${total.toLocaleString()} ${unit} across ${rows.length} size${rows.length === 1 ? "" : "s"}${
           allowOverLimit ? " (over available -  override)" : ""
         }`,
         changes: null,
@@ -1001,9 +1098,11 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
       });
       setGridCells({});
       setGridNotes("");
+      setGridRef("");
+      setGridDoc("");
       setAllowOverLimit(false);
       onSaved();
-      toast.show(`Lot ${lotNo} recorded -  ${total.toLocaleString()} ${unit}.`, "success");
+      toast.show(`${subject} recorded -  ${total.toLocaleString()} ${unit}.`, "success");
       return true;
     } catch (e) {
       toast.show(e instanceof Error ? e.message : "Could not save the entry.", "error");
@@ -1390,23 +1489,55 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
       {config.sizeGrid ? (
         <Section
           title="Add new entry"
-          subtitle="Pick the lot -  its sizes and quantities are already known, so there's nothing to re-select."
+          subtitle={
+            config.lot === "none"
+              ? "Enter the quantity for every size in one table -  there's no lot to pick here."
+              : "Pick the lot -  its sizes and quantities are already known, so there's nothing to re-select."
+          }
         >
           <div className="space-y-3 rounded-xl border border-ink-100 bg-ink-50/60 p-3">
-            <LotSelect
-              lots={lots}
-              value={gridLotId}
-              onChange={setGridLotId}
-              orderId={orderId}
-              poId={poId}
-              allowCreate={config.allowCreateLot ?? false}
-            />
+            {config.lot !== "none" && (
+              <LotSelect
+                lots={lots}
+                value={gridLotId}
+                onChange={setGridLotId}
+                orderId={orderId}
+                poId={poId}
+                allowCreate={config.allowCreateLot ?? false}
+              />
+            )}
 
-            {/* What already happened to this lot here, before anything new is typed. */}
+            {/* Vendor/line name and DC, one value per submission -  the grid
+                equivalent of the draft-row ref/doc inputs. */}
+            {(config.ref || config.docLabel) && (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {config.ref && (
+                  <Input
+                    label={config.ref.label}
+                    value={gridRef}
+                    onChange={(e) => setGridRef(e.target.value)}
+                    placeholder={config.ref.placeholder ?? "Type or pick"}
+                    list={config.ref.presets.length ? `grid-ref-${sectionId}` : undefined}
+                  />
+                )}
+                {config.ref && config.ref.presets.length > 0 && (
+                  <datalist id={`grid-ref-${sectionId}`}>
+                    {config.ref.presets.map((p) => (
+                      <option key={p} value={p} />
+                    ))}
+                  </datalist>
+                )}
+                {config.docLabel && (
+                  <Input label={config.docLabel} value={gridDoc} onChange={(e) => setGridDoc(e.target.value)} />
+                )}
+              </div>
+            )}
+
+            {/* What already happened here, before anything new is typed. */}
             {lotSummary && (
               <div className="rounded-lg border border-white/80 bg-white p-2.5">
                 <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-400">
-                  This lot so far, at this stage
+                  {config.lot === "none" ? "So far at this stage" : "This lot so far, at this stage"}
                 </p>
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
                   <MiniStat
@@ -1458,9 +1589,11 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
               </div>
             )}
 
-            {gridLotId && gridRows.length === 0 ? (
+            {gridReady && gridRows.length === 0 ? (
               <p className="rounded-lg border border-dashed border-ink-200 px-3 py-5 text-center text-sm text-ink-400">
-                Nothing has reached this lot yet -  Cutting hasn't recorded any sizes for it.
+                {config.lot === "none"
+                  ? "No sizes are set up for this order yet -  add the size breakdown before entering here."
+                  : "Nothing has reached this lot yet -  Cutting hasn't recorded any sizes for it."}
               </p>
             ) : (
               <div className="overflow-x-auto rounded-lg border border-ink-100 bg-white">
@@ -1489,13 +1622,16 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                   <tbody className="divide-y divide-ink-100">
                     {gridRows.map((r) => {
                       const cell = gridCells[r.sizeCode] ?? BLANK_CELL;
-                      const adding = (Number(cell.qtyOut) || 0) + (Number(cell.rejected) || 0);
+                      const adding = gridCellAdding(config.outLabel, config.inLabel, cell);
                       const balance = r.remaining - adding;
                       const over = balance < 0;
                       // A size whose target is met has no input left to give.
                       // Showing empty boxes there is what let the original
                       // quantity be re-entered as if it were still available.
-                      const closed = r.remaining === 0;
+                      // A target of 0 with nothing done yet is NOT met -  it's a
+                      // size the previous stage hasn't sent anything for yet, and
+                      // has to stay open for entry (see r.isComplete above).
+                      const closed = r.remaining === 0 && (r.done > 0 || r.over > 0);
                       const inputCells = closed ? (
                         <td
                           className="px-3 py-1.5 text-right"
@@ -1515,7 +1651,17 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                       ) : (
                         <>
                           {config.inLabel && (
-                            <GridInput value={cell.qtyIn} onChange={(v) => patchCell(r.sizeCode, { qtyIn: v })} />
+                            <GridInput
+                              value={cell.qtyIn}
+                              onChange={(v) => patchCell(r.sizeCode, { qtyIn: v })}
+                              // Only the ceiling-tracked field gets the live max/red-
+                              // highlight treatment. Where outLabel is also set (Sewing,
+                              // Panel Checking), qtyIn is a plain input the output column
+                              // is measured against, not itself; where there's no
+                              // outLabel (a send-only grid), qtyIn IS the tracked field.
+                              invalid={!config.outLabel && over}
+                              max={!config.outLabel ? r.remaining : undefined}
+                            />
                           )}
                           {config.outLabel && (
                             <GridInput

@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { useToast } from "../../../context/ToastContext";
 import { useStageChain } from "../../../hooks/useProductionChain";
-import { STAGE, type ChainStage } from "../../../lib/chain";
+import { STAGE, type ChainStage, type ProductionChain } from "../../../lib/chain";
 import { stageQtyLabels } from "../../../lib/stageLabels";
 import { Loader } from "../../ui/Loader";
 import { Badge } from "../../ui/Badge";
@@ -311,7 +311,7 @@ export function LotSendReceiveForm(props: StageFormProps) {
             size: "none",
             inLabel: false,
             outLabel: labels.out,
-            rejectedLabel: labels.rejected,
+            rejectedLabel: copy.noRejected ? false : labels.rejected,
             reworkLabel: false,
             ref: { label: "Received From", presets: copy.presets, placeholder: "Unit / vendor name" },
             docLabel: "Doc / DC No",
@@ -343,11 +343,17 @@ interface SendReceiveCopy {
   rejectedLabel: string;
   presets: string[];
   allowCreateLot: boolean;
-  /** "none" removes the lot picker from both panels entirely -  used only by
-   * Knitting, which tracks a total quantity and has no lot of its own to
-   * select or create. Every other stage defaults to "required" via the
-   * `copy.lotMode ?? "required"` fallback where this is read. */
+  /** "none" removes the lot picker from both panels entirely -  used by
+   * Knitting (tracks a total quantity, no lot of its own yet) and Embroidery
+   * (moved to a simple Vendor/DC/Date/Quantity record, no lot or size).
+   * Every other stage defaults to "required" via the `copy.lotMode ??
+   * "required"` fallback where this is read. */
   lotMode?: "required" | "none";
+  /** Drops the Receiving panel's Rejected column. Off by default -  Knitting,
+   * Dyeing, Brushing and Compacting all track a real physical loss on return
+   * and keep it; Embroidery does not, per its simplified Vendor/DC/Date/
+   * Quantity record. */
+  noRejected?: boolean;
 }
 
 const SEND_RECEIVE_COPY: Record<string, SendReceiveCopy> = {
@@ -556,9 +562,18 @@ export function PanelCheckForm(props: StageFormProps) {
   );
 }
 
-/** Embroidery goes out and comes back, so it gets two ledgers over one stage - 
- * dispatch and return each accumulating separately, with the gap between them
- * being what's still with the vendor. */
+/**
+ * Embroidery, Sewing, Checking, Ironing and Packing all share this shape now:
+ * pick nothing (there's no lot any more), enter Vendor Name / Line Name, DC
+ * Name, and a quantity for every size in one table -  the same bulk layout
+ * Cutting uses, minus the lot picker. Each size's ceiling is what the
+ * previous size-tracking stage produced for it, summed across every lot
+ * (chain.ts's SizeFlow.available) -  the size-wise equivalent of the
+ * lot+size ceiling every stage used before this, just one axis coarser.
+ */
+
+/** Embroidery is still a round trip -  panels leave and come back -  so it
+ * keeps two ledgers over one stage, each its own bulk size grid. */
 export function EmbroideryForm(props: StageFormProps) {
   const { order, assignment, stageProgress, onForwarded } = props;
   const labels = stageQtyLabels(assignment.section?.key);
@@ -571,7 +586,6 @@ export function EmbroideryForm(props: StageFormProps) {
   const sendLedger = useRef<StageLedgerHandle>(null);
   const returnLedger = useRef<StageLedgerHandle>(null);
   const toast = useToast();
-  const [showSizeDetail, setShowSizeDetail] = useState(false);
 
   if (isLoading) return <Loader label="Loading this stage…" />;
   if (isError || !cs) return <p className="text-sm text-status-bad">Couldn't load this stage's data.</p>;
@@ -582,8 +596,6 @@ export function EmbroideryForm(props: StageFormProps) {
   const received = cs.txns.filter((t) => t.txn_type === "receive").reduce((s, t) => s + t.qty_out, 0);
   const withVendor = Math.max(sent - received, 0);
 
-  /** Both directions commit together -  a dispatch and its return are often
-   * entered in the same sitting. */
   async function saveBoth(): Promise<boolean> {
     if (!(await sendLedger.current?.save())) return false;
     return (await returnLedger.current?.save()) ?? true;
@@ -621,45 +633,26 @@ export function EmbroideryForm(props: StageFormProps) {
   return (
     <div className="space-y-6">
       {props.showDetails && (
-        <>
-          <p className="text-xs leading-relaxed text-ink-500">
-            Panels go out to the embroidery unit and come back. Record both directions -  what's still
-            with the vendor is the difference.
-          </p>
-
-          <div className="grid grid-cols-3 gap-2">
-            <QtyBox label="Sent out" value={sent} unit="PCS" />
-            <QtyBox label="Received back" value={received} unit="PCS" tone="good" />
-            <QtyBox label="With vendor" value={withVendor} unit="PCS" tone={withVendor > 0 ? "warn" : "good"} />
-          </div>
-
-          {/* Lot level first -  it's the figure people actually quote. The
-              size-wise split is real detail but it multiplies the row count by
-              the number of sizes, so it stays behind a click. */}
-          {cs.byLot.length > 0 && (
-            <Section title="Lot-wise position" subtitle="Completed / approved pieces per lot.">
-              <LotSummaryTable cs={cs} />
-              <div className="pt-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setShowSizeDetail((v) => !v)}
-                >
-                  {showSizeDetail ? "Hide size-wise details" : "View size-wise details"}
-                </Button>
-              </div>
-              {showSizeDetail && (
-                <div className="pt-2">
-                  <SizeSummaryTable cs={cs} />
-                </div>
-              )}
-            </Section>
-          )}
-        </>
+        <p className="text-xs leading-relaxed text-ink-500">
+          Panels go out to the embroidery unit and come back. Enter the vendor, DC number and the
+          quantity for every size in one table -  the same bulk layout as Cutting. No lot to pick.
+        </p>
       )}
 
-      <DirectionPanel direction="out" step={1} title="Sending Out" subtitle="Panels going out to the embroidery unit">
+      {props.showDetails && (
+        <div className="grid grid-cols-3 gap-2">
+          <QtyBox label="Sent out" value={sent} unit="PCS" />
+          <QtyBox label="Received back" value={received} unit="PCS" tone="good" />
+          <QtyBox label="With vendor" value={withVendor} unit="PCS" tone={withVendor > 0 ? "warn" : "good"} />
+        </div>
+      )}
+
+      <DirectionPanel
+        direction="out"
+        step={1}
+        title="Sending Out"
+        subtitle="Vendor, DC number, and the quantity sent for every size in one table."
+      >
         <StageLedger
           ref={sendLedger}
           orderId={order.id}
@@ -672,31 +665,27 @@ export function EmbroideryForm(props: StageFormProps) {
           onSaved={onForwarded}
           showDetails={props.showDetails}
           config={{
-            lot: "required",
+            lot: "none",
             size: "required",
-            // Dispatch writes qty_IN, the return writes qty_OUT.
-            //
-            // Both used to write qty_out, which made the stage's output the sum
-            // of the two: 200 sent plus the same 200 received read as 400. That
-            // then became Sewing's available quantity and showed as 200% yield
-            // on the Output report. Send and return are one round trip, not two
-            // productions -  the pieces are only produced once, on the way back.
             inLabel: labels.in,
             outLabel: false,
             rejectedLabel: false,
             reworkLabel: false,
-            ref: { label: "Sent To", presets: [], placeholder: "Vendor name" },
-            docLabel: "DC No",
+            ref: { label: "Vendor Name", presets: [], placeholder: "Unit / vendor name" },
+            docLabel: "DC Name",
             txnType: "send",
             filterByTxnType: true,
-            // Panel Checking's accepted quantity for this (lot, size) is what
-            // can go to the vendor -  shown on selection, capped on save.
-            lotSizeAvailable: true,
+            sizeGrid: true,
           }}
         />
       </DirectionPanel>
 
-      <DirectionPanel direction="in" step={2} title="Receiving Back" subtitle="Embroidered panels coming back in-house">
+      <DirectionPanel
+        direction="in"
+        step={2}
+        title="Receiving Back"
+        subtitle="Vendor, DC number, and the quantity received for every size in one table."
+      >
         <StageLedger
           ref={returnLedger}
           orderId={order.id}
@@ -709,16 +698,17 @@ export function EmbroideryForm(props: StageFormProps) {
           onSaved={onForwarded}
           showDetails={props.showDetails}
           config={{
-            lot: "required",
+            lot: "none",
             size: "required",
             inLabel: false,
             outLabel: labels.out,
-            rejectedLabel: labels.rejected,
+            rejectedLabel: false,
             reworkLabel: false,
-            ref: { label: "Received From", presets: [], placeholder: "Vendor name" },
-            docLabel: "DC No",
+            ref: { label: "Vendor Name", presets: [], placeholder: "Unit / vendor name" },
+            docLabel: "DC Name",
             txnType: "receive",
             filterByTxnType: true,
+            sizeGrid: true,
           }}
         />
       </DirectionPanel>
@@ -741,16 +731,16 @@ export function SewingForm(props: StageFormProps) {
   return (
     <ChainStageForm
       props={props}
-      intro="Line input and line output, lot by lot. Sizes and quantities carry over from Cutting. The gap between input and output is work in progress on the line, not a loss."
+      intro="Vendor or line name, DC number, and the quantity produced for every size in one table. No lot to pick."
       config={{
-        lot: "required",
+        lot: "none",
         size: "required",
-        inLabel: labels.in,
+        inLabel: false,
         outLabel: labels.out,
-        rejectedLabel: labels.rejected,
-        reworkLabel: labels.rework,
-        ref: { label: "Sewing Line", presets: ["Line 01", "Line 02", "Line 03"], placeholder: "e.g. Line 01" },
-        docLabel: false,
+        rejectedLabel: false,
+        reworkLabel: false,
+        ref: { label: "Line Name", presets: ["Line 01", "Line 02", "Line 03"], placeholder: "e.g. Line 01" },
+        docLabel: "DC Name",
         txnType: "process",
         sizeGrid: true,
       }}
@@ -763,16 +753,16 @@ export function GarmentQcForm(props: StageFormProps) {
   return (
     <ChainStageForm
       props={props}
-      intro="Inspection after sewing. Accepted moves on; rejected is a permanent loss and rework stays here until it's repaired."
+      intro="Vendor name, DC number, and the quantity checked for every size in one table. No lot to pick."
       config={{
-        lot: "required",
+        lot: "none",
         size: "required",
-        inLabel: labels.in,
+        inLabel: false,
         outLabel: labels.out,
-        rejectedLabel: labels.rejected,
-        reworkLabel: labels.rework,
-        ref: false,
-        docLabel: false,
+        rejectedLabel: false,
+        reworkLabel: false,
+        ref: { label: "Vendor Name", presets: [], placeholder: "Unit / vendor name" },
+        docLabel: "DC Name",
         txnType: "process",
         sizeGrid: true,
       }}
@@ -785,16 +775,16 @@ export function GarmentProcessForm(props: StageFormProps) {
   return (
     <ChainStageForm
       props={props}
-      intro="Pressing, lot by lot. Sizes and quantities carry over from the stage before."
+      intro="Vendor name, DC number, and the quantity pressed for every size in one table. No lot to pick."
       config={{
-        lot: "required",
+        lot: "none",
         size: "required",
-        inLabel: labels.in,
+        inLabel: false,
         outLabel: labels.out,
-        rejectedLabel: labels.rejected,
-        reworkLabel: labels.rework,
-        ref: false,
-        docLabel: false,
+        rejectedLabel: false,
+        reworkLabel: false,
+        ref: { label: "Vendor Name", presets: [], placeholder: "Unit / vendor name" },
+        docLabel: "DC Name",
         txnType: "process",
         sizeGrid: true,
       }}
@@ -807,26 +797,29 @@ export function PackingForm(props: StageFormProps) {
   return (
     <ChainStageForm
       props={props}
-      intro="The last stage. What's packed here is the figure the Output dashboard compares against the original order."
+      intro="The last stage. Vendor name, DC number, and the quantity packed for every size in one table -  this is the figure the Output dashboard compares against the original order."
       config={{
-        lot: "required",
+        lot: "none",
         size: "required",
-        inLabel: labels.in,
+        inLabel: false,
         outLabel: labels.out,
-        rejectedLabel: labels.rejected,
-        reworkLabel: labels.rework,
-        ref: false,
-        docLabel: "Carton / Ref",
+        rejectedLabel: false,
+        reworkLabel: false,
+        ref: { label: "Vendor Name", presets: [], placeholder: "Unit / vendor name" },
+        docLabel: "DC Name",
         txnType: "process",
         sizeGrid: true,
       }}
-      extra={(cs) => <PackedAgainstOrder cs={cs} />}
+      extra={(cs, chain) => <PackedAgainstOrder cs={cs} chain={chain} />}
     />
   );
 }
 
-function PackedAgainstOrder({ cs }: { cs: ChainStage }) {
-  const ordered = cs.bySize.reduce((total, s) => total + s.poQty, 0);
+function PackedAgainstOrder({ cs, chain }: { cs: ChainStage; chain: ProductionChain }) {
+  // Was cs.bySize.reduce(...poQty) -  correct only while Packing itself kept a
+  // size grid. Packing now records one overall figure, so bySize is always
+  // empty here; the order's total lives on the chain instead.
+  const ordered = chain.totalPcs;
   const packed = cs.output;
   return (
     <Section title="Against the order">

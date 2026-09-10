@@ -66,6 +66,24 @@ const MATERIAL_STAGES: string[] = [
   STAGE.rawMaterialInward,
 ];
 
+/**
+ * Stages that record Vendor Name, DC Name and a size-wise quantity table, but
+ * no lot -  Embroidery, Sewing, Checking, Ironing and Packing. byLot and
+ * byLotSize must come back genuinely empty for these, not a lot (or lot×size
+ * cell) carried forward from Panel Checking with every figure sitting at
+ * zero. bySize is NOT affected by this set -  these stages still track size,
+ * same as every other PCS stage; see SizeFlow.available below for how a
+ * size's ceiling carries from one of these stages to the next without a lot
+ * to key it by.
+ */
+const NO_LOT_STAGES = new Set<string>([
+  STAGE.embroidery,
+  STAGE.sewing,
+  STAGE.checking,
+  STAGE.ironing,
+  STAGE.packing,
+]);
+
 // ---------------------------------------------------------------------------
 // Material totals
 // ---------------------------------------------------------------------------
@@ -206,6 +224,23 @@ export interface SizeFlow {
   qtyOut: number;
   qtyRejected: number;
   balance: number;
+  /** What Cutting actually cut for this size, summed across every lot -  the
+   * fixed reference figure, same idea as LotSizeCell.cutQty. Distinct from
+   * poQty: cutting can come in under or over the ordered quantity (wastage,
+   * the extra % margin), so this is the honest "what was really cut" figure,
+   * not what was asked for. */
+  cutQty: number;
+  /**
+   * What the previous size-tracking stage passed on for THIS size, summed
+   * across every lot -  the size-wise equivalent of LotFlow.available, for a
+   * stage that tracks size but not lot (Embroidery, Sewing, Checking,
+   * Ironing, Packing). 0 at Cutting, the origin -  there is nothing upstream
+   * to ration against.
+   */
+  available: number;
+  /** available minus whatever this stage has already recorded for the size,
+   * floored at 0 -  mirrors LotFlow.remainingAvailable. */
+  remainingAvailable: number;
 }
 
 export type CellStatus = "not_started" | "in_progress" | "complete";
@@ -368,6 +403,17 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
   // is what the KG half of the line (Knitting → Fabric In-House) travels on,
   // since it has no size axis until Cutting creates one.
   let prevLotOutput = new Map<string, number>();
+  // The same idea again, one axis finer than prevLotOutput but with the lot
+  // dropped entirely: the previous size-tracking stage's output per SIZE,
+  // summed across every lot. This is what Embroidery, Sewing, Checking,
+  // Ironing and Packing measure a size's ceiling against, now that none of
+  // them key anything by lot any more -  the size-wise equivalent of
+  // prevLotOutput/prevCellOutput. Cutting seeds it (available = 0, it's the
+  // origin); every PCS stage after updates it, so a size's ceiling is always
+  // "what the stage immediately before me produced for this size", not a
+  // blanket fallback to Cutting's own figure the way SizeFlow.balance's
+  // sizeInput below still is for older, already-shipped behaviour.
+  let prevSizeOutput = new Map<string, number>();
 
   sorted.forEach((stage, index) => {
     const base = emptyStage(stage);
@@ -458,61 +504,75 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
     base.balance = Math.max(resolvedInput - base.output - base.rejected, 0);
 
     // --- Lot-wise -----------------------------------------------------------
-    const lotGroups = new Map<string, ProductionTxn[]>();
-    for (const t of stageTxns) {
-      if (!t.lot_id) continue;
-      lotGroups.set(t.lot_id, [...(lotGroups.get(t.lot_id) ?? []), t]);
+    //
+    // Skipped entirely for a no-lot/no-size stage: base.byLot stays [] (its
+    // default from emptyStage) instead of picking up a carried-forward lot
+    // with every figure at zero, and prevLotOutput passes through unchanged
+    // rather than being overwritten by an empty map -  a lot-tracking stage
+    // placed after one of these would still see whatever the last real
+    // lot-tracking stage produced, not nothing.
+    if (!NO_LOT_STAGES.has(stage.key)) {
+      const lotGroups = new Map<string, ProductionTxn[]>();
+      for (const t of stageTxns) {
+        if (!t.lot_id) continue;
+        lotGroups.set(t.lot_id, [...(lotGroups.get(t.lot_id) ?? []), t]);
+      }
+
+      // Lots this stage should know about: the ones it has recorded against,
+      // plus every lot the previous comparable stage passed on. Without the
+      // second set, a stage that hasn't started yet would list no lots at all
+      // and the operator would have nothing to select or measure against.
+      const knownLots = new Set<string>([
+        ...lotGroups.keys(),
+        ...(sameUnit ? Array.from(prevLotOutput.keys()) : []),
+      ]);
+      const nextLotOutput = new Map<string, number>();
+
+      base.byLot = Array.from(knownLots)
+        .map((lotId) => {
+          const group = lotGroups.get(lotId) ?? [];
+          const qtyIn = sum(group, (t) => t.qty_in);
+          const qtyOut = sum(group, (t) => t.qty_out);
+          const qtyRejected = sum(group, (t) => t.qty_rejected);
+          const available = sameUnit ? (prevLotOutput.get(lotId) ?? 0) : 0;
+
+          nextLotOutput.set(lotId, qtyOut);
+
+          return {
+            lotId,
+            lotNo: lotsById.get(lotId)?.lot_no ?? "- ",
+            qtyIn,
+            qtyOut,
+            qtyRejected,
+            qtyRework: sum(group, (t) => t.qty_rework),
+            balance: Math.max(qtyIn - qtyOut - qtyRejected, 0),
+            available,
+            // A stage that records an intake is measured by it; one that doesn't
+            // (Fabric Store) is measured by what it put out.
+            remainingAvailable: Math.max(available - (qtyIn > 0 ? qtyIn : qtyOut), 0),
+            lastEntryDate: group.length ? group[group.length - 1].entry_date : null,
+            entryCount: group.length,
+          };
+        })
+        .sort((a, b) => a.lotNo.localeCompare(b.lotNo));
+
+      // Dyeing is where a lot's quantity originates -  there is no upstream lot
+      // figure to inherit, so its own received quantity seeds the chain. Knitting
+      // has no lot dimension at all, so it never populates this map; it stays
+      // empty until Dyeing's own txns (which do carry lot_id) fill it in.
+      prevLotOutput = nextLotOutput;
     }
-
-    // Lots this stage should know about: the ones it has recorded against,
-    // plus every lot the previous comparable stage passed on. Without the
-    // second set, a stage that hasn't started yet would list no lots at all
-    // and the operator would have nothing to select or measure against.
-    const knownLots = new Set<string>([
-      ...lotGroups.keys(),
-      ...(sameUnit ? Array.from(prevLotOutput.keys()) : []),
-    ]);
-    const nextLotOutput = new Map<string, number>();
-
-    base.byLot = Array.from(knownLots)
-      .map((lotId) => {
-        const group = lotGroups.get(lotId) ?? [];
-        const qtyIn = sum(group, (t) => t.qty_in);
-        const qtyOut = sum(group, (t) => t.qty_out);
-        const qtyRejected = sum(group, (t) => t.qty_rejected);
-        const available = sameUnit ? (prevLotOutput.get(lotId) ?? 0) : 0;
-
-        nextLotOutput.set(lotId, qtyOut);
-
-        return {
-          lotId,
-          lotNo: lotsById.get(lotId)?.lot_no ?? "- ",
-          qtyIn,
-          qtyOut,
-          qtyRejected,
-          qtyRework: sum(group, (t) => t.qty_rework),
-          balance: Math.max(qtyIn - qtyOut - qtyRejected, 0),
-          available,
-          // A stage that records an intake is measured by it; one that doesn't
-          // (Fabric Store) is measured by what it put out.
-          remainingAvailable: Math.max(available - (qtyIn > 0 ? qtyIn : qtyOut), 0),
-          lastEntryDate: group.length ? group[group.length - 1].entry_date : null,
-          entryCount: group.length,
-        };
-      })
-      .sort((a, b) => a.lotNo.localeCompare(b.lotNo));
-
-    // Dyeing is where a lot's quantity originates -  there is no upstream lot
-    // figure to inherit, so its own received quantity seeds the chain. Knitting
-    // has no lot dimension at all, so it never populates this map; it stays
-    // empty until Dyeing's own txns (which do carry lot_id) fill it in.
-    prevLotOutput = nextLotOutput;
 
     // --- Lot × size ---------------------------------------------------------
     //
     // The grain the garment floor works in. Built for every PCS stage; the KG
-    // stages have no size axis until Cutting creates one.
-    if (stage.unit_type === "PCS") {
+    // stages have no size axis until Cutting creates one. Skipped for a
+    // no-lot stage for the same reason as byLot above: base.byLotSize stays
+    // [] instead of picking up Cutting's cells carried forward with every
+    // figure at zero, and prevCellOutput passes through unchanged so a
+    // lot-tracking stage after one of these still sees the last real
+    // lot-tracking stage's cell output, not nothing.
+    if (stage.unit_type === "PCS" && !NO_LOT_STAGES.has(stage.key)) {
       const isCutting = stage.key === STAGE.cutting;
 
       // Every cell this stage should show: the ones it has recorded against,
@@ -585,6 +645,8 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
         cutBySize.set(sizeCode, (cutBySize.get(sizeCode) ?? 0) + qty);
       }
 
+      const nextSizeOutput = new Map<string, number>();
+
       base.bySize = sizes.map((s) => {
         const group = stageTxns.filter((t) => t.size_code === s.size_code);
         const qtyIn = sum(group, (t) => t.qty_in);
@@ -594,6 +656,16 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
         // Cutting produced for it, else the ordered quantity (Cutting itself,
         // before anything has been cut).
         const sizeInput = qtyIn > 0 ? qtyIn : (cutBySize.get(s.size_code) || s.quantity);
+
+        // available/remainingAvailable: the size-wise equivalent of a lot's
+        // available/remainingAvailable, for the stages that track size but not
+        // lot (see NO_LOT_STAGES). Cutting is the origin -  available is 0,
+        // there's nothing upstream to ration against, same as a lot's origin.
+        const available = prevSizeOutput.get(s.size_code) ?? 0;
+        const remainingAvailable = Math.max(available - (qtyIn > 0 ? qtyIn : qtyOut), 0);
+
+        nextSizeOutput.set(s.size_code, qtyOut);
+
         return {
           sizeCode: s.size_code,
           poQty: s.quantity,
@@ -601,8 +673,13 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
           qtyOut,
           qtyRejected,
           balance: Math.max(sizeInput - qtyOut - qtyRejected, 0),
+          cutQty: cutBySize.get(s.size_code) || s.quantity,
+          available,
+          remainingAvailable,
         };
       });
+
+      prevSizeOutput = nextSizeOutput;
     }
 
     result.push({ ...base, inherited, input: resolvedInput, hasMismatch });
@@ -758,14 +835,25 @@ export function buildOutputSummary(chain: ProductionChain): OutputSummary {
   };
 }
 
-/** Size-wise ordered → cut → packed comparison for the Output dashboard. */
+/**
+ * Size-wise ordered → cut → packed comparison for the Output dashboard.
+ *
+ * sewn/packed/balance are null, not 0, whenever that stage has no size-wise
+ * entries at all -  Sewing and Packing record one overall figure now rather
+ * than a size grid, so there is a real difference between "recorded, and it
+ * was zero" and "not recorded by size any more". A 0 here would print as
+ * "fully short against every size" even on an order that has actually
+ * shipped in full; null renders as "-" instead; and Cutting is unaffected,
+ * since it still keeps the size grid the rest of the garment line no longer
+ * needs to reference this way.
+ */
 export interface SizeOutputRow {
   sizeCode: string;
   ordered: number;
   cut: number;
-  sewn: number;
-  packed: number;
-  balance: number;
+  sewn: number | null;
+  packed: number | null;
+  balance: number | null;
 }
 
 export function buildSizeOutput(chain: ProductionChain): SizeOutputRow[] {
@@ -773,17 +861,24 @@ export function buildSizeOutput(chain: ProductionChain): SizeOutputRow[] {
   const sewn = chain.byKey.get(STAGE.sewing);
   const packed = chain.byKey.get(STAGE.packing);
 
+  const sewnTracksSize = (sewn?.bySize.length ?? 0) > 0;
+  const packedTracksSize = (packed?.bySize.length ?? 0) > 0;
+
   return chain.sizes.map((s) => {
     const cutQty = cut?.bySize.find((x) => x.sizeCode === s.size_code)?.qtyOut ?? 0;
-    const sewnQty = sewn?.bySize.find((x) => x.sizeCode === s.size_code)?.qtyOut ?? 0;
-    const packedQty = packed?.bySize.find((x) => x.sizeCode === s.size_code)?.qtyOut ?? 0;
+    const sewnQty = sewnTracksSize
+      ? sewn?.bySize.find((x) => x.sizeCode === s.size_code)?.qtyOut ?? 0
+      : null;
+    const packedQty = packedTracksSize
+      ? packed?.bySize.find((x) => x.sizeCode === s.size_code)?.qtyOut ?? 0
+      : null;
     return {
       sizeCode: s.size_code,
       ordered: s.quantity,
       cut: cutQty,
       sewn: sewnQty,
       packed: packedQty,
-      balance: s.quantity - packedQty,
+      balance: packedQty == null ? null : s.quantity - packedQty,
     };
   });
 }

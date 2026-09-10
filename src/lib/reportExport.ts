@@ -74,7 +74,16 @@ function buildTables(ctx: ReportContext): ReportTable[] {
   tables.push({
     name: "Size-wise Quantity",
     head: ["Size", "Ordered", "Cut", "Sewn", "Packed", "Balance"],
-    rows: buildSizeOutput(chain).map((s) => [s.sizeCode, s.ordered, s.cut, s.sewn, s.packed, s.balance]),
+    // sewn/packed/balance are null once that stage records one overall figure
+    // instead of a size breakdown -  printed as "-", not a misleading 0.
+    rows: buildSizeOutput(chain).map((s) => [
+      s.sizeCode,
+      s.ordered,
+      s.cut,
+      s.sewn ?? "- ",
+      s.packed ?? "- ",
+      s.balance ?? "- ",
+    ]),
   });
 
   // --- Stage-by-stage loss analysis ----------------------------------------

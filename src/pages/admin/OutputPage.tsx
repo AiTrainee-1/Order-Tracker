@@ -548,7 +548,14 @@ export function OutputPage() {
 
       {/* ------------------------- Size table ------------------------- */}
       <Card>
-        <CardHeader title="Size-wise reconciliation" subtitle="Ordered → cut → sewn → packed, per size." />
+        <CardHeader
+          title="Size-wise reconciliation"
+          subtitle={
+            sizeRows.every((s) => s.packed == null)
+              ? "Ordered → cut, per size. Sewing and Packing record one overall figure rather than a size breakdown, so those two columns read – rather than a false 0."
+              : "Ordered → cut → sewn → packed, per size."
+          }
+        />
         <CardBody>
           <div className="overflow-x-auto rounded-xl border border-ink-100">
             <table className="w-full min-w-[560px] text-sm">
@@ -568,16 +575,18 @@ export function OutputPage() {
                     <td className="px-3 py-2.5 font-semibold text-ink-900">{s.sizeCode}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums">{s.ordered.toLocaleString()}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums">{s.cut.toLocaleString()}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">{s.sewn.toLocaleString()}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">
+                      {s.sewn == null ? <span className="text-ink-300">- </span> : s.sewn.toLocaleString()}
+                    </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-status-good">
-                      {s.packed.toLocaleString()}
+                      {s.packed == null ? <span className="text-ink-300">- </span> : s.packed.toLocaleString()}
                     </td>
                     <td
                       className={`px-3 py-2.5 text-right font-semibold tabular-nums ${
-                        s.balance > 0 ? "text-amber-600" : "text-status-good"
+                        s.balance == null ? "" : s.balance > 0 ? "text-amber-600" : "text-status-good"
                       }`}
                     >
-                      {s.balance.toLocaleString()}
+                      {s.balance == null ? <span className="text-ink-300">- </span> : s.balance.toLocaleString()}
                     </td>
                   </tr>
                 ))}
