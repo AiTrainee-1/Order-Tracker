@@ -20,7 +20,9 @@ import {
 import { useToast } from "../../context/ToastContext";
 import { useOrderDetail } from "../../hooks/useOrderDetail";
 import { useProductionChain, useAuditLog } from "../../hooks/useProductionChain";
+import { useJobWorkEntries } from "../../hooks/useJobWork";
 import { buildLotJourney, buildOutputSummary, buildSizeOutput, STAGE } from "../../lib/chain";
+import { buildJobWorkSummary } from "../../lib/jobWork";
 import { exportCsv, exportExcel, exportPdf } from "../../lib/reportExport";
 import { formatDisplayDate } from "../../lib/workflow";
 import { Card, CardBody, CardHeader } from "../../components/ui/Card";
@@ -152,9 +154,11 @@ export function OutputPage() {
     poId: selectedPo?.id ?? null,
   });
   const auditQuery = useAuditLog(orderId);
+  const jobWorkQuery = useJobWorkEntries(orderId);
 
   const summary = useMemo(() => (chain ? buildOutputSummary(chain) : null), [chain]);
   const sizeRows = useMemo(() => (chain ? buildSizeOutput(chain) : []), [chain]);
+  const jobWork = useMemo(() => buildJobWorkSummary(jobWorkQuery.data ?? []), [jobWorkQuery.data]);
   const lotJourneys = useMemo(
     () => (chain ? chain.lots.map((l) => buildLotJourney(l, chain)) : []),
     [chain],
@@ -219,13 +223,51 @@ export function OutputPage() {
     }))
     .sort((a, b) => a.efficiency - b.efficiency);
 
+  /**
+   * Job Work -  externally-manufactured quantities, tracked in their own
+   * ledger (migration 023, src/lib/jobWork.ts) and never written into
+   * production_txns, so summary.rows/chain above are untouched by any of
+   * this. Only the FINAL "how much of the order is actually done" figures
+   * blend it in: Packed, Short of order, the fulfillment donut and its
+   * efficiency %. Every other number on this page (Cut, the stage-by-stage
+   * table, the flow chart) stays pure in-house, exactly as it always has.
+   */
+  const packingStageId = chain.byKey.get(STAGE.packing)?.stage.id;
+  const jobWorkPackedPcs = packingStageId ? (jobWork.totalBySection.get(packingStageId) ?? 0) : 0;
+  const combinedPackedPcs = summary.packedPcs + jobWorkPackedPcs;
+  const combinedShortfallPcs = Math.max(summary.orderedPcs - combinedPackedPcs, 0);
+  const combinedEfficiencyPct =
+    summary.orderedPcs > 0 ? Math.round((combinedPackedPcs / summary.orderedPcs) * 100) : null;
+
+  /** The size-wise reconciliation table, with Job Work's per-size Packing
+   * quantities folded into `packed`/`balance` the same way the headline
+   * above folds in the section total. */
+  const jobWorkPackedBySize = packingStageId ? jobWork.bySizeBySection.get(packingStageId) : undefined;
+  const combinedSizeRows = sizeRows.map((r) => {
+    const extra = jobWorkPackedBySize?.get(r.sizeCode) ?? 0;
+    if (extra === 0) return r;
+    const packed = (r.packed ?? 0) + extra;
+    return { ...r, packed, balance: r.ordered - packed };
+  });
+
+  /** Job Work's own totals, per stage -  full transparency on what came from
+   * outside at every stage, not folded into anything above. */
+  const jobWorkRows = chain.stages
+    .filter((cs) => (jobWork.totalBySection.get(cs.stage.id) ?? 0) > 0)
+    .map((cs) => ({
+      key: cs.stage.key,
+      label: cs.stage.label,
+      unit: cs.unit,
+      qty: jobWork.totalBySection.get(cs.stage.id) ?? 0,
+    }));
+
   /** The pipeline narrowing, in pieces -  the headline "how far has it got". */
   const sewnPcs = chain.byKey.get(STAGE.sewing)?.output ?? 0;
   const funnelSteps = [
     { label: "Ordered", value: summary.orderedPcs, color: CHART_BLUE },
     { label: "Cut", value: summary.cutPcs, color: "#7C3AED" },
     { label: "Sewn", value: sewnPcs, color: CHART_AMBER },
-    { label: "Packed", value: summary.packedPcs, color: CHART_GREEN },
+    { label: "Packed", value: combinedPackedPcs, color: CHART_GREEN },
   ];
 
   const lotChartRows = lotJourneys
@@ -479,16 +521,26 @@ export function OutputPage() {
       )}
 
       {/* ------------------------- Headline ------------------------- */}
+      {/* Packed and Short of order are the order's FINAL status, so they combine
+          in-house Packing output with anything logged as Job Work at Packing
+          (see combinedPackedPcs above) -  Ordered and Cut stay pure in-house. */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <HeadlineCard label="Ordered" value={summary.orderedPcs} unit="PCS" icon="📋" tone="sky" />
         <HeadlineCard label="Cut" value={summary.cutPcs} unit="PCS" icon="✂️" tone="violet" />
-        <HeadlineCard label="Packed" value={summary.packedPcs} unit="PCS" icon="📦" tone="emerald" />
+        <HeadlineCard
+          label="Packed"
+          value={combinedPackedPcs}
+          unit="PCS"
+          icon="📦"
+          tone="emerald"
+          hint={jobWorkPackedPcs > 0 ? `incl. ${jobWorkPackedPcs.toLocaleString()} job work` : undefined}
+        />
         <HeadlineCard
           label="Short of order"
-          value={summary.shortfallPcs}
+          value={combinedShortfallPcs}
           unit="PCS"
-          icon={summary.shortfallPcs > 0 ? "⚠️" : "✅"}
-          tone={summary.shortfallPcs > 0 ? "rose" : "emerald"}
+          icon={combinedShortfallPcs > 0 ? "⚠️" : "✅"}
+          tone={combinedShortfallPcs > 0 ? "rose" : "emerald"}
         />
       </div>
 
@@ -511,8 +563,8 @@ export function OutputPage() {
                   </defs>
                   <Pie
                     data={[
-                      { name: "Packed", value: summary.packedPcs },
-                      { name: "Remaining", value: summary.shortfallPcs },
+                      { name: "Packed", value: combinedPackedPcs },
+                      { name: "Remaining", value: combinedShortfallPcs },
                     ]}
                     dataKey="value"
                     nameKey="name"
@@ -522,7 +574,7 @@ export function OutputPage() {
                     endAngle={-270}
                     stroke="none"
                     cornerRadius={8}
-                    paddingAngle={summary.shortfallPcs > 0 && summary.packedPcs > 0 ? 3 : 0}
+                    paddingAngle={combinedShortfallPcs > 0 && combinedPackedPcs > 0 ? 3 : 0}
                   >
                     <Cell fill="url(#gradPacked)" />
                     <Cell fill={CHART_SLATE} />
@@ -535,15 +587,18 @@ export function OutputPage() {
               </ResponsiveContainer>
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
                 <p className="text-3xl font-extrabold tabular-nums text-ink-900">
-                  {summary.overallEfficiencyPct != null ? `${summary.overallEfficiencyPct}%` : "- "}
+                  {combinedEfficiencyPct != null ? `${combinedEfficiencyPct}%` : "- "}
                 </p>
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">Packed</p>
               </div>
             </div>
 
             <div className="space-y-3">
-              <StatRow dotColor={CHART_GREEN} label="Packed" value={summary.packedPcs} unit="PCS" />
-              <StatRow dotColor={CHART_SLATE} label="Remaining against order" value={summary.shortfallPcs} unit="PCS" />
+              <StatRow dotColor={CHART_GREEN} label="Packed" value={combinedPackedPcs} unit="PCS" />
+              {jobWorkPackedPcs > 0 && (
+                <StatRow dotColor={CHART_AMBER} label="Of which, Job Work" value={jobWorkPackedPcs} unit="PCS" />
+              )}
+              <StatRow dotColor={CHART_SLATE} label="Remaining against order" value={combinedShortfallPcs} unit="PCS" />
               <StatRow dotColor={CHART_RED} label="Rejected across garment stages" value={summary.totalRejectedPcs} unit="PCS" />
               <StatRow dotColor={CHART_AMBER} label="Fabric lost in processing" value={summary.fabricLossKg} unit="KG" />
             </div>
@@ -729,7 +784,7 @@ export function OutputPage() {
           <CardBody>
             <div className="h-72 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={sizeRows} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                <BarChart data={combinedSizeRows} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
                   <defs>
                     <linearGradient id="gradOrderedBar" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor={CHART_BLUE_LIGHT} />
@@ -839,7 +894,7 @@ export function OutputPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">
-                {sizeRows.map((s) => (
+                {combinedSizeRows.map((s) => (
                   <tr key={s.sizeCode} className="bg-white">
                     <td className="px-3 py-2.5 font-semibold text-ink-900">{s.sizeCode}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums">{s.ordered.toLocaleString()}</td>
@@ -864,6 +919,42 @@ export function OutputPage() {
           </div>
         </CardBody>
       </Card>
+
+      {/* ------------------------- Job Work ------------------------- */}
+      {jobWorkRows.length > 0 && (
+        <Card>
+          <CardHeader
+            title="Job Work"
+            subtitle="Externally-manufactured quantities logged against this order, by stage -  kept in a separate ledger from the in-house numbers above. Only Packing's figure is folded into the Packed/Short of order totals; every stage here is shown for full transparency."
+          />
+          <CardBody>
+            <div className="overflow-x-auto rounded-xl border border-ink-100">
+              <table className="w-full min-w-[420px] text-sm">
+                <thead>
+                  <tr className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500">
+                    <th className="px-3 py-2.5 text-left font-semibold">Stage</th>
+                    <th className="px-3 py-2.5 text-left font-semibold">Unit</th>
+                    <th className="px-3 py-2.5 text-right font-semibold">Job Work Qty</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-ink-100">
+                  {jobWorkRows.map((r) => (
+                    <tr key={r.key} className={`bg-white ${r.key === STAGE.packing ? "border-t-2 border-t-brand/30" : ""}`}>
+                      <td className="px-3 py-2.5 font-medium text-ink-900">{r.label}</td>
+                      <td className="px-3 py-2.5">
+                        <Badge tone={r.unit === "KG" ? "neutral" : "brand"}>{r.unit}</Badge>
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-amber-600">
+                        {r.qty.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
       {/* ------------------------- Lot traceability ------------------------- */}
       {lotJourneys.length > 0 && (
@@ -991,12 +1082,15 @@ function HeadlineCard({
   unit,
   icon,
   tone,
+  hint,
 }: {
   label: string;
   value: number;
   unit: string;
   icon: string;
   tone: IconTone;
+  /** Small note under the unit, e.g. how much of the figure came from Job Work. */
+  hint?: string;
 }) {
   return (
     <Card>
@@ -1011,6 +1105,7 @@ function HeadlineCard({
           <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-ink-400">{label}</p>
           <p className="text-2xl font-extrabold tabular-nums text-ink-900">{value.toLocaleString()}</p>
           <p className="text-[11px] font-medium text-ink-400">{unit}</p>
+          {hint && <p className="truncate text-[10px] font-medium text-amber-600">{hint}</p>}
         </div>
       </CardBody>
     </Card>

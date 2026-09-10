@@ -112,6 +112,7 @@ export interface UpdateUserInput {
   is_monitor_only?: boolean;
   is_active?: boolean;
   can_create_orders?: boolean;
+  can_job_work?: boolean;
 }
 
 export function useUpdateUser() {

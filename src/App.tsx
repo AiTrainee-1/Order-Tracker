@@ -17,6 +17,7 @@ import { AccountManagementPage } from "./pages/admin/AccountManagementPage";
 import { HomePage } from "./pages/user/HomePage";
 import { DataInputPage } from "./pages/user/DataInputPage";
 import { CreateOrderPage } from "./pages/user/CreateOrderPage";
+import { JobWorkPage } from "./pages/user/JobWorkPage";
 import { MdUsersPage } from "./pages/md/MdUsersPage";
 import { WorkflowMapPage } from "./pages/md/WorkflowMapPage";
 import { WorkflowMapStagePage } from "./pages/md/WorkflowMapStagePage";
@@ -61,6 +62,7 @@ export default function App() {
           <Route path="home" element={<HomePage />} />
           <Route path="data-input" element={<DataInputPage />} />
           <Route path="create-order" element={<CreateOrderPage />} />
+          <Route path="job-work" element={<JobWorkPage />} />
         </Route>
 
         <Route

@@ -16,9 +16,13 @@ export function UserLayout() {
 
   // Granted from Stage Roles (app_users.can_create_orders, migration 016) -
   // hidden entirely for anyone who doesn't have it, not just disabled.
-  const navItems = appUser?.can_create_orders
+  const withCreateOrders = appUser?.can_create_orders
     ? [...baseNavItems, { to: "/user/create-order", label: "Create Orders", icon: "🧾", tone: "emerald" as IconTone }]
     : baseNavItems;
+  // Same idea, for job work (app_users.can_job_work, migration 023).
+  const navItems = appUser?.can_job_work
+    ? [...withCreateOrders, { to: "/user/job-work", label: "Job Work", icon: "🏭", tone: "amber" as IconTone }]
+    : withCreateOrders;
 
   async function handleLogout() {
     await logout();

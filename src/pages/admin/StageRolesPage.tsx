@@ -196,6 +196,7 @@ export function StageRolesPage() {
       })}
 
       <OrderCreatorAccessCard users={users ?? []} />
+      <JobWorkAccessCard users={users ?? []} />
 
       <StagePreviewModal
         stage={previewStage}
@@ -275,6 +276,93 @@ function OrderCreatorAccessCard({ users }: { users: AppUser[] }) {
         <div className="flex items-center gap-2">
           <div className="w-full max-w-xs">
             <Select value={addUserId} onChange={(e) => setAddUserId(e.target.value)} aria-label="Grant order-creator access">
+              <option value="">Add a user…</option>
+              {available.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name} (@{u.username})
+                </option>
+              ))}
+            </Select>
+          </div>
+          <Button size="sm" onClick={grant} isLoading={updateUser.isPending} disabled={!addUserId}>
+            Grant
+          </Button>
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+/**
+ * Another separate, deliberately small permission -  not a stage. A job-work
+ * user logs externally-manufactured quantities against any order and any of
+ * the 19 stages, kept in their own ledger (app_users.can_job_work, migration
+ * 023) entirely apart from the in-house production chain those stages
+ * calculate from.
+ */
+function JobWorkAccessCard({ users }: { users: AppUser[] }) {
+  const toast = useToast();
+  const updateUser = useUpdateUser();
+  const [addUserId, setAddUserId] = useState("");
+
+  const granted = users.filter((u) => u.can_job_work);
+  const available = users.filter((u) => !u.can_job_work && u.role !== "admin" && u.role !== "md");
+
+  async function grant() {
+    if (!addUserId) return;
+    const user = users.find((u) => u.id === addUserId);
+    try {
+      await updateUser.mutateAsync({ id: addUserId, can_job_work: true });
+      toast.success(`${user?.name ?? "User"} can now log job work.`);
+      setAddUserId("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not grant access.");
+    }
+  }
+
+  async function revoke(user: AppUser) {
+    try {
+      await updateUser.mutateAsync({ id: user.id, can_job_work: false });
+      toast.success(`Removed job-work access from ${user.name}.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not remove access.");
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Job Work Access"
+        subtitle="Lets a user log externally-manufactured quantities against any order and any of the 19 stages, kept separate from the in-house production numbers those stages track."
+      />
+      <CardBody className="space-y-3">
+        {granted.length === 0 ? (
+          <p className="text-xs text-ink-400">Nobody has this yet -  no job work is being logged.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {granted.map((u) => (
+              <span
+                key={u.id}
+                className="inline-flex items-center gap-2 rounded-full border border-ink-200 bg-white py-1 pl-3 pr-1.5 text-xs"
+              >
+                <span className="font-medium text-ink-800">{u.name}</span>
+                <span className="text-ink-400">@{u.username}</span>
+                <button
+                  type="button"
+                  onClick={() => revoke(u)}
+                  aria-label={`Remove ${u.name}`}
+                  className="flex h-5 w-5 items-center justify-center rounded-full text-ink-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          <div className="w-full max-w-xs">
+            <Select value={addUserId} onChange={(e) => setAddUserId(e.target.value)} aria-label="Grant job-work access">
               <option value="">Add a user…</option>
               {available.map((u) => (
                 <option key={u.id} value={u.id}>
