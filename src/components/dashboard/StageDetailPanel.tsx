@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { StageProgress } from "../../lib/progress";
 import { buildLotJourney, STAGE, type ChainStage, type ProductionChain } from "../../lib/chain";
 import { lotStatus } from "../../components/forms/stage/chainForms";
-import { LotSummaryTable, SizeSummaryTable } from "../../components/forms/stage/chainShared";
+import { LotSummaryTable, ReworkSummaryTable, SizeSummaryTable } from "../../components/forms/stage/chainShared";
 import { useAuditLog } from "../../hooks/useProductionChain";
 import { stageQtyLabels } from "../../lib/stageLabels";
 import { formatDisplayDate } from "../../lib/workflow";
@@ -117,6 +117,15 @@ export function StageDetailPanel({
             <div>
               <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">Size-wise Breakdown</h4>
               <SizeSummaryTable cs={chainStage} />
+            </div>
+          )}
+
+          {chainStage.reworkBySize.some((r) => r.added > 0 || r.solved > 0) && (
+            <div>
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
+                Rework -  {stage.stage.label}
+              </h4>
+              <ReworkSummaryTable cs={chainStage} />
             </div>
           )}
 

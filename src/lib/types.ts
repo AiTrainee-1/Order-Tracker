@@ -240,8 +240,10 @@ export interface MaterialEntry {
 }
 
 /** 'process' for ordinary stages; 'send'/'receive' split Embroidery's dispatch
- * from its return so both directions accumulate separately. */
-export type TxnType = "process" | "send" | "receive";
+ * from its return so both directions accumulate separately; 'rework' is the
+ * side ledger (qty_in = sent to rework, qty_out = brought back) that chain.ts
+ * deliberately excludes from every production figure -  see ReworkSizeFlow. */
+export type TxnType = "process" | "send" | "receive" | "rework";
 
 /**
  * One thing that happened at one stage. Every stage from Knitting to Packing

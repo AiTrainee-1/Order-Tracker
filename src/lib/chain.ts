@@ -283,6 +283,28 @@ function cellKey(lotId: string, sizeCode: string): string {
   return `${lotId}::${sizeCode}`;
 }
 
+/**
+ * A side ledger, per size, of pieces sent to rework at a stage and pieces
+ * brought back out of it -  entirely separate from the input/output/balance
+ * chain above. It never feeds `available`, `balance` or any downstream
+ * stage's ceiling; it only answers "how many are still sitting in rework
+ * right now, at THIS stage, for THIS size."
+ *
+ * Recorded as ordinary production_txns rows tagged txn_type: "rework" (qty_in
+ * = added, qty_out = solved), which is why the main loop filters them out of
+ * `stageTxns` before computing recordedIn/output/byLot/bySize -  a rework row
+ * must never be mistaken for a production one and inflate those figures.
+ */
+export interface ReworkSizeFlow {
+  sizeCode: string;
+  /** Cumulative pieces ever sent to rework, at this stage, for this size. */
+  added: number;
+  /** Cumulative pieces ever brought back out of rework. */
+  solved: number;
+  /** added − solved, floored at 0. */
+  pending: number;
+}
+
 export interface ChainStage {
   stage: WorkflowStage;
   unit: UnitType;
@@ -311,6 +333,10 @@ export interface ChainStage {
   /** Per (lot, size), for PCS stages. Empty for the KG stages, which have no
    * size axis until Cutting creates one. */
   byLotSize: LotSizeCell[];
+  /** The rework side ledger, per size -  see ReworkSizeFlow. Computed for
+   * every PCS stage the same way bySize is, but stays all-zero for any stage
+   * nobody has ever recorded a rework row against. */
+  reworkBySize: ReworkSizeFlow[];
   /** Populated for the three procurement stages only. */
   material: MaterialTotals | null;
   lastEntryDate: string | null;
@@ -352,6 +378,7 @@ function emptyStage(stage: WorkflowStage): Omit<ChainStage, "inherited" | "input
     byLot: [],
     bySize: [],
     byLotSize: [],
+    reworkBySize: [],
     material: null,
     lastEntryDate: null,
   };
@@ -417,9 +444,14 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
 
   sorted.forEach((stage, index) => {
     const base = emptyStage(stage);
-    const stageTxns = txns
+    const sectionTxns = txns
       .filter((t) => t.section_id === stage.id)
       .sort((a, b) => a.entry_date.localeCompare(b.entry_date) || a.created_at.localeCompare(b.created_at));
+    // Rework rows are a side ledger (see ReworkSizeFlow) -  excluded here so
+    // they can never inflate recordedIn/output/byLot/bySize, and rolled up
+    // separately below instead.
+    const stageTxns = sectionTxns.filter((t) => t.txn_type !== "rework");
+    const reworkTxns = sectionTxns.filter((t) => t.txn_type === "rework");
 
     base.txns = stageTxns;
     base.recordedIn = sum(stageTxns, (t) => t.qty_in);
@@ -680,6 +712,20 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
       });
 
       prevSizeOutput = nextSizeOutput;
+    }
+
+    // --- Rework side ledger --------------------------------------------------
+    //
+    // Independent of everything above: not chained to the previous stage, not
+    // subtracted from balance, never read by any other stage. Just this
+    // stage's own running total of what it sent to rework and what came back.
+    if (stage.unit_type === "PCS") {
+      base.reworkBySize = sizes.map((s) => {
+        const group = reworkTxns.filter((t) => t.size_code === s.size_code);
+        const added = sum(group, (t) => t.qty_in);
+        const solved = sum(group, (t) => t.qty_out);
+        return { sizeCode: s.size_code, added, solved, pending: Math.max(added - solved, 0) };
+      });
     }
 
     result.push({ ...base, inherited, input: resolvedInput, hasMismatch });

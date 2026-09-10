@@ -241,6 +241,53 @@ export function SizeSummaryTable({ cs }: { cs: ChainStage }) {
   );
 }
 
+/** MD/Admin's read-only view of the rework side ledger -  how many pieces
+ * have gone into rework at THIS stage, per size, how many have been solved,
+ * and how many are still pending. Renders nothing for a stage or order where
+ * rework has never been recorded, same as SizeSummaryTable above. */
+export function ReworkSummaryTable({ cs }: { cs: ChainStage }) {
+  const rows = cs.reworkBySize.filter((r) => r.added > 0 || r.solved > 0);
+  if (rows.length === 0) return null;
+  return (
+    <div className="overflow-x-auto rounded-xl border border-ink-100">
+      <table className="w-full min-w-[420px] text-sm">
+        <thead>
+          <tr className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500">
+            <th className="px-3 py-2 text-left font-semibold">Size</th>
+            <th className="px-3 py-2 text-right font-semibold">Sent to Rework</th>
+            <th className="px-3 py-2 text-right font-semibold">Solved</th>
+            <th className="px-3 py-2 text-right font-semibold">Pending</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-ink-100">
+          {rows.map((r) => (
+            <tr key={r.sizeCode} className="bg-white">
+              <td className="px-3 py-2 font-semibold text-ink-900">{r.sizeCode}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{r.added.toLocaleString()}</td>
+              <td className="px-3 py-2 text-right tabular-nums text-status-good">{r.solved.toLocaleString()}</td>
+              <td
+                className={`px-3 py-2 text-right font-semibold tabular-nums ${
+                  r.pending > 0 ? "text-amber-600" : "text-status-good"
+                }`}
+              >
+                {r.pending.toLocaleString()}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="bg-ink-50 text-xs font-bold text-ink-800">
+            <td className="px-3 py-2">Total</td>
+            <td className="px-3 py-2 text-right tabular-nums">{sumBy(rows, (r) => r.added).toLocaleString()}</td>
+            <td className="px-3 py-2 text-right tabular-nums">{sumBy(rows, (r) => r.solved).toLocaleString()}</td>
+            <td className="px-3 py-2 text-right tabular-nums">{sumBy(rows, (r) => r.pending).toLocaleString()}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
+
 function sumBy<T>(rows: T[], pick: (row: T) => number): number {
   return rows.reduce((total, row) => total + pick(row), 0);
 }
@@ -433,9 +480,14 @@ export interface GridCell {
   qtyOut: string;
   rejected: string;
   rework: string;
+  /** The rework side ledger's two entry fields (see chain.ts's
+   * ReworkSizeFlow) -  unrelated to `rework` above, which is the older
+   * single-column "held back for repair" figure config.reworkLabel drives. */
+  reworkAdd: string;
+  reworkSolved: string;
 }
 
-const BLANK_CELL: GridCell = { qtyIn: "", qtyOut: "", rejected: "", rework: "" };
+const BLANK_CELL: GridCell = { qtyIn: "", qtyOut: "", rejected: "", rework: "", reworkAdd: "", reworkSolved: "" };
 
 /**
  * A size row's read-only context.
@@ -471,6 +523,11 @@ interface GridRow {
   over: number;
   /** Target met exactly -  nothing left to enter, nothing in excess. */
   isComplete: boolean;
+  /** The rework side ledger's current running balance for this size, BEFORE
+   * whatever gets typed into this entry -  chain.ts's ReworkSizeFlow.pending.
+   * Only ever populated for the no-lot stages that track it; 0 everywhere
+   * else, same as `rework` above being 0 wherever reworkLabel is off. */
+  reworkPending: number;
 }
 
 export interface DraftRow {
@@ -515,7 +572,7 @@ function draftHasValue(d: DraftRow): boolean {
 
 function cellHasValue(c: GridCell | undefined): boolean {
   if (!c) return false;
-  return [c.qtyIn, c.qtyOut, c.rejected, c.rework].some((v) => Number(v) > 0);
+  return [c.qtyIn, c.qtyOut, c.rejected, c.rework, c.reworkAdd, c.reworkSolved].some((v) => Number(v) > 0);
 }
 
 /**
@@ -672,6 +729,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
           // A target of 0 with nothing done isn't "met" -  it's nothing to do
           // yet. Only actually recording something (or going over) closes a row.
           isComplete: remaining === 0 && over === 0 && (doneAllLots > 0 || over > 0),
+          reworkPending: 0,
         };
       });
     }
@@ -693,6 +751,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
           // sent this size yet -  and that is "not started", not "complete".
           // Only mark a row done once something has actually been recorded.
           isComplete: remaining === 0 && over === 0 && (done > 0 || over > 0),
+          reworkPending: cs.reworkBySize.find((r) => r.sizeCode === s.sizeCode)?.pending ?? 0,
         };
       });
     }
@@ -714,6 +773,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
           remaining,
           over,
           isComplete: remaining === 0 && over === 0 && (done > 0 || over > 0),
+          reworkPending: 0,
         };
       });
     // config is a fresh object literal on every render (it's written inline as
@@ -726,6 +786,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
     sizes,
     cs.byLotSize,
     cs.bySize,
+    cs.reworkBySize,
     config.sizeGridOrigin,
     config.lot,
     config.outLabel,
@@ -1073,6 +1134,37 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
       };
     });
 
+    // The rework side ledger -  a separate row per size, tagged txn_type
+    // "rework" so chain.ts never mixes it into the real production figures
+    // above (see ReworkSizeFlow). Only emitted for a size that actually had
+    // something typed into Rework/Rework Solved; unrelated to config.reworkLabel.
+    const reworkRows: NewTxn[] = typedRows.flatMap((r) => {
+      const cell = gridCells[r.sizeCode] ?? BLANK_CELL;
+      const added = Number(cell.reworkAdd) || 0;
+      const solved = Number(cell.reworkSolved) || 0;
+      if (added === 0 && solved === 0) return [];
+      return [
+        {
+          order_id: orderId,
+          po_id: poId,
+          section_id: sectionId,
+          lot_id: null,
+          size_code: r.sizeCode,
+          txn_type: "rework" as const,
+          unit,
+          qty_in: added,
+          qty_out: solved,
+          qty_rejected: 0,
+          qty_rework: 0,
+          ref_name: config.ref ? gridRef.trim() || null : null,
+          doc_no: config.docLabel ? gridDoc.trim() || null : null,
+          entry_date: new Date().toISOString().slice(0, 10),
+          notes: gridNotes.trim() || null,
+          entered_by: appUser.id,
+        },
+      ];
+    });
+
     const total = rows.reduce((sum, r) => sum + (r.qty_out || r.qty_in), 0);
     const lotNo = lots.find((l) => l.id === gridLotId)?.lot_no ?? "";
     // "Lot X: ..." for a lot-keyed stage; the vendor/line name (if given) for
@@ -1080,29 +1172,58 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
     // instead of silently reading "undefined:" or nothing at all.
     const subject = config.lot === "none" ? gridRef.trim() || "This entry" : `Lot ${lotNo}`;
 
+    // A row that only had Rework/Rework Solved typed carries no real quantity
+    // (config.inLabel/outLabel etc. are all it writes to) and would otherwise
+    // log a hollow "0 PCS across N sizes" audit entry alongside the real one.
+    const hasMainQty = rows.some((r) => r.qty_in > 0 || r.qty_out > 0 || r.qty_rejected > 0 || r.qty_rework > 0);
+
     try {
-      await createTxns.mutateAsync(rows);
-      await recordAudit.mutateAsync({
-        order_id: orderId,
-        po_id: poId,
-        section_id: sectionId,
-        entity: "production_txn",
-        entity_id: null,
-        action: "create",
-        summary: `${subject}: ${total.toLocaleString()} ${unit} across ${rows.length} size${rows.length === 1 ? "" : "s"}${
-          allowOverLimit ? " (over available -  override)" : ""
-        }`,
-        changes: null,
-        notes: overrideNote(gridNotes, allowOverLimit),
-        user_id: appUser.id,
-      });
+      await createTxns.mutateAsync([...rows, ...reworkRows]);
+      if (hasMainQty) {
+        await recordAudit.mutateAsync({
+          order_id: orderId,
+          po_id: poId,
+          section_id: sectionId,
+          entity: "production_txn",
+          entity_id: null,
+          action: "create",
+          summary: `${subject}: ${total.toLocaleString()} ${unit} across ${rows.length} size${rows.length === 1 ? "" : "s"}${
+            allowOverLimit ? " (over available -  override)" : ""
+          }`,
+          changes: null,
+          notes: overrideNote(gridNotes, allowOverLimit),
+          user_id: appUser.id,
+        });
+      }
+      if (reworkRows.length > 0) {
+        const reworkAdded = reworkRows.reduce((s, r) => s + r.qty_in, 0);
+        const reworkSolved = reworkRows.reduce((s, r) => s + r.qty_out, 0);
+        const bits = [reworkAdded > 0 ? `+${reworkAdded} to rework` : null, reworkSolved > 0 ? `${reworkSolved} solved` : null]
+          .filter(Boolean)
+          .join(", ");
+        await recordAudit.mutateAsync({
+          order_id: orderId,
+          po_id: poId,
+          section_id: sectionId,
+          entity: "production_txn",
+          entity_id: null,
+          action: "create",
+          summary: `${subject}: rework -  ${bits} across ${reworkRows.length} size${reworkRows.length === 1 ? "" : "s"}`,
+          changes: null,
+          notes: gridNotes.trim() || null,
+          user_id: appUser.id,
+        });
+      }
       setGridCells({});
       setGridNotes("");
       setGridRef("");
       setGridDoc("");
       setAllowOverLimit(false);
       onSaved();
-      toast.show(`${subject} recorded -  ${total.toLocaleString()} ${unit}.`, "success");
+      toast.show(
+        hasMainQty ? `${subject} recorded -  ${total.toLocaleString()} ${unit}.` : `${subject}: rework recorded.`,
+        "success",
+      );
       return true;
     } catch (e) {
       toast.show(e instanceof Error ? e.message : "Could not save the entry.", "error");
@@ -1604,9 +1725,15 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                       <th className="px-3 py-2 text-right font-semibold">
                         {config.sizeGridOrigin ? "Target Qty" : "Cut Qty"}
                       </th>
-                      {!config.sizeGridOrigin && <th className="px-3 py-2 text-right font-semibold">Available</th>}
-                      <th className="px-3 py-2 text-right font-semibold">Done so far</th>
-                      <th className="px-3 py-2 text-right font-semibold">Remaining</th>
+                      {!config.sizeGridOrigin && config.lot !== "none" && (
+                        <th className="px-3 py-2 text-right font-semibold">Available</th>
+                      )}
+                      {config.lot !== "none" && (
+                        <>
+                          <th className="px-3 py-2 text-right font-semibold">Done so far</th>
+                          <th className="px-3 py-2 text-right font-semibold">Remaining</th>
+                        </>
+                      )}
                       {config.reworkLabel && (
                         <th className="px-3 py-2 text-right font-semibold">{config.reworkLabel} held</th>
                       )}
@@ -1616,6 +1743,12 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                         <th className="px-3 py-2 text-right font-semibold">{config.rejectedLabel}</th>
                       )}
                       {config.reworkLabel && <th className="px-3 py-2 text-right font-semibold">{config.reworkLabel}</th>}
+                      {config.lot === "none" && (
+                        <>
+                          <th className="px-3 py-2 text-right font-semibold">Rework</th>
+                          <th className="px-3 py-2 text-right font-semibold">Rework Solved</th>
+                        </>
+                      )}
                       <th className="px-3 py-2 text-right font-semibold">Balance after</th>
                     </tr>
                   </thead>
@@ -1699,31 +1832,48 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                           <td className="px-3 py-1.5 text-right tabular-nums text-ink-500">
                             {r.cutQty.toLocaleString()}
                           </td>
-                          {!config.sizeGridOrigin && (
+                          {!config.sizeGridOrigin && config.lot !== "none" && (
                             <td className="px-3 py-1.5 text-right font-medium tabular-nums text-ink-700">
                               {r.target.toLocaleString()}
                             </td>
                           )}
-                          <td
-                            className={`px-3 py-1.5 text-right tabular-nums ${
-                              r.over > 0 ? "font-semibold text-status-bad" : ""
-                            }`}
-                          >
-                            {r.done.toLocaleString()}
-                          </td>
-                          <td
-                            className={`px-3 py-1.5 text-right font-semibold tabular-nums ${
-                              r.remaining > 0 ? "text-amber-600" : "text-status-good"
-                            }`}
-                          >
-                            {r.remaining.toLocaleString()}
-                          </td>
+                          {config.lot !== "none" && (
+                            <>
+                              <td
+                                className={`px-3 py-1.5 text-right tabular-nums ${
+                                  r.over > 0 ? "font-semibold text-status-bad" : ""
+                                }`}
+                              >
+                                {r.done.toLocaleString()}
+                              </td>
+                              <td
+                                className={`px-3 py-1.5 text-right font-semibold tabular-nums ${
+                                  r.remaining > 0 ? "text-amber-600" : "text-status-good"
+                                }`}
+                              >
+                                {r.remaining.toLocaleString()}
+                              </td>
+                            </>
+                          )}
                           {config.reworkLabel && (
                             <td className="px-3 py-1.5 text-right tabular-nums text-amber-600">
                               {r.rework > 0 ? r.rework.toLocaleString() : "- "}
                             </td>
                           )}
                           {inputCells}
+                          {config.lot === "none" && (
+                            <>
+                              <GridInput
+                                value={cell.reworkAdd}
+                                onChange={(v) => patchCell(r.sizeCode, { reworkAdd: v })}
+                                hint={`Pending ${r.reworkPending.toLocaleString()}`}
+                              />
+                              <GridInput
+                                value={cell.reworkSolved}
+                                onChange={(v) => patchCell(r.sizeCode, { reworkSolved: v })}
+                              />
+                            </>
+                          )}
                           <td
                             className={`px-3 py-1.5 text-right font-semibold tabular-nums ${
                               over ? "text-status-bad" : balance > 0 ? "text-amber-600" : "text-status-good"
@@ -2020,6 +2170,7 @@ function GridInput({
   onChange,
   invalid = false,
   max,
+  hint,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -2027,9 +2178,16 @@ function GridInput({
   /** Browser-level hint only. The real ceiling is enforced on save, since a
    * max attribute is trivially bypassed by typing or pasting. */
   max?: number;
+  /** Small line above the input, e.g. a running balance -  rendered inside
+   * this same <td>. This component already returns its own <td>, so a caller
+   * must never wrap it in another one: nested <td>s are invalid HTML and get
+   * silently split into extra cells by the browser, throwing off every
+   * column after it. This prop exists so callers never need to wrap it. */
+  hint?: React.ReactNode;
 }) {
   return (
     <td className="px-3 py-1.5 text-right">
+      {hint && <div className="mb-0.5 text-[10px] text-ink-400">{hint}</div>}
       <input
         type="number"
         min={0}
