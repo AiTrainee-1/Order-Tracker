@@ -310,7 +310,7 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
       "Sending: Vendor Name, DC Name, Date, and pieces sent for every size in one table",
       "Receiving: Vendor Name, DC Name, Date, and pieces received for every size in one table",
     ],
-    maintains: ["The “With Vendor” figure -  everything sent that hasn't come back yet", "Per-size Available/Cut Qty against what Panel Checking passed"],
+    maintains: ["The “With Vendor” figure -  everything sent that hasn't come back yet", "Per-size Cut Qty -  the same reference Cutting itself measures against"],
     steps: [
       "There are two panels: blue for Sending, green for Receiving.",
       "In Sending, enter the vendor name and DC name, then type the pieces sent for each size in the table -  all sizes in one entry.",
@@ -327,7 +327,7 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
   sewing: {
     owns: "Feeding the sewing lines and recording what they produce -  line name, DC and a size-wise quantity table. No lot to pick.",
     records: ["Line Name -  the line or unit that did the work", "DC Name", "Date", "Pieces produced for every size in one table"],
-    maintains: ["Per-size Available/Cut Qty against what Embroidery handed over"],
+    maintains: ["Per-size Cut Qty -  the same reference Cutting itself measures against"],
     steps: [
       "Enter the line name and DC name once for the entry.",
       "Type the pieces produced for each size in the table -  all sizes together, the same way Cutting works.",
@@ -343,7 +343,7 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
   checking: {
     owns: "Final garment inspection after sewing -  vendor, DC and a size-wise quantity table of what's accepted. No lot to pick.",
     records: ["Vendor Name", "DC Name", "Date", "Pieces checked and accepted for every size in one table"],
-    maintains: ["Per-size Available/Cut Qty against what Sewing handed over"],
+    maintains: ["Per-size Cut Qty -  the same reference Cutting itself measures against"],
     steps: [
       "Enter the vendor name and DC name once for the entry.",
       "Type the pieces accepted for each size in the table -  all sizes in one entry.",
@@ -359,7 +359,7 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
   ironing: {
     owns: "Pressing the accepted garments -  vendor, DC and a size-wise quantity table. No lot to pick.",
     records: ["Vendor Name", "DC Name", "Date", "Pieces pressed for every size in one table"],
-    maintains: ["Per-size Available/Cut Qty against what Checking handed over"],
+    maintains: ["Per-size Cut Qty -  the same reference Cutting itself measures against"],
     steps: [
       "Enter the vendor name and DC name once for the entry.",
       "Type the pieces pressed for each size in the table -  all sizes in one entry.",
@@ -373,7 +373,7 @@ export const STAGE_GUIDE: Record<string, StageGuide> = {
   packing: {
     owns: "Packing the finished garments -  the figure the whole order is finally judged against. Vendor, DC and a size-wise quantity table. No lot to pick.",
     records: ["Vendor Name", "DC Name", "Date", "Pieces packed for every size in one table"],
-    maintains: ["The final packed quantity against the order -  see “Against the order” below the form", "Per-size Available/Cut Qty against what Ironing handed over"],
+    maintains: ["The final packed quantity against the order -  see “Against the order” below the form", "Per-size Cut Qty -  the same reference Cutting itself measures against"],
     steps: [
       "Enter the vendor name and DC name once for the entry.",
       "Type the pieces packed for each size in the table -  all sizes in one entry.",

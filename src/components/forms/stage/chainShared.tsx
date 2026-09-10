@@ -704,9 +704,12 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
    * ordered quantity. Every lot-keyed stage after it measures against what
    * Cutting actually produced for that exact (lot, size) and what the stage
    * before it handed over. A no-lot stage (Embroidery, Sewing, Checking,
-   * Ironing, Packing) has no lot to key by, so it measures the same way one
-   * axis coarser -  against what the previous SIZE-tracking stage produced
-   * for that size, summed across every lot (chain.ts's SizeFlow.available).
+   * Ironing, Packing) has no lot to key by, so it measures against cutQty
+   * directly -  same fixed reference as Cutting itself -  rather than against
+   * whichever of these 5 comes immediately before it: they aren't necessarily
+   * filled in strict order, so chaining the ceiling through them one to the
+   * next made an ordinary entry read as "over" whenever the previous one
+   * hadn't been recorded yet.
    */
   const gridRows = useMemo<GridRow[]>(() => {
     if (config.sizeGridOrigin) {
@@ -735,21 +738,25 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
     }
 
     if (config.lot === "none") {
+      // Measured against cutQty -  the same fixed reference Cutting itself
+      // uses -  not against what the immediately previous no-lot stage has
+      // recorded. The previous-stage figure (SizeFlow.available) sounded
+      // right in theory but breaks in practice: these 5 stages aren't always
+      // filled in strict lockstep, so a real Sewing entry could land before
+      // Panel Checking's own size-wise numbers were caught up, and would then
+      // read as "over" against a ceiling of 0 for no real reason.
       return cs.bySize.map((s) => {
         const done = gridCellDone(config.outLabel, config.inLabel, s);
-        const remaining = Math.max(s.available - done, 0);
-        const over = Math.max(done - s.available, 0);
+        const remaining = Math.max(s.cutQty - done, 0);
+        const over = Math.max(done - s.cutQty, 0);
         return {
           sizeCode: s.sizeCode,
-          target: s.available,
+          target: s.cutQty,
           cutQty: s.cutQty,
           done,
           rework: 0,
           remaining,
           over,
-          // Available can legitimately be 0 -  the previous stage simply hasn't
-          // sent this size yet -  and that is "not started", not "complete".
-          // Only mark a row done once something has actually been recorded.
           isComplete: remaining === 0 && over === 0 && (done > 0 || over > 0),
           reworkPending: cs.reworkBySize.find((r) => r.sizeCode === s.sizeCode)?.pending ?? 0,
         };
@@ -1099,9 +1106,10 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
 
       if (breaches.length > 0) {
         const { row, adding } = breaches[0];
-        const ceiling = config.sizeGridOrigin
-          ? `the ${row.target.toLocaleString()} planned for that size`
-          : `the ${row.target.toLocaleString()} the previous section sent on`;
+        const ceiling =
+          config.sizeGridOrigin || config.lot === "none"
+            ? `the ${row.target.toLocaleString()} cut for that size`
+            : `the ${row.target.toLocaleString()} the previous section sent on`;
         toast.show(
           `Size ${row.sizeCode}: only ${row.remaining.toLocaleString()} ${unit} left of ${ceiling} -  you entered ${adding.toLocaleString()}.${
             config.sizeGridOrigin ? "" : ' Tick "recovered rework / extra source" if this is genuinely extra.'
@@ -1662,7 +1670,7 @@ export const StageLedger = forwardRef<StageLedgerHandle, StageLedgerProps>(funct
                 </p>
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
                   <MiniStat
-                    label={config.sizeGridOrigin ? "Target" : "Available"}
+                    label={config.sizeGridOrigin || config.lot === "none" ? "Cut Qty" : "Available"}
                     value={lotSummary.target}
                     unit={unit}
                   />

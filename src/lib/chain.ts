@@ -72,9 +72,10 @@ const MATERIAL_STAGES: string[] = [
  * byLotSize must come back genuinely empty for these, not a lot (or lot×size
  * cell) carried forward from Panel Checking with every figure sitting at
  * zero. bySize is NOT affected by this set -  these stages still track size,
- * same as every other PCS stage; see SizeFlow.available below for how a
- * size's ceiling carries from one of these stages to the next without a lot
- * to key it by.
+ * same as every other PCS stage, measured against SizeFlow.cutQty exactly
+ * the way Cutting itself is -  not against what the immediately previous
+ * no-lot stage happens to have recorded, since these 5 aren't necessarily
+ * filled in strict lockstep with each other.
  */
 const NO_LOT_STAGES = new Set<string>([
   STAGE.embroidery,
@@ -230,17 +231,6 @@ export interface SizeFlow {
    * the extra % margin), so this is the honest "what was really cut" figure,
    * not what was asked for. */
   cutQty: number;
-  /**
-   * What the previous size-tracking stage passed on for THIS size, summed
-   * across every lot -  the size-wise equivalent of LotFlow.available, for a
-   * stage that tracks size but not lot (Embroidery, Sewing, Checking,
-   * Ironing, Packing). 0 at Cutting, the origin -  there is nothing upstream
-   * to ration against.
-   */
-  available: number;
-  /** available minus whatever this stage has already recorded for the size,
-   * floored at 0 -  mirrors LotFlow.remainingAvailable. */
-  remainingAvailable: number;
 }
 
 export type CellStatus = "not_started" | "in_progress" | "complete";
@@ -430,17 +420,6 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
   // is what the KG half of the line (Knitting → Fabric In-House) travels on,
   // since it has no size axis until Cutting creates one.
   let prevLotOutput = new Map<string, number>();
-  // The same idea again, one axis finer than prevLotOutput but with the lot
-  // dropped entirely: the previous size-tracking stage's output per SIZE,
-  // summed across every lot. This is what Embroidery, Sewing, Checking,
-  // Ironing and Packing measure a size's ceiling against, now that none of
-  // them key anything by lot any more -  the size-wise equivalent of
-  // prevLotOutput/prevCellOutput. Cutting seeds it (available = 0, it's the
-  // origin); every PCS stage after updates it, so a size's ceiling is always
-  // "what the stage immediately before me produced for this size", not a
-  // blanket fallback to Cutting's own figure the way SizeFlow.balance's
-  // sizeInput below still is for older, already-shipped behaviour.
-  let prevSizeOutput = new Map<string, number>();
 
   sorted.forEach((stage, index) => {
     const base = emptyStage(stage);
@@ -677,8 +656,6 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
         cutBySize.set(sizeCode, (cutBySize.get(sizeCode) ?? 0) + qty);
       }
 
-      const nextSizeOutput = new Map<string, number>();
-
       base.bySize = sizes.map((s) => {
         const group = stageTxns.filter((t) => t.size_code === s.size_code);
         const qtyIn = sum(group, (t) => t.qty_in);
@@ -689,15 +666,6 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
         // before anything has been cut).
         const sizeInput = qtyIn > 0 ? qtyIn : (cutBySize.get(s.size_code) || s.quantity);
 
-        // available/remainingAvailable: the size-wise equivalent of a lot's
-        // available/remainingAvailable, for the stages that track size but not
-        // lot (see NO_LOT_STAGES). Cutting is the origin -  available is 0,
-        // there's nothing upstream to ration against, same as a lot's origin.
-        const available = prevSizeOutput.get(s.size_code) ?? 0;
-        const remainingAvailable = Math.max(available - (qtyIn > 0 ? qtyIn : qtyOut), 0);
-
-        nextSizeOutput.set(s.size_code, qtyOut);
-
         return {
           sizeCode: s.size_code,
           poQty: s.quantity,
@@ -706,12 +674,8 @@ export function buildProductionChain(input: ChainInput): ProductionChain {
           qtyRejected,
           balance: Math.max(sizeInput - qtyOut - qtyRejected, 0),
           cutQty: cutBySize.get(s.size_code) || s.quantity,
-          available,
-          remainingAvailable,
         };
       });
-
-      prevSizeOutput = nextSizeOutput;
     }
 
     // --- Rework side ledger --------------------------------------------------
