@@ -11,18 +11,18 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantClasses: Record<Variant, string> = {
-  primary: `relative overflow-hidden text-white ${SHADOW_BRAND} hover:brightness-110 hover:shadow-[0_16px_40px_-10px_rgba(21,94,239,0.65)] disabled:opacity-60`,
+  primary: `relative overflow-hidden text-white ${SHADOW_BRAND} hover:-translate-y-px hover:brightness-110 hover:shadow-[0_16px_40px_-10px_rgba(21,94,239,0.65)] disabled:opacity-60 disabled:hover:translate-y-0`,
   secondary:
-    "border border-white/80 bg-white/70 text-ink-800 shadow-[0_8px_20px_-14px_rgba(30,41,90,0.45)] backdrop-blur-md hover:bg-white hover:text-ink-900 disabled:opacity-60",
+    "border border-white/80 bg-white/70 text-ink-800 shadow-[0_8px_20px_-14px_rgba(30,41,90,0.45)] backdrop-blur-md hover:bg-white hover:text-brand disabled:opacity-60",
   ghost: "bg-transparent text-ink-600 hover:bg-white/70 hover:text-ink-900 disabled:text-ink-300",
   danger:
-    "relative overflow-hidden text-white shadow-[0_12px_30px_-8px_rgba(239,68,68,0.5)] hover:brightness-110 disabled:opacity-60",
+    "relative overflow-hidden text-white shadow-[0_12px_30px_-8px_rgba(225,29,72,0.5)] hover:-translate-y-px hover:brightness-110 disabled:opacity-60 disabled:hover:translate-y-0",
 };
 
 const sizeClasses: Record<Size, string> = {
   sm: "text-xs px-3 py-1.5 rounded-lg",
-  md: "text-sm px-4 py-2.5 rounded-xl",
-  lg: "text-base px-5 py-3 rounded-xl",
+  md: "text-sm px-5 py-2.5 rounded-xl",
+  lg: "text-base px-6 py-3 rounded-xl",
 };
 
 const sizeGapClasses: Record<Size, string> = {
@@ -31,7 +31,7 @@ const sizeGapClasses: Record<Size, string> = {
   lg: "gap-2",
 };
 
-/** The blob colour each gooey variant surges in with — a shade brighter than
+/** The blob colour each gooey variant surges in with - a shade brighter than
  * its base gradient, so the motion reads against the fill instead of
  * disappearing into it. */
 const blobColor: Partial<Record<Variant, string>> = {
@@ -90,7 +90,7 @@ function GooBlob({ color, left, delay }: { color: string; left: string; delay: s
  * The gooey SVG filter every primary/danger Button references via
  * `url(#uk-goo)`. An SVG `id` must be unique document-wide for the reference
  * to reliably resolve, so this is mounted exactly once at the app root
- * (see App.tsx) rather than inside Button itself — every button in the app
+ * (see App.tsx) rather than inside Button itself - every button in the app
  * shares this one filter definition.
  */
 export function GooeyDefs() {

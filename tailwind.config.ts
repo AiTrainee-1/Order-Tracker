@@ -26,13 +26,14 @@ export default {
           dark: "#0B3FAE",
         },
         status: {
-          good: "#16A34A",
-          warn: "#F59E0B",
-          bad: "#EF4444",
+          // Aligned to the "Loom Spatial Glass" operational status tokens.
+          good: "#059669",
+          warn: "#D97706",
+          bad: "#E11D48",
           info: "#06B6D4",
           shortage: "#9333EA",
-          rejected: "#DC2626",
-          idle: "#98A2B3",
+          rejected: "#E11D48",
+          idle: "#64748B",
         },
       },
       fontFamily: {
@@ -46,6 +47,27 @@ export default {
           "Arial",
           "sans-serif",
         ],
+        // New keys, deliberately additive -  applied only inside the
+        // authenticated layout shells (see AdminLayout/MdLayout/UserLayout),
+        // never globally, so the sign-in page's typography is untouched.
+        app: [
+          "Plus Jakarta Sans",
+          "-apple-system",
+          "BlinkMacSystemFont",
+          "Segoe UI",
+          "Roboto",
+          "Helvetica Neue",
+          "Arial",
+          "sans-serif",
+        ],
+        mono: [
+          "JetBrains Mono",
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "Consolas",
+          "monospace",
+        ],
       },
       boxShadow: {
         card: "0 1px 2px 0 rgba(16,24,40,0.04), 0 1px 3px 0 rgba(16,24,40,0.06)",
@@ -54,9 +76,10 @@ export default {
       },
       backgroundImage: {
         "brand-gradient": "linear-gradient(135deg, #155EEF 0%, #2563EB 100%)",
-        "good-gradient": "linear-gradient(135deg, #15803d 0%, #22c55e 100%)",
-        "warn-gradient": "linear-gradient(135deg, #b45309 0%, #f59e0b 100%)",
-        "bad-gradient": "linear-gradient(135deg, #b91c1c 0%, #ef4444 100%)",
+        // Aligned to the "Loom Spatial Glass" operational status tokens.
+        "good-gradient": "linear-gradient(135deg, #047857 0%, #059669 100%)",
+        "warn-gradient": "linear-gradient(135deg, #B45309 0%, #D97706 100%)",
+        "bad-gradient": "linear-gradient(135deg, #9F1239 0%, #E11D48 100%)",
         "dot-grid": "radial-gradient(circle, rgba(16,24,40,0.07) 1px, transparent 1px)",
       },
       keyframes: {

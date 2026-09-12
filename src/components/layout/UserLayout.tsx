@@ -30,7 +30,7 @@ export function UserLayout() {
   }
 
   return (
-    <div className="min-h-screen" style={spatialBackground}>
+    <div className="min-h-screen font-app" style={spatialBackground}>
       {mobileOpen && (
         <div
           className="fixed inset-0 z-20 bg-ink-950/40 backdrop-blur-sm md:hidden"
@@ -106,7 +106,7 @@ export function UserLayout() {
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-ink-900">{appUser?.name}</p>
               <p className="truncate text-xs text-ink-500">
-                @{appUser?.username} · {appUser?.role}
+                <span className="font-mono">@{appUser?.username}</span> · {appUser?.role}
               </p>
             </div>
           </div>

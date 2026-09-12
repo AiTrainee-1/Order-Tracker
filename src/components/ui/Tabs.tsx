@@ -5,7 +5,7 @@ export interface TabItem<T extends string> {
   label: string;
 }
 
-/** A single contained tab track — for switching between views of the *same*
+/** A single contained tab track - for switching between views of the *same*
  * thing (e.g. Data Entry / Details on one order), as opposed to FilterTabs'
  * loose chips for slicing a list. The pressed-in track plus a raised, brand-
  * gradient active pill is what reads as "tabs" rather than a toggle button. */

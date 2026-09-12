@@ -321,7 +321,7 @@ function SectionSummary({
           }`}
         >
           <b>Variation vs previous section:</b> {cs.inherited.toLocaleString()} {unit} was handed over,{" "}
-          {cs.recordedIn.toLocaleString()} {unit} was counted in here —{" "}
+          {cs.recordedIn.toLocaleString()} {unit} was counted in here -{" "}
           <b>
             {variation > 0 ? "+" : "−"}
             {Math.abs(variation).toLocaleString()} {unit}
@@ -778,7 +778,7 @@ function buildActivityEvents(
 
     const chips: ActivityChip[] = Object.entries(a.changes ?? {}).map(([field, c]) => ({
       label: field.replace(/_/g, " "),
-      value: `${String(c.from ?? "—")} → ${String(c.to ?? "—")}`,
+      value: `${String(c.from ?? "-")} → ${String(c.to ?? "-")}`,
     }));
 
     events.push({

@@ -293,7 +293,7 @@ function LevelNode({
             : "6px 8px 14px -6px rgba(30,41,90,0.35), inset -3px -4px 8px -2px rgba(0,0,0,0.18), inset 3px 4px 8px -2px rgba(255,255,255,0.55)",
         }}
       >
-        {/* Glossy highlight — the thing that reads "bubble" instead of "flat dot". */}
+        {/* Glossy highlight - the thing that reads "bubble" instead of "flat dot". */}
         <span
           aria-hidden
           className="pointer-events-none absolute left-[18%] top-[14%] h-[35%] w-[35%] rounded-full bg-white/70 blur-[2px]"

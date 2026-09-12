@@ -11,10 +11,10 @@ function FieldWrapper({ label, error, children }: { label?: string; error?: stri
   );
 }
 
-// Frosted field, matching the sign-in inputs: pressed into the glass via an
-// inset shadow, with a soft brand ring on focus rather than a hard border.
+// Recessed frosted "inset well" field -  bg-white/60 at rest, brightening and
+// gaining a soft brand ring on focus (the Loom Spatial Glass input recipe).
 const baseInputClass =
-  "w-full rounded-xl border border-white/90 bg-white/85 px-3.5 py-2.5 text-sm font-medium text-ink-900 placeholder:font-normal placeholder:text-ink-400 shadow-[inset_0_1px_3px_rgba(16,24,40,0.08)] outline-none transition-all focus:border-brand/50 focus:bg-white focus:shadow-[0_0_0_4px_rgba(21,94,239,0.16),inset_0_1px_3px_rgba(16,24,40,0.05)] disabled:border-ink-100 disabled:bg-ink-50/80 disabled:text-ink-400";
+  "w-full rounded-xl border border-white/70 bg-white/60 px-4 py-2.5 text-sm font-medium text-ink-900 placeholder:font-normal placeholder:text-ink-400 shadow-[inset_0_2px_4px_rgba(15,23,42,0.05)] outline-none backdrop-blur-md transition-all focus:border-brand focus:bg-white/90 focus:shadow-inner focus:ring-2 focus:ring-brand/30 disabled:border-ink-100 disabled:bg-ink-50/80 disabled:text-ink-400";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;

@@ -1,0 +1,1071 @@
+================================================================================
+UK TEXTILES - ORDER TRACKING APPLICATION
+Full Page & Component Reference (for UI recreation in Google Stitch)
+================================================================================
+
+Generated as a working reference. This document inventories every route, every
+page's visual structure top-to-bottom, every shared component and its props/
+variants, every form field, every table column, and the underlying data model
+that drives what each screen shows. Written from the actual source code, not
+from memory or assumption.
+
+--------------------------------------------------------------------------------
+0. WHAT THIS APPLICATION IS
+--------------------------------------------------------------------------------
+
+A garment-factory production tracker. One order (a buyer's purchase order for
+a style/color) moves through a fixed 19-stage manufacturing workflow - from
+Order Confirmation through Raw Material Planning/Procurement/Inward, Knitting,
+Dyeing, Brushing, Compacting, In-House, Fabric Inspection, Fabric Store,
+Pattern Making & Marker Planning, Cutting, Panel Checking, Embroidery, Sewing,
+Checking, Ironing, to Packing. Every stage that physically produces or moves a
+quantity (14 of the 19) writes to one shared transaction ledger; a single
+calculation engine (src/lib/chain.ts) turns that ledger into every number the
+app shows - what came in, what went out, what's still owed, per lot, per size.
+
+Three roles see three different shells of the same data:
+  - Admin - full read/write everywhere, user & permission management.
+  - MD (Managing Director) - a read-only fleet-wide view, one singleton account.
+  - User (floor worker) - sees only their own assigned stage(s) on their
+    assigned order(s), enters data there.
+
+Two narrow, opt-in permissions (independent of role) let a "user"-role account
+do one extra thing without becoming Admin:
+  - Order Creator Access (`can_create_orders`) - create new orders from their
+    own Home nav ("Create Orders").
+  - Job Work Access (`can_job_work`) - log externally-manufactured quantities
+    against any order/stage as REAL production entries (not a separate ledger
+    - see section 7.4).
+
+--------------------------------------------------------------------------------
+0.1 TECH STACK
+--------------------------------------------------------------------------------
+
+- React 18 + TypeScript, Vite build, deployed to Vercel (vercel.json present).
+- Tailwind CSS (utility classes throughout). No CSS-in-JS; a handful of inline
+  `style={{...}}` objects are used ONLY for gradients/shadows that must not be
+  purged by Tailwind's content-scanner (see src/lib/theme.ts) - the app's own
+  documented convention.
+- Supabase (Postgres + Auth + Storage + Row Level Security). All data access
+  goes through `src/lib/supabaseClient.ts`; every table has RLS policies
+  defined in `supabase/migrations/*.sql` (numbered, sequential).
+- @tanstack/react-query for all data fetching/mutation/caching.
+- react-router-dom for routing (see section 1).
+- recharts for every chart (bar/line/composed/pie/donut) - used only in
+  src/pages/admin/OutputPage.tsx.
+- No native mobile app. No Capacitor/Expo/React Native scaffold exists in the
+  repo (confirmed: no android/, ios/, capacitor.config, or app.json). This is
+  a responsive WEB app only - "mobile" means the same pages rendering in a
+  narrow browser viewport (phone/tablet) via Tailwind breakpoints, not a
+  separate codebase. See section 10 for exactly how each page's layout
+  collapses on a small screen.
+
+--------------------------------------------------------------------------------
+0.2 VISUAL / DESIGN LANGUAGE (src/lib/theme.ts)
+--------------------------------------------------------------------------------
+
+The whole app sits on a "spatial" frosted-glass aesthetic: soft blurred-blob
+gradient backdrops behind semi-transparent white "glass" cards with dual
+neomorphic shadows (a dark shadow cast away from an implied top-left light
+source, paired with a light highlight catching it).
+
+Backdrops (CSSProperties, applied as inline `style`):
+  - authBackground - Login page only: light blue (#EEF3FF) base with 4 soft
+    radial color blobs (cyan, violet, pink, teal), plus a faint dot texture.
+  - spatialBackground - every in-app layout shell (Admin/MD/User): deeper,
+    more saturated (#DEE6FA base) with indigo/pink/teal/amber blobs, fixed
+    attachment.
+  - sidebarBackground - the nav sidebar: a vertical indigo-violet wash.
+  - appBackground - an older/alternate in-app backdrop (lighter, #F3F6FD).
+
+Card surfaces:
+  - GLASS_CARD / GLASS_CARD_NEO - `rounded-2xl border border-white/70
+    bg-white/80 backdrop-blur-xl` plus either a simple drop shadow or the
+    neomorphic dual-shadow pair. The shared `Card` component uses
+    GLASS_CARD_NEO.
+  - NEO_SURFACE - a rounder (`rounded-[1.75rem]`), flatter #EEF2FA surface
+    for bigger "raised" panels.
+  - Shadow recipes: SHADOW_NEO_RAISED, SHADOW_NEO_RAISED_LG (hero panels),
+    SHADOW_NEO_PRESSED (inset, for pressed buttons/fields/tab tracks),
+    SHADOW_NEO_CHIP (small pills/badges), SHADOW_BRAND (colored shadow under
+    primary buttons/active tabs), SHADOW_GLASS/SHADOW_GLASS_HOVER/
+    SHADOW_PANEL (modal panels).
+
+Brand gradient (primary buttons, active nav items, headings):
+  `linear-gradient(120deg, #0B3FAE 0%, #155EEF 45%, #7C3AED 100%)` - blue
+  running into violet. `headingGradient`/`headingGradientStrong` apply the
+  same idea to text via bg-clip-text (2-stop vs 3-stop, the "strong" version
+  adds pink/orange for bolder headings). `dangerGradient` is the red
+  equivalent for destructive buttons.
+
+Icon tone gradients (small square icon tiles), 6 named tones - sky, amber,
+emerald, violet, rose, slate - each a 135° two-stop gradient (sky:
+#38BDF8→#2563EB, emerald: #34D399→#0D9488, rose: #FB7185→#E11D48, etc.),
+exported as `iconGradient: Record<IconTone, CSSProperties>`.
+
+Card-status color system (`CardStatusTone` - used on every "order card" /
+"assignment card" across the app - Dashboard, Home, Data Input, MD Workflow
+Map, Users): exactly 4 states, always the same 4 colors everywhere:
+  - notStarted  → grey    (accent #64748B)
+  - started     → blue    (accent #155EEF)
+  - completed   → green   (accent #059669)
+  - yourTurn    → orange  (accent #D97706)
+Each state has 5 coordinated values exported as parallel maps:
+`cardStatusSoftBg` (card background gradient), `cardStatusAccent` (badge/
+icon/rail hex), `cardStatusBorder`, `cardStatusShadow` (tinted drop shadow),
+`cardStatusLabel`.
+
+Workflow "bubble" gradients (`bubbleGradient`/`bubbleGradientSelected` - the
+circular stage nodes in GameLevelPath): 4 states - good (green, completed),
+partial (amber, "moved on but not finished - balance owed"), current (blue,
+in progress), idle (white/grey, not reached) - each a radial gradient with a
+light-catching highlight, plus a "Selected" variant one shade deeper.
+
+Typography: system font stack (no custom web fonts). Custom Tailwind ink
+scale (`text-ink-900` darkest → `text-ink-400` lightest) for body/label text.
+Status colors: `text-status-good` (green), `text-status-bad` (red),
+`text-status-warn`/amber, `text-status-rejected` (purple) - used consistently
+for positive/negative/pending/lost figures everywhere numbers appear.
+
+Icons throughout the ENTIRE app are emoji glyphs or raw inline SVG paths -
+there is no icon library (no Font Awesome / Heroicons / lucide) anywhere in
+the codebase. A few pages (MD Workflow Map) use actual GIF image assets from
+`/assets/workflow/*.gif` with a graceful emoji-fallback on load error.
+
+--------------------------------------------------------------------------------
+1. FULL ROUTE TABLE (src/App.tsx)
+--------------------------------------------------------------------------------
+
+```
+/                                          → Navigate to /login
+/login                                     → LoginPage (no layout shell)
+
+/admin  (ProtectedRoute requireAdmin → AdminLayout, nested Outlet)
+  /admin/dashboard                         → DashboardPage
+  /admin/orders                            → OrdersPage
+  /admin/orders/new                        → CreateOrderAdminPage
+  /admin/orders/:orderId                   → OrderDetailPage
+  /admin/output/:orderId                   → OutputPage
+  /admin/users                             → UsersPage
+  /admin/assign                            → AssignWorkPage
+  /admin/stage-roles                       → StageRolesPage
+  /admin/account-management                → AccountManagementPage
+
+/user  (ProtectedRoute (no role flag) → UserLayout, nested Outlet)
+  /user/home                               → HomePage
+  /user/data-input                         → DataInputPage (?assignment=<id>
+                                              query param preselects one)
+  /user/create-order                       → CreateOrderPage (can_create_orders)
+  /user/job-work                           → JobWorkPage (can_job_work)
+
+/md  (ProtectedRoute requireMd → MdLayout, nested Outlet)
+  /md/dashboard                            → DashboardPage (SAME component as /admin)
+  /md/orders/:orderId                      → OrderDetailPage (SAME component)
+  /md/output/:orderId                      → OutputPage (SAME component)
+  /md/users                                → MdUsersPage
+  /md/workflow-map                         → WorkflowMapPage
+  /md/workflow-map/:orderId/:stageKey      → WorkflowMapStagePage
+
+*  (catch-all)                             → Navigate to /login
+```
+
+`<GooeyDefs />` (from `ui/Button.tsx`) mounts once at the very top of the tree
+outside `<Routes>` - one document-wide SVG filter (`url(#uk-goo)`) referenced
+by every primary/danger button's hover blob effect and the Login submit
+button.
+
+`DashboardPage`, `OrderDetailPage`, and `OutputPage` are the literal same
+component reused across `/admin` and `/md` - behavior branches at runtime via
+`orderTrackingBasePath(pathname)` (resolves link targets to `/admin/...` or
+`/md/...`), not via separate route elements. MD's routes are read-only-
+oriented: no orders/new, no assign, no stage-roles, no account-management,
+and no order creation anywhere.
+
+--------------------------------------------------------------------------------
+2. ROLE / ACCESS MODEL
+--------------------------------------------------------------------------------
+
+`app_users` table: id, name, username, password_plain, role (free text -
+"admin"|"md"|"user"), phone, is_monitor_only, is_active, can_create_orders,
+can_job_work, last_activity_at, created_at.
+
+`AuthContext` (src/context/AuthContext.tsx) is the runtime source of truth:
+loads the Supabase session then the full `app_users` row into `appUser`.
+Exposes `{ appUser, loading, isAdmin, login, logout }` via `useAuth()`.
+
+`ProtectedRoute` (src/components/layout/ProtectedRoute.tsx) - `homeFor(role)`:
+admin→/admin/dashboard, md→/md/dashboard, else→/user/home. Logic in order:
+1. `loading` → full-screen `Loader`.
+2. no `appUser` → redirect /login.
+3. `requireAdmin` and role≠admin → redirect to own home.
+4. `requireMd` and role≠md → redirect to own home.
+5. Plain `/user/*` route (neither flag): admin/md are redirected to their own
+   home even though the route itself requires no specific role - they can
+   never land on /user/*.
+6. Otherwise render children.
+
+Two permission flags layer on top of the plain "user" role (booleans, not
+separate role values - granted from Admin's Stage Roles page):
+  - `can_create_orders` (migration 016) - adds a "Create Orders" nav item,
+    unlocks /user/create-order. RLS: can insert orders/purchase_orders/
+    po_size_quantities/order-images storage; can update/delete/hide only
+    orders they personally created (`created_by = auth.uid()`).
+  - `can_job_work` (migration 023/024) - adds a "Job Work" nav item, unlocks
+    /user/job-work. RLS: can insert/update `production_txns` rows they tag
+    `is_job_work = true`, for ANY order/section - no per-order assignment
+    needed, but bounded strictly to rows they themselves flag that way.
+
+Per-order/per-stage floor assignment (the normal, non-Job-Work path):
+`user_assignments` (order_id + optional po_id + section_id + can_enter_data,
+always whole-order - `po_id` is never set from Admin's Assign Work page) and/
+or a global `stage_assignments` (section_id + can_enter_data, applies to
+every order - set from Stage Roles) grant a floor worker the ability to see
+and act on a specific stage.
+
+--------------------------------------------------------------------------------
+3. THE 19-STAGE WORKFLOW - DATA MODEL AND ENTRY FORMS
+--------------------------------------------------------------------------------
+
+This is the heart of the app and is reused identically across THREE contexts:
+  (a) a floor worker's own Data Entry tab (User > Data Input, section 7.2),
+  (b) the read-only "Preview" sandbox Admin uses to test a form without
+      touching real data (Stage Roles page, section 5.7),
+  (c) implicitly, every number shown on the Dashboard, Order Detail, MD
+      Workflow Map, and Output & Reports pages is DERIVED from this same
+      ledger via the same chain.ts calculation - nothing is computed twice.
+
+3.1 The 19 stages, in sequence_no order, with unit and form_type:
+
+  1.  order_confirmation      PCS  confirmation
+  2.  raw_material_planning   KG   material_planning
+  3.  po_to_suppliers         KG   supplier_dc
+  4.  raw_material_inward     KG   material_inward
+  5.  knitting                KG   lot_send_receive (no lot dimension)
+  6.  dyeing                  KG   lot_send_receive
+  7.  brushing                KG   lot_send_receive
+  8.  compacting               KG   lot_send_receive
+  9.  fabric_inhouse          KG   lot_process
+  10. fabric_inspection       KG   lot_inspection
+  11. fabric_store            KG   fabric_store
+  12. pattern_marker          KG   simple_confirm
+  13. cutting                 PCS  size-grid (origin of the size axis)
+  14. panel_checking          PCS  size-grid
+  15. embroidery              PCS  size-grid, round-trip send/receive
+  16. sewing                  PCS  size-grid
+  17. checking                PCS  size-grid
+  18. ironing                 PCS  size-grid
+  19. packing                 PCS  size-grid
+
+Only 14 of these 19 (knitting → packing) write to the shared `production_txns`
+quantity ledger. The 3 procurement stages use a SEPARATE ledger
+(`material_requirements` + `material_entries`). `order_confirmation` and
+`pattern_marker` have NO quantity ledger - confirmation-only checkpoints that
+write only `stage_entries`.
+
+3.2 StageFormRouter (src/components/forms/stage/StageFormRouter.tsx)
+
+Picks the form component for `assignment.section.form_type`. Always renders,
+above the chosen form, an `OrderQtyBanner` (when `showDetails`) - 4 QtyBox
+tiles: Buyer Order Quantity → Extra % → Extra Quantity → Final Production
+Quantity (what production actually runs against, after the PO's
+`extra_percent` margin is applied).
+
+  confirmation → ConfirmationForm · material_planning → MaterialPlanningForm
+  supplier_dc → SupplierDcForm · material_inward → MaterialInwardForm
+  lot_send_receive → LotSendReceiveForm (shared) · lot_process → LotProcessForm
+  lot_inspection → LotInspectionForm · fabric_store → FabricStoreForm
+  simple_confirm → SimpleConfirmForm
+  cutting/panel_checking/embroidery/sewing/checking/ironing/packing → their
+    own thin wrapper around the shared size-grid `StageLedger` engine, all
+    living in chainForms.tsx, one `LedgerConfig` object per stage.
+
+3.3 Procurement chain - Raw Material Planning / PO to Suppliers / Raw
+    Material Inward (KG, MaterialLedger-driven)
+
+One shared component, `MaterialLedger` (1026 lines), reused by all 3 stages
+with different `entryTypes`/`canEditRequirements` props - the SAME underlying
+rows (material_requirements + material_entries), each stage owning exactly
+one figure in a required → planned → received chain:
+
+  Stage                    Owns figure     entryTypes    canEditRequirements
+  raw_material_planning    Required Plan   []            true
+  po_to_suppliers          Planned Qty     ["dc"]         false
+  raw_material_inward      Received Qty    ["inward"]     false
+
+Structure, top to bottom, per stage:
+  - Intro paragraph (showDetails) naming the one figure this screen owns.
+  - A blue (out) or green (in) DirectionPanel wrapping the whole ledger.
+  - One collapsible CategoryBlock per material category - "Yarn Counts"
+    (indigo rail/chip, "Y" initial, open by default) and "Fabric" (teal rail/
+    chip, "F" initial, collapsed by default). Header shows a Show/Hide toggle
+    and (collapsed) a one-line summary "N types · X KG required".
+  - Inside each block: a QtyBox totals row, then RequirementRow items (one
+    per yarn count / fabric type): expand chevron, name, "Completed" badge,
+    inline figures (Required/Planned/Received/Balance as applicable),
+    (canEditRequirements) Edit/Remove buttons + a checkbox. Editing opens
+    Name/Required Quantity/mandatory Reason-for-Change fields (written to the
+    audit log).
+  - Expanded row (only where entryTypes.length > 0) → EntryLedger: a table of
+    every entry (Date/Type badge/Supplier-DC/Qty/running Cumulative/Notes +
+    Edit/Delete) plus an "+ Record [Planned/Received]" form: Entry-type
+    Select (if >1 type), Quantity (KG, capped via a live "X KG still
+    outstanding" ceiling against the upstream figure), Date, Supplier, DC No
+    + DC Date (dc/receipt types only), Lot/Ref, required Notes, and an "Extra
+    / recovered source" override checkbox (appears only when a ceiling
+    applies) that lifts the cap and is recorded into the entry's notes.
+  - "+ Add Yarn Count" / "+ Add Fabric" button (canEditRequirements only).
+  - StageActions at the bottom - unitType="KG", balance = the stage's own
+    balance figure.
+
+3.4 KG round-trip stages - Knitting / Dyeing / Brushing / Compacting
+    (LotSendReceiveForm, shared)
+
+Two stacked DirectionPanels - blue "Sending" (writes qty_in, txn_type:'send')
+and green "Receiving" (writes qty_out, txn_type:'receive') - each its own
+StageLedger in draft-row mode (one editable row at a time): Lot select
+(required for dyeing/brushing/compacting; "none" for knitting, which has no
+lot dimension), Sent-To/vendor + Date + Quantity + Notes per row. Top strip:
+Sent / Received back / With Vendor QtyBoxes. StageActions at bottom (balance
+= "with vendor" outstanding figure).
+
+3.5 fabric_inhouse / fabric_inspection / fabric_store (LotProcessForm /
+    LotInspectionForm / FabricStoreForm, shared single-ledger)
+
+One DirectionPanel, one StageLedger in draft-row mode, lot required (optional
+for fabric_store), both qty_in and qty_out in the same row. Fabric Inspection
+additionally records Rejected and Rework per row. Fabric Store records only
+the final approved quantity held in store (no separate intake figure).
+
+3.6 pattern_marker - SimpleConfirmForm / order_confirmation - ConfirmationForm
+    (confirmation-only, no ledger)
+
+SimpleConfirmForm: blue info banner ("Is the pattern card and marker ready…"),
+reference QtyBoxes (Fabric in store/Pieces to cut/Sizes) + size table, amber
+warning banner, a single "Pattern / marker is ready" checkbox, required
+Notes, StageActions (balance always 0 - a pass-through).
+
+ConfirmationForm: Order info grid (Style/IO/Colour/Delivery/Description/
+Fabric), a slate-neutral DirectionPanel with the PO's size-breakdown table
+(amber warning if no size split at all), Order quantity/Sizes QtyBoxes +
+Confirmed/Awaiting badge, required Notes, StageActions with custom label
+"Completed – Confirm & Move Forward".
+
+3.7 PCS garment stages - Cutting / Panel Checking / Embroidery / Sewing /
+    Checking / Ironing / Packing
+
+All seven are "no-lot" size-grid stages (lot tracking ends at Cutting - once
+fabric becomes pieces, only SIZE matters). One shared component (`StageLedger`
+in size-grid mode) with 16+ `LedgerConfig` variations, not 7 hand-built forms.
+
+Common shape: "Add new entry" (Vendor Name / "Line Name" for Sewing + DC Name
++ Date), a "So far at this stage" 4-MiniStat summary strip, then a size grid
+table - one row per size code: Size | Cut Qty | the stage's editable
+quantity column(s) (in/out/rejected/rework per LedgerConfig) | Balance after.
+Each size's ceiling is Cutting's own real output for that size (the fixed
+reference, per lot×size - see the lot×size carry-forward engine in
+`chain.ts`, `byLotSize`). A completed row shows a green "Complete" badge; an
+exceeded row shows red "Over by N". Notes (required) + a "Recovered rework /
+extra source" override checkbox on a ceiling breach. "Save Entry" commits the
+grid as a batch. An Entries history table sits above the form, grouped by lot
+with a "Show More" toggle revealing per-size rows. StageActions at bottom.
+
+Per-stage specifics: Cutting is the origin of the size axis (ceiling = the
+PO's own ordered quantity per size). Panel Checking records Checked/Accepted/
+Rejected/Rework. Embroidery is the one round-trip stage among the seven - two
+stacked size-grid panels (Sending Out / Receiving Back), only the Receiving
+panel carries Rework tracking. Sewing uses "Line Name" (presets Line 01/02/
+03). Checking/Ironing/Packing are output-only; Packing additionally shows a
+"PackedAgainstOrder" QtyBox block and its complete action is the terminal
+"order finished" step, handing off to Output & Reports (section 5.5), not
+another workflow stage.
+
+3.8 Rework side-ledger (Embroidery-receive / Sewing / Checking / Ironing /
+    Packing - not Cutting or Panel Checking, which keep a single Rework
+    column via Panel Checking's own reworkLabel)
+
+A SEPARATE running balance per size: "Rework" (add) and "Rework Solved"
+(subtract) input columns, with a "Pending N" hint inside the Rework cell.
+Recorded as ordinary `production_txns` rows tagged `txn_type:'rework'`
+(qty_in=added, qty_out=solved) - invisible to chain.ts's normal output/
+balance math, a fully parallel ledger. Visible on Admin/MD's per-stage
+Dashboard view as a small "Rework - [Stage]" table (Size | Sent to Rework |
+Solved | Pending) via `ReworkSummaryTable`. Per the app's confirmed design
+decision: rework is pending repair AT its own stage - it sits in that stage's
+Balance as still-owed work and becomes Output only once repaired; it is never
+added on top of Output (would double-count).
+
+3.9 The shared StageLedger engine (src/components/forms/stage/
+    chainShared.tsx)
+
+Two entry modes via `LedgerConfig.sizeGrid`: draft-row mode (KG stages - add
+one row at a time, "Save N Entries" batch-commits) and size-grid mode (all 7
+PCS stages - one table row per size, "Save Entry" batch-commits). Shared
+sub-pieces used across both: `ChainStrip` (Input/Output/Rejected/Balance
+4-tile strip with a mismatch warning), `LotSummaryTable`/`SizeSummaryTable`/
+`ReworkSummaryTable` (read-only roll-ups used on the Dashboard side via
+StageDetailPanel), `LotSelect` (lot picker + inline "add new lot"),
+`DirectionPanel` (section 3.10), `Section` (plain titled block), `QtyBox`
+(single stat tile). All labels are sourced from `src/lib/stageLabels.ts`'s
+`stageQtyLabels(stageKey)` - a per-stage vocabulary map (e.g. Knitting/
+Dyeing/Compacting → Sent/Received/Reject/Balance; Fabric Inspection → Sent
+for Testing/Passed/Rejected; Panel Checking → Checked/Accepted/Rejected/
+Rework) - so a form and its admin-side summary table can never show
+mismatched wording (e.g. a Knitting row reading "In/Out" when it means "Sent/
+Received").
+
+3.10 DirectionPanel - the 3-color visual language for "which way is this
+     quantity moving"
+
+  direction="out"      sky/blue frame+band+chip, arrow "→" - a commitment
+                        being made, not yet arrived.
+  direction="in"       emerald/green frame+band+chip, arrow "←" - physically
+                        received/confirmed.
+  direction="neutral"  slate/grey frame+band+chip, checkmark "✓" - a
+                        checkpoint/approval, not a movement.
+Each has an optional "Step N" prefix when the stage has a real multi-step
+sequence (e.g. Embroidery's Step 1 Sending / Step 2 Receiving).
+
+3.11 StageActions - the 3 buttons that close EVERY stage form, identically
+
+  Save Plan (secondary/grey) - records entries, moves nothing on.
+  Not Complete – Move Forward (amber gradient via inline style) - sends
+    what's ready to the next stage but leaves THIS stage open/orange.
+  Completed – Move Forward → (primary brand gradient, full-width, large) -
+    sends on AND closes this stage.
+All three always enabled. Both Move Forward buttons open a `useConfirm()`
+dialog first naming the section and any outstanding balance that will be
+recorded as a shortage. A footnote always explains the 3-button semantics.
+
+3.12 Lot×size carry-forward and validation (src/lib/chain.ts)
+
+`ChainStage.byLotSize: LotSizeCell[]` - built for PCS stages from
+`production_txns` grouped by (lot_id, size_code). Each cell carries `cutQty`
+(Cutting's own qty_out for that exact lot×size - the fixed reference every
+later stage measures against, captured once while the chain loop reaches
+Cutting), `available` (the previous PCS stage's qtyOut for that cell, falling
+back to cutQty), `qtyIn/qtyOut/qtyRejected/qtyRework`, `balance = available −
+qtyOut − qtyRejected` (rework deliberately excluded - it's still owed, so it
+belongs in balance, not subtracted twice), and a Not Started/In Progress/
+Complete `status`. Entry-time validation blocks a save that would push
+`qtyOut + qtyRejected` past `available − alreadyDone` for a cell, naming the
+size and the real available figure; a "Recovered rework / extra source"
+checkbox + mandatory reason overrides it, with the reason written to the
+entry's notes for audit.
+
+3.13 Stage guide / help content (src/lib/stageGuide.ts)
+
+A per-stage-key map (`guideFor(key)`) of {owns, records[], maintains[],
+steps[], receives, handsTo, watchFor?} - plain-English documentation for
+every stage, surfaced in Admin's Stage Roles "Preview" modal next to the live
+sandbox (section 5.7) and validated by `npm run check:guides`.
+
+3.14 Job Work - production entries from outside the normal assignment flow
+
+Migration 024 added `production_txns.is_job_work boolean`. A Job Work entry
+IS a real `production_txns` row, written through the exact same
+`useCreateTxns()` mutation every stage form uses - chain.ts has zero
+awareness of the flag and sums it into that stage's real output/balance and
+what the next stage inherits, identically to an in-house entry. It is tagged
+`is_job_work: true` purely for provenance/display (a "Source: Job Work" chip
+in StageDetailPanel's Section Activity timeline, section 5.6) and deliberately
+never writes a `stage_entries` row - it can never mark a stage Forwarded/
+Complete or unlock the next assigned worker; that stays driven solely by the
+assigned floor worker's own actions. See section 7.4 for the entry page
+itself. Round-trip stages (Knitting/Dyeing/Brushing/Compacting/Embroidery)
+record job-work output on `txn_type:'receive'`; every other stage on
+`'process'`.
+
+================================================================================
+4. APP SHELL - LOGIN, LAYOUTS, NAVIGATION
+================================================================================
+
+4.1 src/pages/LoginPage.tsx
+
+Full-viewport `authBackground` with a faint dot-texture overlay. Centered
+flex container - stacks vertically on mobile, side-by-side at `lg:`
+(`flex-col ... lg:flex-row lg:justify-between`).
+
+Left/brand panel (`max-w-xl`): logo row (BrandMark 30px + "UK TEXTILES" +
+tagline "Excellence in Every Thread"); `<h1>` "Garment order tracking,
+**simplified.**" (the last word in a gradient span, `text-4xl sm:text-5xl`);
+paragraph about tracking POs across the full workflow; three `FeaturePill`
+rows (📦 "Lot & size-wise tracking, yarn to carton" sky / ⏱ "Live delivery
+countdowns & urgency alerts" amber / 👥 "Role-based assignments, monitor-only
+access" emerald); a copyright line `hidden lg:block`.
+
+Right/sign-in panel (`max-w-md`), frosted glass card: green-dot "Secure sign
+in" pill badge; `<h2>` "Welcome back"; form with GlassField "Username"
+(autoFocus, autoComplete=username, required) and GlassField "Password"
+(type toggles password/text via a trailing eye icon button, autoComplete=
+current-password, required); a red error banner on failure; a gooey-hover
+submit button - "Sign In" / "Signing in…" with a spinner while submitting.
+Below the card: "Having trouble signing in? Contact your Host Admin."
+
+On submit: `login(username, password)` → success navigates to `homeFor(role)`
+(admin→/admin/dashboard, md→/md/dashboard, else→/user/home); failure shows
+the thrown message or "Login failed." Already-authenticated users are
+immediately redirected away from this page, bypassing the form.
+
+4.2 Layout shells - AdminLayout / MdLayout / UserLayout
+
+Structurally identical (MdLayout is "a near-verbatim copy of AdminLayout").
+Outer `min-h-screen` div with `spatialBackground`. Structure:
+1. Mobile scrim (`fixed inset-0 bg-ink-950/40 backdrop-blur-sm md:hidden`),
+   shown only while the mobile nav is open.
+2. Hamburger toggle (`fixed left-3 top-3 z-40 md:hidden`, ✕/☰).
+3. `<aside>` sidebar, `fixed inset-y-0 left-0 w-64`, slides in/out on mobile
+   (`-translate-x-full` ↔ `translate-x-0`), always pinned open at `md:+`.
+   Inside: a brand-gradient 1px top bar; brand header (BrandMark 26px + "UK
+   TEXTILES" + role-specific subtitle - "Admin Portal"/"MD Portal"/"Work
+   Portal"); a scrollable `<nav>` of NavLinks (icon badge + label, active =
+   full brand-gradient bg + white text + shadow); a footer block (avatar
+   initial-letter circle + name + `@username`[· role for User] + full-width
+   Logout button).
+4. `<main>` with `md:ml-64 md:p-8 md:pt-8` (mobile: `p-4 pt-16` to clear the
+   fixed hamburger) containing `<Outlet/>`.
+
+Nav items:
+  AdminLayout (6, unconditional): Dashboard 📊 sky · Orders 📦 violet ·
+  Users 👥 emerald · Assign Work 📝 amber · Stage Roles 🎯 rose · Account
+  Management 🔐 slate.
+  MdLayout (2): Dashboard 📊 sky · Users 👥 emerald. (A third "Workflow Map"
+  🗺️ item exists in source but is commented out/dead code - Workflow Map is
+  still reachable, just not from this nav; likely reached via a Dashboard/
+  order-card link. Code comment: "MD is a read-only login… there's nothing
+  here that writes anything.")
+  UserLayout (2 base + 2 conditional): Home 🏠 sky · Data Input ✍️ violet ·
+  Create Orders 🧾 emerald (only if `can_create_orders`, hidden entirely
+  otherwise) · Job Work 🏭 amber (only if `can_job_work`, hidden otherwise).
+
+Logout (identical in all three): `await logout()` then
+`navigate("/login", { replace: true })`.
+
+================================================================================
+5. ADMIN PAGES (/admin/*)
+================================================================================
+
+5.1 DashboardPage.tsx (also /md/dashboard - same component)
+
+Header "Dashboard" / "Fleet-wide view of every order in production." Stat row
+(`grid-cols-2 sm:grid-cols-3 lg:grid-cols-6`, 6 `StatCard`s): Total Orders 📦
+· On Track ✓ (good) · Due Soon ⏱ (warn) · Delayed ⚠ (bad) · Stages Completed
+🏁 (brand) · Stages Pending ⧗ (warn). "Delivery Reminders" card wrapping
+`DeliveryReminderList`. "All Orders" section: `FilterTabs` (All/Started/Not
+Started/Completed with live counts), empty state, else a
+`grid-cols-1 sm:grid-cols-2 xl:grid-cols-3` grid of `OrderCard`s sorted
+started-first then ascending days-remaining.
+
+`OrderCard` (section 9.3) - the primary order tile reused everywhere.
+
+5.2 OrdersPage.tsx (/admin only)
+
+NOT a table - a card grid (`grid-cols-1 sm:grid-cols-2 xl:grid-cols-3`).
+Header "Orders" + subtitle about checking boxes to delete; right side a
+conditional red "Delete Selected (N)" button (only when ≥1 checked) and an
+always-present "+ Create Order" → `/admin/orders/new`. Each card: checkbox +
+56×56 thumbnail/placeholder + style + "IO {no} · {color}"; body: PO-count
+badge + bold total PCS; delivery date; Edit (opens a modal with `OrderForm`
+pre-filled) and "Track →" (links to Order Detail) buttons. Empty state if no
+orders. Delete-selected opens a `useConfirm()` danger dialog warning it
+permanently deletes POs/sizes/assignments/production/material/history for
+every selected order. No search, sort, or pagination.
+
+5.3 CreateOrderAdminPage.tsx + OrderCreatePanel.tsx + OrderForm.tsx
+
+CreateOrderAdminPage: `BackButton` "Back to Orders", header "Create Order",
+renders `OrderCreatePanel` (a Card wrapping `OrderForm`, resets via a
+`formKey` bump after success, navigates to /admin/orders on `onCreated`).
+
+`OrderForm` - the buying-sheet-style layout (image uploader square + Change/
+Upload hover overlay; core fields grid `sm:grid-cols-2` - IO/No, Style Name,
+Color, Overall Delivery Date; Description textarea; Fabric text input; a
+"Size set" panel - pill chips per size with × remove, "+ Add" input, can't
+remove the last size, defaults from `DEFAULT_SIZE_TEMPLATE`; then a scrollable
+PO × size `<table>` - header row PO Number/size columns/Total/Extra %/
+Delivery/blank; TWO rows per PO: an editable buyer-qty row and a computed,
+blue-tinted "production" row showing `+{extra%}%` scaled quantities per size
+in bold brand-blue; a `<tfoot>` with Buyer Total and Production Total rows;
+"+ Add PO" button below). Footer: Cancel/Submit ("Create Order" or "Save
+Changes" if editing). Sizes belong to the order, not per-PO; a PO with an
+empty size cell simply ships none of it.
+
+5.4 OrderDetailPage.tsx (also /md/orders/:orderId)
+
+Top bar: `BackButton` "Back to Dashboard" + "Production Output & Reports →"
+button linking to Output & Reports.
+
+Order header Card: 96×96 image/placeholder; `<h1>` style + IO badge + color
+badge + conditional amber "N stage(s) moved on unfinished" badge; description
++ fabric; an 8-tile metrics grid (`grid-cols-2 sm:grid-cols-3 lg:grid-cols-4
+xl:grid-cols-8`): Buyer Order Qty (All POs), Extra %, Extra Qty, Final
+Production Qty (brand-colored), Fixed Qty (Post-Cutting) or "Not cut yet",
+Delivery, Days Remaining (colored by urgency), Overall Progress; a
+`ProgressBar` beneath.
+
+"Order Overview" Card: 7-tile KPI grid (`grid-cols-2 sm:grid-cols-3
+lg:grid-cols-4 2xl:grid-cols-7`) - Order Count, Active Programs (PO count),
+Yarn Count (planned KG), Not Yet Cut, Cut Not Yet Packed, Packed/Ship-Ready,
+Overall Completion - each with a small hint line and tone.
+
+"Complete Production Workflow" Card - subtitle with completed/pending/moved-
+on-unfinished counts. Two-column layout at `lg:+`
+(`lg:grid-cols-[19rem_minmax(0,1fr)]`, widening at `xl:`), stacked below
+`lg:`:
+  - Left: `WorkflowRail` (section 9.2) - a VERTICAL stage list (chosen over
+    the horizontal `GameLevelPath` specifically so the detail pane beside it
+    doesn't force a scroll-losing layout on long orders).
+  - Right: sticky header (Section N of Total → stage label → status sentence
+    → status Badge) then `<StageDetailPanel>` (section 5.6) for the selected
+    stage, or a dashed "Pick a section on the left" placeholder.
+
+"Complete Movement History" Card - collapsed behind a "See Here" button;
+expanded shows a `Table` (Date/Workflow Section/By/Qty Fwd/Result badge/
+Notes), 15 rows/page, newest first, Previous/Next pagination, "Hide" to
+collapse again.
+
+5.5 OutputPage.tsx (/admin/output/:orderId, also /md/output/:orderId) -
+    "Production Output & Reports"
+
+Everything here is DERIVED - nothing is entered on this page. Top bar:
+`BackButton` "Back to Order" + CSV/Download PDF/Download Excel buttons
+(export libraries fetched on demand; button shows a spinner while building).
+Header: "Production Output" + style/IO/PO-or-"all POs combined".
+
+Charts (all recharts, gradient-filled bars/lines, custom tooltips), in order:
+1. "Fabric Flow Trend: Send vs Receive (KG)" - ComposedChart, Order
+   Confirmation → Fabric Store, ×2 bars (Send blue / Receive green) + 2
+   trend lines, rotated stage-name labels inside tall bars.
+2. "Cutting → Packing Trend: Order/Excess vs Output (PCS)" - ComposedChart,
+   a flat dashed grey "Order/Excess Qty" line/bar vs an amber "Output" bar/
+   line - visually shows exactly where the line first dips below order.
+3. A PO-scope `FilterTabs` row ("All POs (combined)" + one tab per PO).
+4. Headline stat row (`grid-cols-2 lg:grid-cols-4`): Ordered 📋 sky, Cut ✂️
+   violet, Packed 📦 emerald (with a small amber hint "incl. N job work" if
+   any), Short of order ⚠️/✅ rose-or-emerald.
+5. "Order fulfillment" donut Card - a ring chart (Packed vs Remaining) with
+   the overall efficiency % centered inside it, plus a stat-row legend
+   (Packed, [Of which Job Work if >0], Remaining, Rejected, Fabric lost).
+6. "How far the order has got" - a 4-step funnel (Ordered→Cut→Sewn→Packed)
+   as horizontal percentage bars with per-step drop annotations.
+7. "Input vs Output by stage" - ComposedChart with a KG/PCS `FilterTabs`
+   toggle (garment and fabric stages can't share a Y-axis), bars for Input/
+   Output plus an amber Yield% line on a secondary 0–100 axis.
+8. "Yield by stage" - horizontal bar-per-stage list, worst yield first, each
+   bar colored red/amber/green by yield-band thresholds (≥98% green, ≥95%
+   amber, else red), with the absolute loss (rejected+shortage) alongside.
+9. "Size-wise output" - grouped bar chart (Ordered/Cut/Packed/Outstanding
+   per size).
+10. "Stage-by-stage comparison" - full table (Stage/Unit badge/Input/Output/
+    Rejected/Shortage/Efficiency%), the Cutting row gets a highlighted top
+    border marking the KG→PCS transition.
+11. "Size-wise reconciliation" - table (Size/Ordered/Cut/Sewn/Packed/
+    Balance) - Sewn/Packed columns show "–" rather than false zero when the
+    stage doesn't record a size breakdown.
+12. "Job Work" table (only if any exist) - Stage/Unit/Job Work Qty, full
+    transparency on what's already folded into the real totals above (never
+    double-counted - chain.ts already includes these rows natively).
+13. "Lot traceability" - a bar chart (Output vs Loss per lot, first 20 lots)
+    plus a per-lot `<details>` accordion table (Stage/In/Out/Rejected/Loss).
+14. "Activity & audit trail" - a chronological list (create/update/delete
+    badges, field-diff text, notes, actor + timestamp), latest 40 rows.
+15. Footer caption: "Report generated {date} · every figure above is derived
+    from the recorded entries."
+
+5.6 StageDetailPanel.tsx (dashboard/, invoked from Order Detail's right pane
+    and from MD's WorkflowMapStagePage)
+
+Not-started state: dashed empty-state card, "⏳ Not Started Yet."
+
+Otherwise:
+  - `SectionSummary` - a 4-tile row (In/Out/Balance-or-Shortage/Rejected,
+    labels from `stageQtyLabels`) with hint text under each; a horizontal
+    stacked comparison bar (Output green / Rejected purple-red / Balance
+    amber segments, scaled against max(input, output+rejected)) with a %
+    "of input moved on" caption and a color-keyed legend row beneath;
+    conditional callout boxes for "Variation vs previous section" (amber if
+    short, blue if over - comparing what was handed over vs what was counted
+    in) and "Cumulative loss across every lot up to this section" (purple);
+    a `Contributors` block - avatar chips per person who entered data here,
+    with entry count, total qty, and last-entry date.
+  - (lot_inspection stages only) "Lot Status" - a row of chip badges per lot
+    (status derived via `lotStatus()`).
+  - "Lot-wise Breakdown" `LotSummaryTable` (if any lots).
+  - "Size-wise Breakdown" `SizeSummaryTable` (if any sizes).
+  - "Rework - {Stage}" `ReworkSummaryTable` (if any rework recorded).
+  - "Material Position" table (procurement stages only) - Material/Type/
+    Required/Planned/Received/Balance/Status(Full·Partial·Pending badge).
+  - "Section Activity" - a unified chronological timeline merging FOUR
+    underlying tables (production_txns, material_entries, stage_entries,
+    audit_log) into one list, newest first, 12 shown with a "Show all N
+    records" expander. Each `ActivityRow`: avatar+name+date | action Badge
+    (Sent Out/Received Back/Recorded Entry/Planned Quantity/Received Into
+    Store/Completed Section/Moved Forward/Saved Plan/Corrected/Deleted/
+    Updated Plan) | chips (Lot/Size/Sent-to/Received-from/Doc/Source:"Job
+    Work"/Transferred-to/Unit/Branch/Movement:"Sent outside") + fixed-width
+    metric cells (In/Out/Rejected/Rework, colored) + italicized notes quote.
+  - (showAssignmentInfo, default true - false on MD's WorkflowMapStagePage)
+    two `ContactTile`s: "Responsible Person(s)" and "Next Assigned Person"
+    (name + tel: link or "no phone on file").
+  - (showAssignmentInfo, not completed) a blue estimated-completion hint line
+    based on the stage's typical_duration_days.
+
+5.7 StageRolesPage.tsx (/admin/stage-roles) - its "Preview" sandbox is well
+    documented: opens `StagePreviewSandbox` (wraps the REAL `StageFormRouter`
+    in an in-memory `DemoModeProvider` store instead of Supabase, seeded from
+    src/lib/demoData.ts's DEMO_ORDER/DEMO_PO/DEMO_SIZES/DEMO_LOTS/
+    DEMO_REQUIREMENTS/DEMO_MATERIAL_ENTRIES and a realistic `buildDemoTxns()`
+    walk through the whole chain with small plausible per-stage loss
+    percentages) - a blue "Practice mode – nothing here is saved" banner, a
+    "Reset practice data" button, and a small stage-guide info panel drawing
+    from src/lib/stageGuide.ts. The page itself manages per-order/global
+    stage default assignments (Can Enter Data / Monitor Only per section,
+    applied fleet-wide) - the source of the "Default" badges seen on Assign
+    Work (5.10).
+
+5.8 AccountManagementPage.tsx (/admin/account-management)
+
+Manages the single MD account (not a row in the general Users table - a
+singleton). Header "Account Management". If an MD user exists: a Card
+showing Name/Username/Password (masked, View/Hide toggle)/Last Activity,
+Active/Inactive badge, "Reset Password" and "Deactivate"/"Reactivate"
+buttons. If none exists: a create form (Full Name, Username+Password with
+Show/Hide, helper text about the username being permanent) with a "Create MD
+Account" submit. A separate "Reset Password" modal (New Password field).
+
+5.9 UsersPage.tsx (/admin/users)
+
+A card grid, not a table (explicit design choice per in-code comment). Header
+"Users" + "+ Add User". Stat row (Total Users/Active Accounts/Active Today).
+Legend bar (green dot "Worked today" / blue "Active account" / grey
+"Deactivated"). Empty state. `UserCard` grid (`grid-cols-1 md:grid-cols-2
+xl:grid-cols-3`) - colored by `CardStatusTone` (inactive=grey/active=blue/
+active-today=green); each card: avatar+name+"You" badge for self+`@username
+· role`+clickable Active/Inactive badge; details block (Phone tel: link,
+Access badge Monitor-Only/Can-Enter-Data, Last activity+Today badge, Password
+masked with per-user View/Hide toggle, Assigned sections as neutral chips);
+footer actions Edit/Reset Password/Delete (hidden for self). Modals: Add User
+(embeds `UserForm`), Edit User (Name/Role/Phone only - no username/password/
+monitor-only), Reset Password, Delete User (amber warning that a user with
+any submitted production entries can't be deleted - deactivate instead).
+
+`UserForm` fields: Full Name, Role/Designation, Username+Password (Show/Hide,
+helper "min 6 chars, username becomes login, can't be changed later"), Phone,
+`Toggle` "Monitor Only" (`is_monitor_only` - the only permission toggle on
+this form; `can_create_orders`/`can_job_work` are NOT settable here, only
+from Stage Roles).
+
+5.10 AssignWorkPage.tsx (/admin/assign)
+
+Header + subtitle explicitly noting scope is always whole-order (never
+per-PO). A 4-step assignment form:
+  Step 1 "Who is being assigned" - a User Select.
+  Step 2 "Which order" - a "Quick select (number-wise)" Select (back-fills
+    the two below) plus separate IO/No and Style/Color Selects.
+  Step 3 "Which sections" - sections grouped by production PHASE, each group
+    a colored-rail block of checkbox `SectionRow`s; a row already covered by
+    a global Stage Roles default or an existing assignment shows a locked/
+    pre-checked state with a "Default"/"Assigned" badge and a hover tooltip
+    listing who else is on it (default users + this-order assignees, each
+    with a Can-Enter/Monitor badge).
+  Step 4 "Access & unit" - Unit/Vendor Name input + a "Can Enter Data" Toggle.
+  A summary bar (User/Order/New sections/Access) + "Save Assignment" button.
+Below the form: "Existing Assignments" grouped by person (not a flat table -
+explicitly chosen for scan-ability), each group a card with a "Remove" button
+per row (no confirmation dialog - immediate).
+
+================================================================================
+6. MD (MANAGING DIRECTOR) PAGES (/md/*)
+================================================================================
+
+6.1 MdUsersPage.tsx (/md/users)
+
+A read-only directory, not the admin data table - explicitly merges TWO
+assignment sources the admin UsersPage does NOT both read: per-order
+`user_assignments` AND global Stage Roles defaults, so someone assigned
+purely via a default still shows up here. Stat row (Total Users/Active
+Accounts/Unassigned). `UserWorkCard` grid (`sm:grid-cols-2 lg:grid-cols-3`) -
+avatar+name+`@username`+Active/Inactive badge, Role badge, "Assigned Work" as
+a wrap of section badges (tone `info` if from a default, `neutral` if a
+direct per-order assignment) or grey "No section assigned yet". No edit/
+delete/reset actions anywhere - confirms this is narrower/read-only vs
+Admin's Users page.
+
+6.2 WorkflowMapPage.tsx (/md/workflow-map)
+
+A live-tracking view over the same `useAllOrderProgress` bundle the Dashboard
+uses. Header "Workflow Map". Filters to started orders only; empty state if
+none. A horizontal scrollable `OrderChip` strip (thumbnail + style + "progress%
+· IO {no}" + tone dot; selected chip gets a brand ring). Selected order Card
+→ `WorkflowJourneyMap`:
+  - Stages rendered as a zigzag "snake" grid (4 columns, alternating
+    direction per row - same layout idea as `GameLevelPath` but using real
+    GIF icons: tries `/assets/workflow/{stageKey}.gif`, falls back to a
+    dashed tile + 📦 emoji on error).
+  - A small circular badge overlaps each icon's top-left (✓ if crossed, else
+    stage number), colored by tone (crossed=green gradient, current=brand
+    gradient pulsing, partial=amber gradient + amber dot, pending=white/ring).
+  - `ConnectorFlow` between stages: plays `/assets/workflow/flow-complete.gif`
+    or `flow-partial.gif` (rotated 90° for vertical hand-offs), falls back to
+    a plain arrow glyph (→/←/↓) on error or when idle.
+  - Legend row (Crossed/Current/Moved on not finished/Not reached).
+  - Blue status caption: "Currently at **{stage}** · last touched by {name}.
+    Tap any point on the map to see that section's details."
+  - Clicking a node navigates to `/md/workflow-map/{orderId}/{stageKey}`.
+
+6.3 WorkflowMapStagePage.tsx (/md/workflow-map/:orderId/:stageKey)
+
+Deliberately narrower than Order Detail - no PO breakdown, no movement
+history, just this one section. `BackButton` "Back to Workflow Map"; header
+"UKTextiles - {style}" / stage label; a single Card with a status-Badge
+header (Completed/Moved on-not completed/In Progress/Pending) and body =
+`<StageDetailPanel showAssignmentInfo={false}>` (section 5.6).
+
+================================================================================
+7. USER (FLOOR WORKER) PAGES (/user/*)
+================================================================================
+
+7.1 HomePage.tsx (/user/home)
+
+Header "Welcome, {name}". Empty state if no work items. Else: search Input +
+"Choose Order" Select; `FilterTabs` (All/Your Turn/Waiting/Completed/Monitor
+Only, live counts scoped to the selected order); result count line;
+responsive `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3` grid of `WorkItemCard`
+(PAGE_SIZE=9) or empty state; Previous/Next pagination.
+
+`WorkItemCard`: order image/placeholder, style + Monitor badge, IO/color/PO
+line, section+unit-name line, `ProgressBar`, `NextStagesStrip` (section 9.4),
+delivery date + colored status pill, and a bottom "required action" sentence
+(context-dependent: Monitor-only / partial-with-balance / your-part-done /
+waiting / your-turn). Card visuals driven by `homeCardTone()` → the same
+`CardStatusTone` system as everywhere else.
+
+7.2 DataInputPage.tsx (/user/data-input, `?assignment=<id>` preselects)
+
+Same search+Select("Choose Order")+FilterTabs (All/Your Turn/Waiting/
+Completed, PAGE_SIZE=8) pattern as HomePage but renders full-width list rows
+(left accent bar, embedded small `ProgressBar` + `NextStagesStrip`) instead
+of a card grid. Clicking a row sets `?assignment=` and swaps to
+`SelectedAssignmentView`:
+  - `BackButton` "Change Order"; compact header (style+section, IO/PO, gate
+    Badge).
+  - `Tabs` "Data Entry"/"Order Details" toggling a `showDetails` flag passed
+    into `StageFormRouter`.
+  - Order Details tab: order-info Card + (if gateStatus="completed") a "Your
+    Stage Summary" Card with 4 Stats (Qty/Forwarded/Shortage/Last Update).
+  - An amber "moved on without completing" banner when `isPartial`.
+  - `<StageFormRouter>` inside a Card - only rendered when gateStatus is
+    "active" or "completed" (data entry stays available after completion for
+    late corrections).
+  - A locked-state empty Card ("⏳ Not your turn yet…") when gateStatus is
+    "locked".
+  - Always at the bottom: "Complete Order Workflow" Card rendering the full
+    `<GameLevelPath>` (section 9.1) with the current assignment's stage
+    pre-selected.
+
+7.3 CreateOrderPage.tsx (/user/create-order, `can_create_orders` only)
+
+Redirects to /user/home if the flag isn't set (server-side RLS is the real
+backstop). Header "Create Order" + subtitle it'll appear across the whole app
+like any other order. Renders `<OrderCreatePanel/>` (identical to Admin's -
+same `OrderForm`, same mutation). Below it, if the user has created any
+orders: "Orders You've Created" Card listing each as a row - thumbnail, style
++ Hidden badge if applicable, "IO {no} · {color} · {qty} PCS · Delivery
+{date}", and Unhide/Hide + Delete buttons (Delete opens a `useConfirm()`
+danger dialog; Hide toggles `is_hidden` so it disappears from every other
+list in the app while remaining visible here - the one place a hidden order
+must still show, to be unhidden from).
+
+7.4 JobWorkPage.tsx (/user/job-work, `can_job_work` only)
+
+Redirects to /user/home if the flag isn't set. Header "Job Work" + subtitle
+explaining entries are real production entries counted everywhere, but never
+mark a stage complete or move it forward.
+
+- "Order & section" Card - two Selects: Order ("IO {no} · {style} · {color}")
+  and Section (filtered to the 14 stages with a real production_txns ledger
+  - excludes the 3 procurement + 2 confirmation-only stages, since "how many
+  pieces did job work produce for Order Confirmation" isn't coherent).
+- "{Stage} – so far" Card - 4 `RefStat` tiles: Input/Output/Balance (labels
+  from `stageQtyLabels`) + an amber "Of which, Job Work" tile showing just
+  this provenance's share.
+- "Add a job work entry" Card - Vendor Name / DC Name / Date row; a Total-
+  Count/Size-wise-Count `FilterTabs` toggle (size-wise only offered for PCS
+  stages); either a single Quantity input or a per-size quantity table;
+  required Notes; "Save Entry" button. On save, builds `NewTxn[]` rows
+  directly (txn_type='receive' for the 5 round-trip stages, else 'process';
+  qty_in:0, is_job_work:true, entered_by: current user) and saves via the
+  same `useCreateTxns()` every stage form uses - no separate mutation/table.
+- "Job work entries so far" Card - a table (Date/Vendor/DC/Size/Qty) of just
+  this order+stage's job-work-tagged rows, newest included, running total in
+  the subtitle.
+
+================================================================================
+8. SHARED UI COMPONENT LIBRARY (src/components/ui/*.tsx)
+================================================================================
+
+Badge - pill/chip. Tones: neutral/good/warn/bad/info/brand(gradient fill)/
+external(cyan)/shortage(purple). `rounded-full px-2.5 py-0.5 text-xs`.
+
+Button - variants primary(brand gradient, inline style)/secondary(glass)/
+ghost(transparent)/danger(red gradient); sizes sm/md/lg; `isLoading` shows a
+spinner and disables. Primary/danger get a "gooey" hover effect: 3 colored
+blob `<span>`s slide up through a shared SVG goo filter (`GooeyDefs()`,
+mounted once at app root) to look like a merging liquid blob.
+
+BrandMark - logo: tries `/UKT_Company_Logo.png`, falls back to a gradient
+"UKT" tile on error. Prop: `size` (default 44).
+
+Card / CardHeader / CardBody - the universal frosted "neomorphic" panel
+(`GLASS_CARD_NEO`). CardHeader: title (bold) + optional subtitle (truncated
+gray line) + optional right-aligned `action` slot (badges/buttons).
+
+FilterTabs - generic segmented pill row with optional per-tab counts; active
+tab = brand gradient + white text + brand shadow.
+
+FormControls - Input/Select/Textarea (all forwardRef, shared "pressed glass"
+styling - inset shadow at rest, brand glow on focus) with label/error props;
+Toggle (pill switch, brand gradient when on); Checkbox (custom 5×5 box,
+brand-gradient checkmark fill when checked).
+
+GarmentPlaceholder - a single stroke-only "hanger/shirt" SVG icon, used
+everywhere a garment image is missing.
+
+Loader - `LiquidLoader` (5 animated vertical bars, liquid-fill keyframe
+effect, `compact` variant) wrapped by `Loader({label, full})` - `full` makes
+it `h-[60vh]` for page-level loading, otherwise `py-10` inline.
+
+Modal - full-screen overlay (`bg-ink-950/50 backdrop-blur-sm`), top-aligned
+panel (`rounded-3xl`, `animate-fadeInUp`), header (title + ✕ close), scrolling
+body (`max-h-[75vh]`). Click-outside closes.
+
+ProgressBar - clamped 0–100, tone brand/good/warn/bad, animated gradient
+fill, optional right-aligned "% " label, sizes sm/md.
+
+StatCard - label/value/hint/icon/tone tile with a colored left accent rail
+and an optional gradient icon square top-right.
+
+Table - generic columns/rows/emptyMessage table; empty state shows a 📋 emoji
++ message; non-empty shows an uppercase gray header row + hover-highlighted
+body rows in a rounded scrollable container.
+
+Tabs - a distinct "pressed-in" segmented control (`SHADOW_NEO_PRESSED` track)
+for switching views of the SAME thing (Data Entry/Details) - as opposed to
+FilterTabs' looser chips for slicing a list.
+
+BackButton - a real raised pill button (not a text link): circular chevron
+icon-chip + label; `onClick` or `to` (navigate) or defaults to `navigate(-1)`.
+
+================================================================================
+9. SHARED DASHBOARD COMPONENTS (src/components/dashboard/*.tsx)
+================================================================================
+
+9.1 GameLevelPath - the "board game" snake stage-progression visualization.
+Desktop (`hidden md:grid`): stages laid out 5/row, alternating direction per
+row, circular glossy "bubble" nodes (checkmark if completed, else stage
+number; amber "!" badge if partial, amber dot if current) connected by
+colored capsule bars, with a hover tooltip (rendered via a `createPortal` to
+escape ancestor blur/transform contexts) showing Allotted/Forwarded/Still-
+owed/Shortage/Rejected/Records/Last-update/per-unit split. Mobile
+(`md:hidden`): switches to a compact vertical timeline (smaller nodes +
+inline status text). 4-color legend row (Completed/Moved on-not
+completed/In progress/Not reached) - same 4-tone vocabulary as everywhere
+else. Conditional amber footer note when any stage is partial.
+
+9.2 WorkflowRail - the vertical alternative to GameLevelPath used specifically
+where a detail panel sits beside the stage list (Order Detail page), so the
+list stays visible while the panel's content changes rather than forcing
+everything to scroll. Ordered list with connector lines, numbered/checkmark
+node badges, label + one-line status caption per row, same 4-tone legend.
+
+9.3 OrderCard - the primary order tile (Dashboard, and reused conceptually
+elsewhere). A `<Link>` to the order detail page; tone (completed/started/
+notStarted) from stage-completion count; top accent strip; thumbnail+style+
+"IO/color" + status pill (Not started/On track/Due soon/Delayed/Completed);
+Progress block with `ProgressBar`; "Current stage" row; conditional amber
+partial-stage warning; footer with delivery date + urgency-colored days-left
+pill.
+
+9.4 NextStagesStrip - a compact horizontal "Next: ▶ [stage] · [stage] ·
++N more" preview inline in list rows (HomePage/DataInputPage), current stage
+prefixed "▶ " and blue, a partial stage amber with a trailing "•", others
+neutral grey.
+
+9.5 DeliveryReminderList - a horizontally-scrollable row of up to 6 upcoming-
+delivery mini-cards (thumbnail, style, delivery date, urgency-colored days-
+left pill), sorted soonest-first, completed orders excluded.
+
+9.6 StageDetailPanel - documented fully in section 5.6 (not repeated here).
+
+================================================================================
+10. RESPONSIVE / MOBILE BEHAVIOR - AND THE "MOBILE APP" QUESTION
+================================================================================
+
+There is no native mobile app in this codebase - no Capacitor, no Expo, no
+React Native, no Android/iOS project files. Every "mobile functionality" is
+this same web app rendering responsively in a phone-width browser. There is
+no separate mobile feature set - a floor worker on a phone sees exactly the
+same HomePage/DataInputPage/stage forms an admin sees on desktop, just
+reflowed. If a truly separate mobile app is wanted in Stitch, it would be a
+new build, not a recreation of something that already exists here.
+
+Concrete responsive behaviors observed directly in the source (Tailwind
+breakpoints - sm:640px, md:768px, lg:1024px, xl:1280px, 2xl:1536px):
+
+- Layout shells (Admin/MD/User): sidebar is an off-canvas drawer below `md:`
+  (hamburger toggle + scrim), pinned open at `md:+`; main content padding/
+  margin shifts accordingly.
+- Login page: brand and sign-in panels stack vertically below `lg:`, sit
+  side-by-side at `lg:+`; the copyright line is desktop-only (`hidden
+  lg:block`).
+- GameLevelPath is the one component with a genuinely different mobile
+  rendering, not just a reflow: `hidden md:grid` (5-per-row snake grid) vs.
+  `md:hidden` (compact vertical timeline with inline status text) - two
+  structurally different layouts gated on one breakpoint.
+- Card grids collapse progressively: Dashboard/Orders/Users order- and user-
+  cards go `grid-cols-1` → `sm:` or `md:grid-cols-2` → `lg:`/`xl:grid-cols-3`;
+  stat-card rows go `grid-cols-2` → `sm:grid-cols-3` → `lg:grid-cols-6`
+  (Dashboard) or similar.
+- Order Detail's workflow Card switches from a stacked single column to a
+  fixed two-column rail+detail layout only at `lg:+`; below that everything
+  scrolls together as one column instead of the detail pane scrolling
+  independently.
+- Several places use horizontal scroll strips rather than wrapping on narrow
+  screens: MD Workflow Map's order-chip row, DeliveryReminderList,
+  NextStagesStrip, and every wide data table (`overflow-x-auto` wrappers
+  around the PO×size grid in OrderForm, the ledger tables in MaterialLedger/
+  StageLedger, and the Output & Reports tables).
+- No touch-gesture handling (swipe, pinch, etc.) exists anywhere - every
+  interaction is a plain click/tap on a button, link, checkbox, or input.
+
+================================================================================
+11. CROSS-CUTTING UI PATTERNS
+================================================================================
+
+Toast notifications (src/context/ToastContext.tsx) - `useToast().success(msg)
+/ .error(msg) / .show(msg, tone)`. Renders as a fixed top-center stack
+(`z-100`), auto-dismisses after 4.5s, each toast is a rounded glass pill with
+a tone icon (✓/✕/ℹ), colored border/background (green/red/blue), and a
+manual ✕ dismiss. Used after essentially every mutation across the app
+(create/update/delete/save) for success and failure feedback.
+
+Confirm dialogs (src/context/ConfirmContext.tsx) - `await useConfirm()({
+title, message, confirmLabel, cancelLabel, tone })` resolves a boolean.
+Renders through the shared `Modal` with Cancel (secondary) / Confirm
+(primary, or danger-red-gradient when `tone:"danger"`) buttons. Used to gate
+every irreversible or consequential action: deleting an order/user, and
+(via `useForwardConfirm`/`usePartialConfirm` in stage/shared.tsx) both "Move
+Forward" buttons on every single stage form.
+
+Loading pattern - every page uses `<Loader full label="…"/>` for its
+top-level loading state with a page-specific label ("Loading dashboard…",
+"Loading order…", "Building the production summary…", etc.), and inline
+`<Loader label="…"/>` (no `full`) for smaller in-page loading regions.
+
+Empty states - a consistent visual idiom throughout: a large muted emoji
+(📋/⏳/📦) + a bold short message + a lighter explanatory line, in a dashed-
+or plain-bordered box.
+
+Password visibility toggle - recurs identically in AccountManagementPage,
+UsersPage (per user card), and UserForm: masked monospace `••••••••` text
+with an inline "View/Hide" or "Show/Hide" text-button toggle, never a
+separate modal.

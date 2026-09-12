@@ -42,7 +42,7 @@ export function WorkflowMapStagePage() {
 
       <div>
         <h1 className="text-xl font-bold tracking-tight text-ink-900">
-          UKTextiles — {order.style}
+          UKTextiles - {order.style}
         </h1>
         <p className="text-sm text-ink-500">{selectedStage.stage.label}</p>
       </div>

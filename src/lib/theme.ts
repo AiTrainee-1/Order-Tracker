@@ -60,7 +60,7 @@ export const headingGradient: CSSProperties = {
 };
 
 export const dangerGradient: CSSProperties = {
-  backgroundImage: "linear-gradient(120deg, #B91C1C 0%, #EF4444 100%)",
+  backgroundImage: "linear-gradient(120deg, #9F1239 0%, #E11D48 100%)",
 };
 
 export type IconTone = "sky" | "amber" | "emerald" | "violet" | "rose" | "slate";
@@ -85,23 +85,29 @@ export const dotTexture: CSSProperties = {
 // so Tailwind's scanner finds them -  note each variant (including the hover:
 // form) must be spelled out in full, because a class assembled at runtime like
 // `hover:${SHADOW}` is invisible to the extractor and would never be generated.
-export const SHADOW_GLASS = "shadow-[0_10px_30px_-14px_rgba(30,41,90,0.35)]";
-export const SHADOW_GLASS_HOVER = "hover:shadow-[0_18px_44px_-16px_rgba(30,41,90,0.45)]";
+//
+// Values below follow the "Loom Spatial Glass" design system (Stitch project
+// 10698057029841821016): Frosted Glass Layer 1 for standard cards, Layer 2
+// for raised modals/flyouts. SHADOW_NEO_RAISED_LG is deliberately excluded
+// from this pass -  the sign-in page imports it directly and must stay
+// pixel-identical, so it keeps its pre-existing recipe below.
+export const SHADOW_GLASS = "shadow-[0_12px_32px_-4px_rgba(15,23,42,0.08),0_4px_12px_-2px_rgba(21,94,239,0.04),inset_0_1px_1px_0_rgba(255,255,255,0.90)]";
+export const SHADOW_GLASS_HOVER = "hover:shadow-[0_16px_40px_-6px_rgba(15,23,42,0.10),0_6px_16px_-2px_rgba(21,94,239,0.06),inset_0_1px_1px_0_rgba(255,255,255,0.90)]";
 export const SHADOW_PANEL =
-  "shadow-[0_30px_70px_-20px_rgba(30,41,90,0.45),0_8px_24px_-12px_rgba(30,41,90,0.25)]";
+  "shadow-[0_24px_48px_-12px_rgba(15,23,42,0.14),0_8px_24px_-4px_rgba(124,58,237,0.06),inset_0_2px_2px_0_rgba(255,255,255,1.0)]";
 export const SHADOW_BRAND = "shadow-[0_12px_30px_-8px_rgba(21,94,239,0.55)]";
 
 /** Standard frosted card surface. */
 export const GLASS_CARD =
-  "rounded-2xl border border-white/70 bg-white/80 backdrop-blur-xl " + SHADOW_GLASS;
+  "rounded-2xl border border-white/70 bg-white/80 backdrop-blur-[20px] backdrop-saturate-[1.8] " + SHADOW_GLASS;
 
 /** Frosted card surface + a genuine neomorphic dual shadow, replacing
- * SHADOW_GLASS rather than stacking with it — two `shadow-[...]` utilities on
+ * SHADOW_GLASS rather than stacking with it - two `shadow-[...]` utilities on
  * one element don't compose, only the one Tailwind's build ends up ordering
  * last actually wins, so this is one combined class instead of two. */
 export const GLASS_CARD_NEO =
-  "rounded-2xl border border-white/70 bg-white/80 backdrop-blur-xl " +
-  "shadow-[8px_8px_20px_-6px_rgba(30,41,90,0.18),-6px_-6px_16px_-8px_rgba(255,255,255,0.9)]";
+  "rounded-2xl border border-white/70 bg-white/80 backdrop-blur-[20px] backdrop-saturate-[1.8] " +
+  "shadow-[0_12px_32px_-4px_rgba(15,23,42,0.08),0_4px_12px_-2px_rgba(21,94,239,0.04),inset_0_1px_1px_0_rgba(255,255,255,0.90)]";
 
 // ---------------------------------------------------------------------------
 // Neomorphism + spatial UI layer
@@ -109,25 +115,26 @@ export const GLASS_CARD_NEO =
 // Soft-UI reads as depth via a *pair* of shadows around a surface that's the
 // same tone as its background: a dark one cast away from an implied light
 // source (top-left) and a light one catching it. Applied over the existing
-// glass surface rather than replacing it — the frosted panels stay, they just
+// glass surface rather than replacing it - the frosted panels stay, they just
 // gain a genuine sense of being pressed into or raised off the canvas.
 // ---------------------------------------------------------------------------
 
 /** Raised: the surface sits above the canvas, catching light top-left. */
 export const SHADOW_NEO_RAISED =
-  "shadow-[8px_8px_20px_-6px_rgba(30,41,90,0.18),-6px_-6px_16px_-8px_rgba(255,255,255,0.9)]";
-/** Raised, larger — for hero cards / the sign-in panel. */
+  "shadow-[0_12px_32px_-4px_rgba(15,23,42,0.08),0_4px_12px_-2px_rgba(21,94,239,0.04),inset_0_1px_1px_0_rgba(255,255,255,0.90)]";
+/** Raised, larger - for hero cards / the sign-in panel. Kept exactly as-is:
+ * the sign-in page imports this constant by name and must stay untouched. */
 export const SHADOW_NEO_RAISED_LG =
   "shadow-[16px_16px_40px_-12px_rgba(30,41,90,0.22),-10px_-10px_28px_-14px_rgba(255,255,255,0.95)]";
-/** Pressed: the surface sits below the canvas, like an inset button or field. */
-export const SHADOW_NEO_PRESSED =
-  "shadow-[inset_5px_5px_12px_-4px_rgba(30,41,90,0.16),inset_-4px_-4px_10px_-4px_rgba(255,255,255,0.9)]";
-/** Floating chip — a small pop, for pills and node badges. */
+/** Pressed: the surface sits below the canvas, like an inset button or field
+ * -  the "Inset Wells" recipe (table cells, search inputs, recessed fields). */
+export const SHADOW_NEO_PRESSED = "shadow-[inset_0_2px_4px_rgba(15,23,42,0.05)]";
+/** Floating chip - a small pop, for pills and node badges. */
 export const SHADOW_NEO_CHIP =
-  "shadow-[4px_4px_10px_-3px_rgba(30,41,90,0.20),-3px_-3px_8px_-3px_rgba(255,255,255,0.85)]";
+  "shadow-[0_4px_12px_-4px_rgba(15,23,42,0.10),0_2px_6px_-2px_rgba(21,94,239,0.06)]";
 
 /** Neomorphic surface: soft, same-tone, raised. Pair with SHADOW_NEO_RAISED or
- * apply directly — this bundles the surface colour + radius + shadow. */
+ * apply directly - this bundles the surface colour + radius + shadow. */
 export const NEO_SURFACE = `rounded-[1.75rem] border border-white/60 bg-[#EEF2FA] ${SHADOW_NEO_RAISED}`;
 
 /** Spatial backdrop: layered soft blobs with real parallax-y depth, deliberately
@@ -148,13 +155,13 @@ export const spatialBackground: CSSProperties = {
   backgroundAttachment: "fixed",
 };
 
-/** Stronger heading ramp — three warm-to-cool stops instead of two, for the
+/** Stronger heading ramp - three warm-to-cool stops instead of two, for the
  * bolder display type the spatial theme calls for. */
 export const headingGradientStrong: CSSProperties = {
   backgroundImage: "linear-gradient(105deg, #4338CA 0%, #7C3AED 40%, #DB2777 75%, #F97316 100%)",
 };
 
-/** Bubbly node fills for the Production Workflow Pipeline — rounder, punchier
+/** Bubbly node fills for the Production Workflow Pipeline - rounder, punchier
  * gradients than the flat status colours used elsewhere, since these circles
  * are the visual centrepiece of the dashboard rather than a status badge. */
 export const bubbleGradient = {

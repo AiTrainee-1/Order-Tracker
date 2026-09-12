@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
  * fixed destination (e.g. a list page); omit it to just pop browser history,
  * or pass `onClick` for in-page "back to list" behavior.
  *
- * A real button, not a bare text link — raised off the page with its own
+ * A real button, not a bare text link - raised off the page with its own
  * shadow and border, so it reads as a control you press rather than a piece
  * of body copy that happens to be clickable. */
 export function BackButton({

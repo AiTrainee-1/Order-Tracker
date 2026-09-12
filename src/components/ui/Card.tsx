@@ -3,7 +3,7 @@ import { GLASS_CARD_NEO } from "../../lib/theme";
 
 type CardProps = HTMLAttributes<HTMLDivElement>;
 
-/** Frosted, neomorphic panel — the glass tint from before, now paired with a
+/** Frosted, neomorphic panel - the glass tint from before, now paired with a
  * genuine dual light/dark shadow so it visibly lifts off the spatial
  * backdrop instead of just tinting it. Kept at 80% white so dense tables and
  * long numbers stay fully legible. */
