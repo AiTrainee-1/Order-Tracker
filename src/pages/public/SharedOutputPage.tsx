@@ -274,7 +274,7 @@ export function SharedOutputPage() {
 
   return (
     <div className="min-h-screen pb-10" style={spatialBackground}>
-      <div className="mx-auto max-w-5xl space-y-5 p-3 sm:space-y-6 sm:p-6">
+      <div className="space-y-5 p-4 sm:space-y-6 md:p-8">
         {/* --------------------------- Header card --------------------------- */}
         <div className="flex items-center gap-2 pt-2">
           <BrandMark size={22} />
