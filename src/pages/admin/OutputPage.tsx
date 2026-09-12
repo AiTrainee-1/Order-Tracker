@@ -31,6 +31,7 @@ import { Loader } from "../../components/ui/Loader";
 import { BackButton } from "../../components/ui/BackButton";
 import { StatCard } from "../../components/ui/StatCard";
 import { orderTrackingBasePath } from "../../lib/routing";
+import { ShareQrModal } from "../../components/output/ShareQrModal";
 
 /**
  * Production Output & Reports -  shared verbatim between /admin/output/:orderId
@@ -127,6 +128,7 @@ export function OutputPage() {
   const basePath = orderTrackingBasePath(useLocation().pathname);
   const { order, purchaseOrders, usersById, isLoading, isError } = useOrderDetail(orderId);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [showShareQr, setShowShareQr] = useState(false);
   const toast = useToast();
 
   // No PO-scope picker on this page -  always all POs combined.
@@ -262,6 +264,9 @@ export function OutputPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <BackButton to={`${basePath}/orders/${order.id}`} label="Back to Order" />
         <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="secondary" onClick={() => setShowShareQr(true)}>
+            Share QR
+          </Button>
           <Button size="sm" variant="secondary" onClick={() => download("csv")} isLoading={downloading === "csv"}>
             CSV
           </Button>
@@ -690,6 +695,8 @@ export function OutputPage() {
       <p className="pb-4 text-center text-xs text-ink-400">
         Report generated {formatDisplayDate(new Date().toISOString().slice(0, 10))} · every figure above is derived from the recorded entries.
       </p>
+
+      <ShareQrModal open={showShareQr} onClose={() => setShowShareQr(false)} order={order} />
     </div>
   );
 }

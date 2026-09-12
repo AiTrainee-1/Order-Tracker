@@ -5,6 +5,7 @@ import { AdminLayout } from "./components/layout/AdminLayout";
 import { UserLayout } from "./components/layout/UserLayout";
 import { MdLayout } from "./components/layout/MdLayout";
 import { LoginPage } from "./pages/LoginPage";
+import { SharedOutputPage } from "./pages/public/SharedOutputPage";
 import { DashboardPage } from "./pages/admin/DashboardPage";
 import { OrdersPage } from "./pages/admin/OrdersPage";
 import { CreateOrderAdminPage } from "./pages/admin/CreateOrderAdminPage";
@@ -31,6 +32,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/share/output/:orderId" element={<SharedOutputPage />} />
 
         <Route
           path="/admin"

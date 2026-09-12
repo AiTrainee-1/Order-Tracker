@@ -44,7 +44,8 @@ function localApiPlugin(): Plugin {
             }
           }
 
-          const vercelReq = Object.assign(req, { body: parsedBody, query: {} });
+          const query = Object.fromEntries(new URL(req.url, "http://localhost").searchParams);
+          const vercelReq = Object.assign(req, { body: parsedBody, query });
           const vercelRes = attachVercelHelpers(res);
 
           await handler(vercelReq, vercelRes);
