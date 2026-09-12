@@ -19,7 +19,6 @@ import { DataInputPage } from "./pages/user/DataInputPage";
 import { CreateOrderPage } from "./pages/user/CreateOrderPage";
 import { JobWorkPage } from "./pages/user/JobWorkPage";
 import { MdUsersPage } from "./pages/md/MdUsersPage";
-import { MdOutputPage } from "./pages/md/MdOutputPage";
 import { WorkflowMapPage } from "./pages/md/WorkflowMapPage";
 import { WorkflowMapStagePage } from "./pages/md/WorkflowMapStagePage";
 
@@ -76,7 +75,7 @@ export default function App() {
         >
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="orders/:orderId" element={<OrderDetailPage />} />
-          <Route path="output/:orderId" element={<MdOutputPage />} />
+          <Route path="output/:orderId" element={<OutputPage />} />
           <Route path="users" element={<MdUsersPage />} />
           <Route path="workflow-map" element={<WorkflowMapPage />} />
           <Route path="workflow-map/:orderId/:stageKey" element={<WorkflowMapStagePage />} />

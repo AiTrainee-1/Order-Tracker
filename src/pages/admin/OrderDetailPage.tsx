@@ -335,6 +335,7 @@ export function OrderDetailPage() {
                       nextStage={nextStage}
                       nextStageAssignees={nextStageAssignees}
                       nextStageAssigneesLoading={assignmentsQuery.isLoading}
+                      matrixActivity
                     />
                   </div>
                 </div>

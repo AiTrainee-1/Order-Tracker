@@ -35,6 +35,7 @@ export function StageDetailPanel({
   nextStageAssignees,
   nextStageAssigneesLoading,
   showAssignmentInfo = true,
+  matrixActivity = false,
 }: {
   orderId: string | undefined;
   stage: StageProgress;
@@ -46,6 +47,11 @@ export function StageDetailPanel({
   nextStageAssignees?: AppUser[];
   nextStageAssigneesLoading?: boolean;
   showAssignmentInfo?: boolean;
+  /** Renders Section Activity as a chessboard-style matrix table (matching
+   * the MD Output dashboard's Stage/Size Matrix) instead of the original
+   * card-per-record timeline. Both Admin and MD's OrderDetailPage pass this;
+   * default stays false so any other caller keeps the plain timeline. */
+  matrixActivity?: boolean;
 }) {
   // Corrections and requirement changes only exist in the audit log -  for Raw
   // Material Planning it is the ONLY per-entry record, since that stage writes
@@ -189,6 +195,7 @@ export function StageDetailPanel({
         chain={chain}
         auditRows={auditQuery.data ?? []}
         nameOf={nameOf}
+        matrix={matrixActivity}
       />
 
       {showAssignmentInfo && (
@@ -534,12 +541,14 @@ function ActivityTimeline({
   chain,
   auditRows,
   nameOf,
+  matrix = false,
 }: {
   stage: StageProgress;
   chainStage: ChainStage | null;
   chain: ProductionChain | null;
   auditRows: AuditLogRow[];
   nameOf: (id: string) => string;
+  matrix?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -561,11 +570,15 @@ function ActivityTimeline({
         </span>
       </div>
 
-      <div className="space-y-2">
-        {visible.map((e) => (
-          <ActivityRow key={e.id} event={e} nameOf={nameOf} />
-        ))}
-      </div>
+      {matrix ? (
+        <ActivityMatrixTable events={visible} nameOf={nameOf} />
+      ) : (
+        <div className="space-y-2">
+          {visible.map((e) => (
+            <ActivityRow key={e.id} event={e} nameOf={nameOf} />
+          ))}
+        </div>
+      )}
 
       {events.length > INITIAL_VISIBLE && (
         <div className="pt-2">
@@ -574,6 +587,103 @@ function ActivityTimeline({
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Checkerboard cell shading -  alternates by row AND column, matching the
+ * MD Output dashboard's Stage Matrix / Size Matrix tables. */
+function activityCellShade(rowIdx: number, colIdx: number): string {
+  return (rowIdx + colIdx) % 2 === 0 ? "bg-white" : "bg-slate-50";
+}
+
+const activityCellBase = "border border-ink-200 px-3 py-2 align-top text-sm";
+
+/**
+ * MD-only alternative to the ActivityRow timeline: the same events, in the
+ * same chessboard-grid format as Stage Matrix / Size Matrix on the MD Output
+ * dashboard -  one row per record, fixed columns, so the section's whole
+ * history reads as a dense table instead of a stack of cards.
+ */
+function ActivityMatrixTable({ events, nameOf }: { events: ActivityEvent[]; nameOf: (id: string) => string }) {
+  return (
+    <div className="overflow-x-auto rounded-xl border border-ink-200">
+      <table className="w-full min-w-[760px] text-sm">
+        <thead>
+          <tr className="bg-ink-900 text-[11px] uppercase tracking-wide text-white">
+            {["Date", "By", "Action", "Details", "Quantity", "Notes"].map((h) => (
+              <th key={h} className="border border-ink-800 px-3 py-2.5 text-left font-semibold">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {events.map((e, rowIdx) => {
+            const name = nameOf(e.userId);
+            return (
+              <tr key={e.id}>
+                <td className={`${activityCellBase} whitespace-nowrap font-mono text-ink-700 ${activityCellShade(rowIdx, 0)}`}>
+                  {formatDisplayDate(e.date)}
+                </td>
+                <td className={`${activityCellBase} ${activityCellShade(rowIdx, 1)}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-[10px] font-bold text-white">
+                      {name.charAt(0).toUpperCase()}
+                    </span>
+                    <span className="font-medium text-ink-900">{name}</span>
+                  </div>
+                </td>
+                <td className={`${activityCellBase} ${activityCellShade(rowIdx, 2)}`}>
+                  <Badge tone={e.tone}>{e.action}</Badge>
+                </td>
+                <td className={`${activityCellBase} text-ink-600 ${activityCellShade(rowIdx, 3)}`}>
+                  {e.chips.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {e.chips.map((c) => (
+                        <span key={`${c.label}-${c.value}`} className="rounded bg-ink-50 px-1.5 py-0.5 text-[11px]">
+                          <span className="text-ink-400">{c.label}:</span> <b>{c.value}</b>
+                        </span>
+                      ))}
+                    </div>
+                  ) : e.summary ? (
+                    <span className="text-xs">{e.summary}</span>
+                  ) : (
+                    "- "
+                  )}
+                </td>
+                <td className={`${activityCellBase} font-mono tabular-nums ${activityCellShade(rowIdx, 4)}`}>
+                  {e.metrics.length > 0 ? (
+                    <div className="space-y-0.5">
+                      {e.metrics.map((m) => (
+                        <div
+                          key={m.label}
+                          className={
+                            m.tone === "good"
+                              ? "text-status-good"
+                              : m.tone === "bad"
+                                ? "text-status-bad"
+                                : m.tone === "warn"
+                                  ? "text-amber-600"
+                                  : "text-ink-900"
+                          }
+                        >
+                          {m.label}: <b>{m.value.toLocaleString()}</b> {m.unit}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    "- "
+                  )}
+                </td>
+                <td className={`${activityCellBase} text-ink-500 ${activityCellShade(rowIdx, 5)}`}>
+                  {e.notes ? <span className="text-xs italic">"{e.notes}"</span> : "- "}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

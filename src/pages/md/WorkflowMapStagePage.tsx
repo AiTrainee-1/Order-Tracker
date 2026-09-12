@@ -82,6 +82,7 @@ export function WorkflowMapStagePage() {
             nameOf={nameOf}
             usersById={usersById}
             showAssignmentInfo={false}
+            matrixActivity
           />
         </CardBody>
       </Card>

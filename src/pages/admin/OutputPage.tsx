@@ -4,13 +4,13 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   ComposedChart,
   LabelList,
   Legend,
   Line,
-  Pie,
-  PieChart,
+  PolarAngleAxis,
+  RadialBar,
+  RadialBarChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -19,30 +19,29 @@ import {
 } from "recharts";
 import { useToast } from "../../context/ToastContext";
 import { useOrderDetail } from "../../hooks/useOrderDetail";
-import { useProductionChain, useAuditLog } from "../../hooks/useProductionChain";
+import { useProductionChain } from "../../hooks/useProductionChain";
 import { buildLotJourney, buildOutputSummary, buildSizeOutput, STAGE } from "../../lib/chain";
 import { exportCsv, exportExcel, exportPdf } from "../../lib/reportExport";
+import { buildJobWorkComparisonRows } from "../../lib/mdOutputReport";
 import { formatDisplayDate } from "../../lib/workflow";
 import { Card, CardBody, CardHeader } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Loader } from "../../components/ui/Loader";
-import { FilterTabs } from "../../components/ui/FilterTabs";
 import { BackButton } from "../../components/ui/BackButton";
+import { StatCard } from "../../components/ui/StatCard";
 import { orderTrackingBasePath } from "../../lib/routing";
-import { iconGradient, type IconTone } from "../../lib/theme";
 
 /**
- * OUTPUT -  the whole order in one place.
- *
- * Everything here is derived, nothing is entered. It answers the two questions
- * the floor and the office actually argue about: how much did we ship against
- * what was ordered, and where did the rest go. Because every figure traces back
- * to a specific entry by a specific person, "where did it go" has an answer
- * rather than an estimate.
+ * Production Output & Reports -  shared verbatim between /admin/output/:orderId
+ * and /md/output/:orderId (same component, same everything, per the pattern
+ * every other order-tracking page in this app already follows -  see
+ * src/lib/routing.ts). A KPI card row (the procurement chain's own
+ * stage-owned figures, plus each production stage's real output), a "Power
+ * BI style" dynamic panel, chessboard-style Stage/Size matrix tables, and the
+ * fabric/garment trend charts, the production funnel, and lot traceability
+ * below them.
  */
-
-const ALL_POS = "all";
 
 const CHART_BLUE = "#155EEF";
 const CHART_BLUE_LIGHT = "#7CA6FF";
@@ -51,30 +50,25 @@ const CHART_GREEN_LIGHT = "#6EE7B7";
 const CHART_RED = "#F04438";
 const CHART_AMBER = "#F79009";
 const CHART_SLATE = "#CBD5E1";
+const CHART_VIOLET = "#7C3AED";
 
-/** Axis ticks in the tens of thousands are unreadable at 11px -  28,943 becomes
- * 28.9k and the axis stops fighting the bars for space. */
+/** The PCS production stages the "against total order qty" comparisons use -
+ * Knitting/Dyeing stay KPI-row-only since KG stages have no order-qty
+ * baseline to compare against. */
+const PCS_PRODUCTION_STAGES: string[] = [STAGE.cutting, STAGE.sewing, STAGE.checking, STAGE.ironing, STAGE.packing];
+
 function compactNumber(n: number): string {
   if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1)}k`;
   return String(n);
 }
 
-/** Yield banding. A garment line losing 5% at one stage is a real problem, so
- * the thresholds are deliberately tight rather than a generic red/amber/green
- * spread across the whole 0-100 range. */
 function yieldColor(pct: number): string {
   if (pct >= 98) return CHART_GREEN;
   if (pct >= 95) return CHART_AMBER;
   return CHART_RED;
 }
 
-/**
- * Tooltip for a chart where a Bar and a Line share the same dataKey -  the
- * bar carries the reading, the line carries the trend across stages, and
- * both are the same number. Recharts renders one tooltip row per graphical
- * component regardless, so without this every value would print twice.
- */
 function comboTooltip(unit: string) {
   return function ComboTooltip({ active, payload, label }: TooltipProps<number, string>) {
     if (!active || !payload?.length) return null;
@@ -98,12 +92,6 @@ function comboTooltip(unit: string) {
   };
 }
 
-/**
- * A stage's name, printed vertically inside its own bar rather than only on
- * the (small, rotated) axis label below it -  the bar a figure belongs to
- * should be readable without tracing a line down to the axis. Skipped for a
- * bar too short to hold the text without spilling out the top or clipping.
- */
 function RotatedBarLabel(props: {
   x?: string | number;
   y?: string | number;
@@ -120,56 +108,47 @@ function RotatedBarLabel(props: {
   const cx = x + width / 2 + 4;
   const cy = y + height - 10;
   return (
-    <text
-      x={cx}
-      y={cy}
-      textAnchor="start"
-      fill="#fff"
-      fontSize={11}
-      fontWeight={600}
-      transform={`rotate(-90, ${cx}, ${cy})`}
-    >
+    <text x={cx} y={cy} textAnchor="start" fill="#fff" fontSize={11} fontWeight={600} transform={`rotate(-90, ${cx}, ${cy})`}>
       {value}
     </text>
   );
 }
 
+/** Checkerboard cell shading -  alternates both by row AND by column. */
+function cellShade(rowIdx: number, colIdx: number): string {
+  return (rowIdx + colIdx) % 2 === 0 ? "bg-white" : "bg-slate-50";
+}
+
+const cellBase = "border border-ink-200 px-3 py-2 text-sm";
+const cellNum = `${cellBase} text-right font-mono tabular-nums`;
+
 export function OutputPage() {
   const { orderId } = useParams<{ orderId: string }>();
   const basePath = orderTrackingBasePath(useLocation().pathname);
   const { order, purchaseOrders, usersById, isLoading, isError } = useOrderDetail(orderId);
-  const [poScope, setPoScope] = useState<string>(ALL_POS);
   const [downloading, setDownloading] = useState<string | null>(null);
-  /** Which half of the line the stage-flow chart is showing. KG and PCS cannot
-   * share a Y axis without hiding one of them -  see flowRowsFor. */
-  const [unitScope, setUnitScope] = useState<"KG" | "PCS">("PCS");
   const toast = useToast();
 
-  const selectedPo = poScope === ALL_POS ? null : purchaseOrders.find((p) => p.id === poScope) ?? null;
+  // No PO-scope picker on this page -  always all POs combined.
+  const selectedPo = null;
   const { chain, isLoading: chainLoading } = useProductionChain({
     orderId,
     purchaseOrders,
-    poId: selectedPo?.id ?? null,
+    poId: null,
   });
-  const auditQuery = useAuditLog(orderId);
 
   const summary = useMemo(() => (chain ? buildOutputSummary(chain) : null), [chain]);
   const sizeRows = useMemo(() => (chain ? buildSizeOutput(chain) : []), [chain]);
-  const lotJourneys = useMemo(
-    () => (chain ? chain.lots.map((l) => buildLotJourney(l, chain)) : []),
-    [chain],
-  );
+  const lotJourneys = useMemo(() => (chain ? chain.lots.map((l) => buildLotJourney(l, chain)) : []), [chain]);
+  const jobWorkRows = useMemo(() => (chain ? buildJobWorkComparisonRows(chain) : []), [chain]);
 
-  if (isLoading || chainLoading) return <Loader full label="Building the production summary…" />;
+  if (isLoading || chainLoading) return <Loader full label="Building the production dashboard…" />;
   if (isError || !order || !chain || !summary) {
     return <p className="text-sm text-status-bad">Couldn't load this order's output.</p>;
   }
 
   const ctx = { order, po: selectedPo, chain, usersById };
 
-  /** The export libraries are fetched on demand, so a download can take a
-   * moment on a slow connection -  the button reports that rather than looking
-   * like it did nothing. */
   async function download(kind: "csv" | "pdf" | "excel") {
     setDownloading(kind);
     try {
@@ -183,107 +162,95 @@ export function OutputPage() {
     }
   }
 
-  /**
-   * The stage flow, SPLIT BY UNIT.
-   *
-   * A single chart cannot honestly hold both: the fabric stages run in
-   * hundreds of KG while the garment stages run in tens of thousands of
-   * pieces, so on one linear axis every KG stage collapses to a flat line at
-   * zero. Two charts on their own scales is the only way both halves are
-   * actually readable.
-   */
-  const flowRowsFor = (unit: "KG" | "PCS") =>
-    summary.rows
-      .filter((r) => r.unit === unit)
-      .map((r) => ({
-        name: r.label.replace(/ \(.*\)/, ""),
-        Input: r.input,
-        Output: r.output,
-        Shortage: r.shortage,
-        Efficiency: r.efficiencyPct,
-        unit: r.unit,
-      }));
+  // --------------------------- KPI row figures ------------------------------
+  // In real project stage order (sequence_no), not grouped by procurement vs
+  // production -  same order the workflow itself runs in.
+  const orderConfirmationPcs = chain.byKey.get(STAGE.orderConfirmation)?.output ?? chain.totalPcs;
+  const planKg = chain.byKey.get(STAGE.rawMaterialPlanning)?.output ?? 0;
+  const receivedKg = chain.byKey.get(STAGE.rawMaterialInward)?.output ?? 0;
+  const knittingKg = chain.byKey.get(STAGE.knitting)?.output ?? 0;
+  const dyeingKg = chain.byKey.get(STAGE.dyeing)?.output ?? 0;
+  const cuttingPcs = chain.byKey.get(STAGE.cutting)?.output ?? 0;
+  const stitchingPcs = chain.byKey.get(STAGE.sewing)?.output ?? 0;
+  const checkingPcs = chain.byKey.get(STAGE.checking)?.output ?? 0;
+  const ironingPcs = chain.byKey.get(STAGE.ironing)?.output ?? 0;
+  const packingPcs = chain.byKey.get(STAGE.packing)?.output ?? 0;
 
-  const kgRows = flowRowsFor("KG");
-  const pcsRows = flowRowsFor("PCS");
-  const flowRows = unitScope === "KG" ? kgRows : pcsRows;
+  // ---------------------- "Power BI" panel data sets -------------------------
+  const biRows = PCS_PRODUCTION_STAGES.map((key) => {
+    const cs = chain.byKey.get(key);
+    const jw = jobWorkRows.find((r) => r.stageKey === key);
+    return {
+      name: cs?.stage.label.replace(/ \(.*\)/, "") ?? key,
+      "In-House": jw?.inHouse ?? 0,
+      "Job Work": jw?.jobWork ?? 0,
+      Balance: cs?.balance ?? 0,
+      "Order Qty": chain.totalPcs,
+      efficiencyPct: cs && cs.input > 0 ? Math.round((cs.output / cs.input) * 1000) / 10 : null,
+    };
+  });
+  const overallGaugeData = [
+    { name: "Completion", value: summary.overallEfficiencyPct ?? 0, fill: CHART_BLUE },
+  ];
 
-  /** Worst yield first -  the stage to go and ask about. */
-  const efficiencyRows = summary.rows
-    .filter((r) => r.efficiencyPct != null && r.input > 0)
-    .map((r) => ({
-      name: r.label.replace(/ \(.*\)/, ""),
-      efficiency: r.efficiencyPct as number,
-      unit: r.unit,
-      lost: r.shortage + r.rejected,
-    }))
-    .sort((a, b) => a.efficiency - b.efficiency);
+  // ------------------------- Stage matrix (chessboard) -----------------------
+  const stageMatrixRows = jobWorkRows.map((r) => {
+    const cs = chain.byKey.get(r.stageKey)!;
+    return {
+      ...r,
+      input: cs.input,
+      rejected: cs.rejected,
+      balance: cs.balance,
+      efficiencyPct: cs.input > 0 ? Math.round((cs.output / cs.input) * 1000) / 10 : null,
+    };
+  });
 
-  /**
-   * Job Work -  externally-manufactured quantities, logged as real
-   * production_txns rows tagged is_job_work: true (migration 024). They are
-   * ALREADY summed into every figure above (summary.packedPcs, sizeRows,
-   * chain.byKey.*.output) exactly like any in-house entry, since chain.ts has
-   * no idea the flag exists. Nothing here recomputes or combines anything -
-   * this block only picks the job-work-tagged rows back OUT of what's
-   * already loaded, purely to show where the totals came from.
-   */
-  const jobWorkPackedPcs = (chain.byKey.get(STAGE.packing)?.txns ?? [])
-    .filter((t) => t.is_job_work)
-    .reduce((total, t) => total + t.qty_out, 0);
+  /** PCS total only -  KG and PCS stages can't be added into one figure, and
+   * PCS (garment count) is the one that matters here. */
+  const sumStageCol = (rows: typeof stageMatrixRows, pick: (r: (typeof stageMatrixRows)[number]) => number) =>
+    rows.reduce((total, r) => total + pick(r), 0);
+  const stageMatrixTotals = (["PCS"] as const).map((unit) => {
+    const rows = stageMatrixRows.filter((r) => r.unit === unit);
+    if (rows.length === 0) return null;
+    const input = sumStageCol(rows, (r) => r.input);
+    const total = sumStageCol(rows, (r) => r.total);
+    return {
+      unit,
+      input,
+      inHouse: sumStageCol(rows, (r) => r.inHouse),
+      jobWork: sumStageCol(rows, (r) => r.jobWork),
+      total,
+      rejected: sumStageCol(rows, (r) => r.rejected),
+      balance: sumStageCol(rows, (r) => r.balance),
+      efficiencyPct: input > 0 ? Math.round((total / input) * 1000) / 10 : null,
+    };
+  }).filter((t): t is NonNullable<typeof t> => t !== null);
 
-  /** Job Work's own totals, per stage -  full transparency on what's already
-   * folded into that stage's real output above. */
-  const jobWorkRows = chain.stages
-    .map((cs) => ({
-      key: cs.stage.key,
-      label: cs.stage.label,
-      unit: cs.unit,
-      qty: cs.txns.filter((t) => t.is_job_work).reduce((total, t) => total + (t.qty_out || t.qty_in), 0),
-    }))
-    .filter((r) => r.qty > 0);
+  const sizeMatrixTotals = {
+    ordered: sizeRows.reduce((s, r) => s + r.ordered, 0),
+    cut: sizeRows.reduce((s, r) => s + r.cut, 0),
+    sewn: sizeRows.every((r) => r.sewn == null) ? null : sizeRows.reduce((s, r) => s + (r.sewn ?? 0), 0),
+    packed: sizeRows.every((r) => r.packed == null) ? null : sizeRows.reduce((s, r) => s + (r.packed ?? 0), 0),
+    balance: sizeRows.every((r) => r.balance == null) ? null : sizeRows.reduce((s, r) => s + (r.balance ?? 0), 0),
+  };
 
-  /** The pipeline narrowing, in pieces -  the headline "how far has it got". */
   const sewnPcs = chain.byKey.get(STAGE.sewing)?.output ?? 0;
   const funnelSteps = [
     { label: "Ordered", value: summary.orderedPcs, color: CHART_BLUE },
-    { label: "Cut", value: summary.cutPcs, color: "#7C3AED" },
+    { label: "Cut", value: summary.cutPcs, color: CHART_VIOLET },
     { label: "Sewn", value: sewnPcs, color: CHART_AMBER },
     { label: "Packed", value: summary.packedPcs, color: CHART_GREEN },
   ];
 
   const lotChartRows = lotJourneys
-    .map((j) => ({
-      name: j.lot.lot_no,
-      Loss: j.totalLoss,
-      Output: j.steps[j.steps.length - 1]?.qtyOut ?? 0,
-    }))
+    .map((j) => ({ name: j.lot.lot_no, Loss: j.totalLoss, Output: j.steps[j.steps.length - 1]?.qtyOut ?? 0 }))
     .slice(0, 20);
 
-  /**
-   * Fabric flow trend, Order Confirmation → Fabric Store, in KG.
-   *
-   * Reads chain.stages directly rather than summary.rows -  buildOutputSummary
-   * filters to a curated loss-analysis subset (OUTPUT_STAGE_KEYS) that skips
-   * PO to Suppliers, Raw Material Inward and Fabric Store entirely, and this
-   * chart's whole point is showing a mismatch ANYWHERE in the chain, including
-   * those. Order Confirmation itself is PCS, not KG, so it has no send/receive
-   * figure of its own; the line simply starts at the first KG stage after it.
-   */
   const fabricStoreSeq = chain.byKey.get(STAGE.fabricStore)?.stage.sequence_no ?? Infinity;
   const kgTrendRows = chain.stages
     .filter((cs) => cs.unit === "KG" && cs.stage.sequence_no <= fabricStoreSeq)
     .map((cs) => ({ name: cs.stage.label, Send: cs.input, Receive: cs.output }));
 
-  /**
-   * Order/Excess vs Output trend, Cutting → Packing, in PCS.
-   *
-   * "Order/Excess Qty" is chain.totalPcs held flat across every stage -  the
-   * same ordered-pieces baseline (PO quantity plus the extra % margin) shown
-   * elsewhere on this page as summary.orderedPcs -  plotted against what each
-   * stage actually output, so the stage where the line first dips below the
-   * order is visible at a glance.
-   */
   const cuttingSeq = chain.byKey.get(STAGE.cutting)?.stage.sequence_no ?? 0;
   const packingSeq = chain.byKey.get(STAGE.packing)?.stage.sequence_no ?? Infinity;
   const pcsTrendRows = chain.stages
@@ -310,28 +277,220 @@ export function OutputPage() {
       <div>
         <h1 className="text-xl font-bold tracking-tight text-ink-900">Production Output</h1>
         <p className="text-sm text-ink-500">
-          {order.style} · IO {order.io_no} · {selectedPo ? `PO ${selectedPo.po_number}` : "all POs combined"}
+          {order.style} · IO {order.io_no} · all POs combined
         </p>
       </div>
 
-      {/* ------------------------- Fabric flow trend (KG) ------------------------- */}
+      {/* ============================= KPI ROW ============================= */}
+      <Card>
+        <CardHeader title="Order Details — Key Figures" subtitle="Every stage's real recorded quantity, in one row." />
+        <CardBody>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
+            <KpiTile label="Order Confirmation" value={orderConfirmationPcs} unit="PCS" tone="shortage" />
+            <KpiTile label="Raw Material Planning" value={planKg} unit="KG" tone="brand" />
+            <KpiTile label="Raw Material Inward" value={receivedKg} unit="KG" tone="good" />
+            <KpiTile label="Knitting" value={knittingKg} unit="KG" tone="brand" />
+            <KpiTile label="Dyeing" value={dyeingKg} unit="KG" tone="shortage" />
+            <KpiTile label="Cutting" value={cuttingPcs} unit="PCS" tone="warn" />
+            <KpiTile label="Sewing (Stitching)" value={stitchingPcs} unit="PCS" tone="warn" />
+            <KpiTile label="Checking" value={checkingPcs} unit="PCS" tone="neutral" />
+            <KpiTile label="Ironing" value={ironingPcs} unit="PCS" tone="neutral" />
+            <KpiTile label="Packing" value={packingPcs} unit="PCS" tone="good" />
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* ========================= POWER BI PANEL =========================== */}
+      <Card>
+        <CardHeader
+          title="Dynamic Dashboard"
+          subtitle="Completion gauge, stage efficiency snapshot, and in-house vs job-work vs balance across the garment line."
+        />
+        <CardBody className="space-y-6">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[240px_1fr]">
+            <div className="relative mx-auto h-48 w-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <RadialBarChart
+                  data={overallGaugeData}
+                  innerRadius="75%"
+                  outerRadius="100%"
+                  startAngle={90}
+                  endAngle={-270}
+                  barSize={16}
+                >
+                  <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+                  <RadialBar dataKey="value" cornerRadius={8} fill={CHART_BLUE} background={{ fill: "#EEF2FA" }} />
+                </RadialBarChart>
+              </ResponsiveContainer>
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                <p className="text-3xl font-extrabold tabular-nums text-ink-900">
+                  {summary.overallEfficiencyPct != null ? `${summary.overallEfficiencyPct}%` : "- "}
+                </p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">Overall Completion</p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">Stage Efficiency Snapshot</p>
+              {biRows.map((r) => (
+                <div key={r.name} className="flex items-center gap-3">
+                  <span className="w-24 shrink-0 truncate text-xs font-medium text-ink-700">{r.name}</span>
+                  <div className="h-3 flex-1 overflow-hidden rounded-full bg-ink-100">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${Math.min(Math.max(r.efficiencyPct ?? 0, 0), 100)}%`,
+                        backgroundColor: yieldColor(r.efficiencyPct ?? 0),
+                      }}
+                    />
+                  </div>
+                  <span className="w-12 shrink-0 text-right text-xs font-bold tabular-nums" style={{ color: yieldColor(r.efficiencyPct ?? 0) }}>
+                    {r.efficiencyPct != null ? `${r.efficiencyPct}%` : "- "}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="h-80 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={biRows} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#EAECF0" vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#667085" }} />
+                <YAxis tick={{ fontSize: 11, fill: "#667085" }} tickFormatter={(v: number) => compactNumber(v)} />
+                <Tooltip formatter={(value: number, key: string) => [`${value.toLocaleString()} PCS`, key]} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="Order Qty" fill={CHART_SLATE} radius={[4, 4, 0, 0]} maxBarSize={30} />
+                <Bar dataKey="In-House" fill={CHART_BLUE} radius={[4, 4, 0, 0]} maxBarSize={30} />
+                <Bar dataKey="Job Work" fill={CHART_AMBER} radius={[4, 4, 0, 0]} maxBarSize={30} />
+                <Bar dataKey="Balance" fill={CHART_RED} radius={[4, 4, 0, 0]} maxBarSize={30} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* ===================== CHESSBOARD MATRIX TABLES ====================== */}
+      <Card>
+        <CardHeader
+          title="Stage Matrix"
+          subtitle="Every production stage, in-house vs job work, in one grid — replaces the plain stage-by-stage table."
+        />
+        <CardBody>
+          <div className="overflow-x-auto rounded-xl border border-ink-200">
+            <table className="w-full min-w-[860px] text-sm">
+              <thead>
+                <tr className="bg-ink-900 text-[11px] uppercase tracking-wide text-white">
+                  {["Stage", "Unit", "Input", "In-House", "Job Work", "Total Output", "Rejected", "Balance", "Efficiency"].map((h) => (
+                    <th key={h} className="border border-ink-800 px-3 py-2.5 text-right font-semibold first:text-left">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {stageMatrixRows.map((r, rowIdx) => (
+                  <tr key={r.stageKey}>
+                    <td className={`${cellBase} font-semibold text-ink-900 ${cellShade(rowIdx, 0)}`}>{r.stageLabel}</td>
+                    <td className={`${cellNum} ${cellShade(rowIdx, 1)}`}>
+                      <Badge tone={r.unit === "KG" ? "neutral" : "brand"}>{r.unit}</Badge>
+                    </td>
+                    <td className={`${cellNum} ${cellShade(rowIdx, 2)}`}>{r.input.toLocaleString()}</td>
+                    <td className={`${cellNum} text-blue-700 ${cellShade(rowIdx, 3)}`}>{r.inHouse.toLocaleString()}</td>
+                    <td className={`${cellNum} text-amber-700 ${cellShade(rowIdx, 4)}`}>{r.jobWork.toLocaleString()}</td>
+                    <td className={`${cellNum} font-semibold text-status-good ${cellShade(rowIdx, 5)}`}>{r.total.toLocaleString()}</td>
+                    <td className={`${cellNum} text-status-bad ${cellShade(rowIdx, 6)}`}>{r.rejected ? r.rejected.toLocaleString() : "- "}</td>
+                    <td className={`${cellNum} ${r.balance > 0 ? "text-amber-600" : "text-ink-400"} ${cellShade(rowIdx, 7)}`}>
+                      {r.balance ? r.balance.toLocaleString() : "- "}
+                    </td>
+                    <td className={`${cellNum} ${cellShade(rowIdx, 8)}`}>{r.efficiencyPct != null ? `${r.efficiencyPct}%` : "- "}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                {stageMatrixTotals.map((t) => (
+                  <tr key={t.unit} className="bg-gradient-to-r from-blue-100 via-indigo-50 to-blue-100 font-bold">
+                    <td className={`${cellBase} border-l-4 border-l-blue-600 text-blue-900`}>Total ({t.unit})</td>
+                    <td className={cellNum}>
+                      <Badge tone="brand">{t.unit}</Badge>
+                    </td>
+                    <td className={`${cellNum} text-blue-900`}>{t.input.toLocaleString()}</td>
+                    <td className={`${cellNum} text-blue-700`}>{t.inHouse.toLocaleString()}</td>
+                    <td className={`${cellNum} text-amber-700`}>{t.jobWork.toLocaleString()}</td>
+                    <td className={`${cellNum} text-emerald-700`}>{t.total.toLocaleString()}</td>
+                    <td className={`${cellNum} text-status-bad`}>{t.rejected ? t.rejected.toLocaleString() : "- "}</td>
+                    <td className={`${cellNum} ${t.balance > 0 ? "text-amber-700" : "text-ink-400"}`}>
+                      {t.balance ? t.balance.toLocaleString() : "- "}
+                    </td>
+                    <td className={`${cellNum} text-blue-900`}>{t.efficiencyPct != null ? `${t.efficiencyPct}%` : "- "}</td>
+                  </tr>
+                ))}
+              </tfoot>
+            </table>
+          </div>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader title="Size Matrix" subtitle="Ordered → cut → sewn → packed, per size — replaces the plain size-wise table." />
+        <CardBody>
+          <div className="overflow-x-auto rounded-xl border border-ink-200">
+            <table className="w-full min-w-[520px] text-sm">
+              <thead>
+                <tr className="bg-ink-900 text-[11px] uppercase tracking-wide text-white">
+                  {["Size", "Ordered", "Cut", "Sewn", "Packed", "Balance"].map((h) => (
+                    <th key={h} className="border border-ink-800 px-3 py-2.5 text-right font-semibold first:text-left">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sizeRows.map((s, rowIdx) => (
+                  <tr key={s.sizeCode}>
+                    <td className={`${cellBase} font-semibold text-ink-900 ${cellShade(rowIdx, 0)}`}>{s.sizeCode}</td>
+                    <td className={`${cellNum} ${cellShade(rowIdx, 1)}`}>{s.ordered.toLocaleString()}</td>
+                    <td className={`${cellNum} ${cellShade(rowIdx, 2)}`}>{s.cut.toLocaleString()}</td>
+                    <td className={`${cellNum} ${cellShade(rowIdx, 3)}`}>{s.sewn == null ? "- " : s.sewn.toLocaleString()}</td>
+                    <td className={`${cellNum} text-status-good ${cellShade(rowIdx, 4)}`}>{s.packed == null ? "- " : s.packed.toLocaleString()}</td>
+                    <td className={`${cellNum} ${s.balance == null ? "" : s.balance > 0 ? "text-amber-600" : "text-status-good"} ${cellShade(rowIdx, 5)}`}>
+                      {s.balance == null ? "- " : s.balance.toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-gradient-to-r from-blue-100 via-indigo-50 to-blue-100 font-bold">
+                  <td className={`${cellBase} border-l-4 border-l-blue-600 text-blue-900`}>Total</td>
+                  <td className={`${cellNum} text-blue-900`}>{sizeMatrixTotals.ordered.toLocaleString()}</td>
+                  <td className={`${cellNum} text-blue-900`}>{sizeMatrixTotals.cut.toLocaleString()}</td>
+                  <td className={`${cellNum} text-blue-900`}>{sizeMatrixTotals.sewn == null ? "- " : sizeMatrixTotals.sewn.toLocaleString()}</td>
+                  <td className={`${cellNum} text-emerald-700`}>
+                    {sizeMatrixTotals.packed == null ? "- " : sizeMatrixTotals.packed.toLocaleString()}
+                  </td>
+                  <td className={`${cellNum} ${sizeMatrixTotals.balance ? "text-amber-700" : "text-ink-400"}`}>
+                    {sizeMatrixTotals.balance == null ? "- " : sizeMatrixTotals.balance.toLocaleString()}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* ===================== EXISTING CHARTS (kept, moved down) =========== */}
       <Card>
         <CardHeader
           title="Fabric Flow Trend: Send vs Receive (KG)"
-          subtitle="Order Confirmation → Fabric Store. What each stage sent on against what came back, stage by stage -  a gap between the two lines is where a section's numbers stop carrying through to the next."
+          subtitle="Order Confirmation → Fabric Store. What each stage sent on against what came back, stage by stage."
         />
         <CardBody className="p-2 sm:p-3">
           {kgTrendRows.length === 0 ? (
             <p className="py-10 text-center text-sm text-ink-400">Nothing recorded yet for the fabric stages.</p>
           ) : (
-            <div className="h-[32rem] w-full">
+            <div className="h-[28rem] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart
-                  data={kgTrendRows}
-                  margin={{ top: 28, right: 16, left: -8, bottom: 8 }}
-                  barCategoryGap="16%"
-                  barGap={4}
-                >
+                <ComposedChart data={kgTrendRows} margin={{ top: 28, right: 16, left: -8, bottom: 8 }} barCategoryGap="16%" barGap={4}>
                   <defs>
                     <linearGradient id="gradKgSend" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor={CHART_BLUE_LIGHT} />
@@ -343,56 +502,19 @@ export function OutputPage() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#EAECF0" vertical={false} />
-                  <XAxis
-                    dataKey="name"
-                    angle={-35}
-                    textAnchor="end"
-                    interval={0}
-                    height={72}
-                    tick={{ fontSize: 11, fill: "#667085" }}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 12, fill: "#667085" }}
-                    tickFormatter={(v: number) => compactNumber(v)}
-                    width={52}
-                  />
+                  <XAxis dataKey="name" angle={-35} textAnchor="end" interval={0} height={72} tick={{ fontSize: 11, fill: "#667085" }} />
+                  <YAxis tick={{ fontSize: 12, fill: "#667085" }} tickFormatter={(v: number) => compactNumber(v)} width={52} />
                   <Tooltip content={comboTooltip("KG")} />
                   <Legend wrapperStyle={{ fontSize: 13, fontWeight: 600, paddingTop: 8 }} iconType="circle" />
                   <Bar dataKey="Send" fill="url(#gradKgSend)" radius={[6, 6, 0, 0]} maxBarSize={52}>
                     <LabelList dataKey="name" content={RotatedBarLabel} />
-                    <LabelList
-                      dataKey="Send"
-                      position="top"
-                      formatter={(v: number) => compactNumber(v)}
-                      style={{ fontSize: 10, fontWeight: 600, fill: CHART_BLUE }}
-                    />
+                    <LabelList dataKey="Send" position="top" formatter={(v: number) => compactNumber(v)} style={{ fontSize: 10, fontWeight: 600, fill: CHART_BLUE }} />
                   </Bar>
                   <Bar dataKey="Receive" fill="url(#gradKgReceive)" radius={[6, 6, 0, 0]} maxBarSize={52}>
-                    <LabelList
-                      dataKey="Receive"
-                      position="top"
-                      formatter={(v: number) => compactNumber(v)}
-                      style={{ fontSize: 10, fontWeight: 600, fill: CHART_GREEN }}
-                    />
+                    <LabelList dataKey="Receive" position="top" formatter={(v: number) => compactNumber(v)} style={{ fontSize: 10, fontWeight: 600, fill: CHART_GREEN }} />
                   </Bar>
-                  <Line
-                    type="monotone"
-                    dataKey="Send"
-                    stroke={CHART_BLUE}
-                    strokeWidth={2.5}
-                    dot={{ r: 4, fill: CHART_BLUE, stroke: "#fff", strokeWidth: 1.5 }}
-                    activeDot={{ r: 6 }}
-                    legendType="none"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="Receive"
-                    stroke={CHART_GREEN}
-                    strokeWidth={2.5}
-                    dot={{ r: 4, fill: CHART_GREEN, stroke: "#fff", strokeWidth: 1.5 }}
-                    activeDot={{ r: 6 }}
-                    legendType="none"
-                  />
+                  <Line type="monotone" dataKey="Send" stroke={CHART_BLUE} strokeWidth={2.5} dot={{ r: 4, fill: CHART_BLUE, stroke: "#fff", strokeWidth: 1.5 }} activeDot={{ r: 6 }} legendType="none" />
+                  <Line type="monotone" dataKey="Receive" stroke={CHART_GREEN} strokeWidth={2.5} dot={{ r: 4, fill: CHART_GREEN, stroke: "#fff", strokeWidth: 1.5 }} activeDot={{ r: 6 }} legendType="none" />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -400,24 +522,18 @@ export function OutputPage() {
         </CardBody>
       </Card>
 
-      {/* ------------------------- Garment output trend (PCS) ------------------------- */}
       <Card>
         <CardHeader
           title="Cutting → Packing Trend: Order/Excess vs Output (PCS)"
-          subtitle="The order's quantity, including the extra % margin, held flat against what each stage actually turned out -  the stage where the line first dips below it is where pieces are being lost."
+          subtitle="The order's quantity, including the extra % margin, held flat against what each stage actually turned out."
         />
         <CardBody className="p-2 sm:p-3">
           {pcsTrendRows.length === 0 ? (
             <p className="py-10 text-center text-sm text-ink-400">Nothing recorded yet for the garment stages.</p>
           ) : (
-            <div className="h-[32rem] w-full">
+            <div className="h-[28rem] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart
-                  data={pcsTrendRows}
-                  margin={{ top: 28, right: 16, left: -8, bottom: 8 }}
-                  barCategoryGap="16%"
-                  barGap={4}
-                >
+                <ComposedChart data={pcsTrendRows} margin={{ top: 28, right: 16, left: -8, bottom: 8 }} barCategoryGap="16%" barGap={4}>
                   <defs>
                     <linearGradient id="gradPcsOrder" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#E4E7EC" />
@@ -429,56 +545,19 @@ export function OutputPage() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#EAECF0" vertical={false} />
-                  <XAxis
-                    dataKey="name"
-                    angle={-35}
-                    textAnchor="end"
-                    interval={0}
-                    height={72}
-                    tick={{ fontSize: 11, fill: "#667085" }}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 12, fill: "#667085" }}
-                    tickFormatter={(v: number) => compactNumber(v)}
-                    width={52}
-                  />
+                  <XAxis dataKey="name" angle={-35} textAnchor="end" interval={0} height={72} tick={{ fontSize: 11, fill: "#667085" }} />
+                  <YAxis tick={{ fontSize: 12, fill: "#667085" }} tickFormatter={(v: number) => compactNumber(v)} width={52} />
                   <Tooltip content={comboTooltip("PCS")} />
                   <Legend wrapperStyle={{ fontSize: 13, fontWeight: 600, paddingTop: 8 }} iconType="circle" />
                   <Bar dataKey="Order/Excess Qty" fill="url(#gradPcsOrder)" radius={[6, 6, 0, 0]} maxBarSize={52}>
                     <LabelList dataKey="name" content={RotatedBarLabel} />
-                    <LabelList
-                      dataKey="Order/Excess Qty"
-                      position="top"
-                      formatter={(v: number) => compactNumber(v)}
-                      style={{ fontSize: 10, fontWeight: 600, fill: "#667085" }}
-                    />
+                    <LabelList dataKey="Order/Excess Qty" position="top" formatter={(v: number) => compactNumber(v)} style={{ fontSize: 10, fontWeight: 600, fill: "#667085" }} />
                   </Bar>
                   <Bar dataKey="Output" fill="url(#gradPcsOutput)" radius={[6, 6, 0, 0]} maxBarSize={52}>
-                    <LabelList
-                      dataKey="Output"
-                      position="top"
-                      formatter={(v: number) => compactNumber(v)}
-                      style={{ fontSize: 10, fontWeight: 600, fill: CHART_AMBER }}
-                    />
+                    <LabelList dataKey="Output" position="top" formatter={(v: number) => compactNumber(v)} style={{ fontSize: 10, fontWeight: 600, fill: CHART_AMBER }} />
                   </Bar>
-                  <Line
-                    type="monotone"
-                    dataKey="Order/Excess Qty"
-                    stroke={CHART_SLATE}
-                    strokeWidth={2.5}
-                    strokeDasharray="6 4"
-                    dot={false}
-                    legendType="none"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="Output"
-                    stroke={CHART_AMBER}
-                    strokeWidth={2.5}
-                    dot={{ r: 4, fill: CHART_AMBER, stroke: "#fff", strokeWidth: 1.5 }}
-                    activeDot={{ r: 6 }}
-                    legendType="none"
-                  />
+                  <Line type="monotone" dataKey="Order/Excess Qty" stroke={CHART_SLATE} strokeWidth={2.5} strokeDasharray="6 4" dot={false} legendType="none" />
+                  <Line type="monotone" dataKey="Output" stroke={CHART_AMBER} strokeWidth={2.5} dot={{ r: 4, fill: CHART_AMBER, stroke: "#fff", strokeWidth: 1.5 }} activeDot={{ r: 6 }} legendType="none" />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -486,114 +565,8 @@ export function OutputPage() {
         </CardBody>
       </Card>
 
-      {purchaseOrders.length > 0 && (
-        <Card>
-          <CardBody className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">Scope</p>
-            <FilterTabs
-              value={poScope}
-              onChange={setPoScope}
-              tabs={[
-                { key: ALL_POS, label: "All POs (combined)" },
-                ...purchaseOrders.map((po) => ({ key: po.id, label: `PO ${po.po_number}` })),
-              ]}
-            />
-          </CardBody>
-        </Card>
-      )}
-
-      {/* ------------------------- Headline ------------------------- */}
-      {/* summary.packedPcs already includes anything logged as Job Work at
-          Packing -  it's a real production_txns row, chain.ts sums it in like
-          any other. The hint below just names how much of it came from there. */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <HeadlineCard label="Ordered" value={summary.orderedPcs} unit="PCS" icon="📋" tone="sky" />
-        <HeadlineCard label="Cut" value={summary.cutPcs} unit="PCS" icon="✂️" tone="violet" />
-        <HeadlineCard
-          label="Packed"
-          value={summary.packedPcs}
-          unit="PCS"
-          icon="📦"
-          tone="emerald"
-          hint={jobWorkPackedPcs > 0 ? `incl. ${jobWorkPackedPcs.toLocaleString()} job work` : undefined}
-        />
-        <HeadlineCard
-          label="Short of order"
-          value={summary.shortfallPcs}
-          unit="PCS"
-          icon={summary.shortfallPcs > 0 ? "⚠️" : "✅"}
-          tone={summary.shortfallPcs > 0 ? "rose" : "emerald"}
-        />
-      </div>
-
-      {/* ------------------------- Fulfillment donut ------------------------- */}
       <Card>
-        <CardHeader
-          title="Order fulfillment"
-          subtitle="Packed pieces as a share of the order, with what's still owed alongside."
-        />
-        <CardBody>
-          <div className="grid grid-cols-1 items-center gap-6 sm:grid-cols-[220px_1fr]">
-            <div className="relative mx-auto h-52 w-52">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <defs>
-                    <linearGradient id="gradPacked" x1="0" y1="0" x2="1" y2="1">
-                      <stop offset="0%" stopColor={CHART_GREEN_LIGHT} />
-                      <stop offset="100%" stopColor={CHART_GREEN} />
-                    </linearGradient>
-                  </defs>
-                  <Pie
-                    data={[
-                      { name: "Packed", value: summary.packedPcs },
-                      { name: "Remaining", value: summary.shortfallPcs },
-                    ]}
-                    dataKey="value"
-                    nameKey="name"
-                    innerRadius="72%"
-                    outerRadius="100%"
-                    startAngle={90}
-                    endAngle={-270}
-                    stroke="none"
-                    cornerRadius={8}
-                    paddingAngle={summary.shortfallPcs > 0 && summary.packedPcs > 0 ? 3 : 0}
-                  >
-                    <Cell fill="url(#gradPacked)" />
-                    <Cell fill={CHART_SLATE} />
-                  </Pie>
-                  <Tooltip
-                    formatter={(value: number, key: string) => [`${value.toLocaleString()} PCS`, key]}
-                    contentStyle={{ borderRadius: 12, border: "1px solid #EAECF0", fontSize: 12 }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                <p className="text-3xl font-extrabold tabular-nums text-ink-900">
-                  {summary.overallEfficiencyPct != null ? `${summary.overallEfficiencyPct}%` : "- "}
-                </p>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">Packed</p>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <StatRow dotColor={CHART_GREEN} label="Packed" value={summary.packedPcs} unit="PCS" />
-              {jobWorkPackedPcs > 0 && (
-                <StatRow dotColor={CHART_AMBER} label="Of which, Job Work" value={jobWorkPackedPcs} unit="PCS" />
-              )}
-              <StatRow dotColor={CHART_SLATE} label="Remaining against order" value={summary.shortfallPcs} unit="PCS" />
-              <StatRow dotColor={CHART_RED} label="Rejected across garment stages" value={summary.totalRejectedPcs} unit="PCS" />
-              <StatRow dotColor={CHART_AMBER} label="Fabric lost in processing" value={summary.fabricLossKg} unit="KG" />
-            </div>
-          </div>
-        </CardBody>
-      </Card>
-
-      {/* ------------------------- Progress funnel ------------------------- */}
-      <Card>
-        <CardHeader
-          title="How far the order has got"
-          subtitle="Each step as a share of the ordered quantity, and what it dropped from the step before."
-        />
+        <CardHeader title="How far the order has got" subtitle="Each step as a share of the ordered quantity, and what it dropped from the step before." />
         <CardBody className="space-y-2.5">
           {funnelSteps.map((step, i) => {
             const pct = summary.orderedPcs > 0 ? (step.value / summary.orderedPcs) * 100 : 0;
@@ -604,20 +577,13 @@ export function OutputPage() {
                 <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2 text-xs">
                   <span className="font-semibold text-ink-800">{step.label}</span>
                   <span className="flex items-baseline gap-2">
-                    <span className="font-bold tabular-nums text-ink-900">
-                      {step.value.toLocaleString()} PCS
-                    </span>
+                    <span className="font-bold tabular-nums text-ink-900">{step.value.toLocaleString()} PCS</span>
                     <span className="tabular-nums text-ink-400">{Math.round(pct)}%</span>
-                    {drop != null && drop > 0 && (
-                      <span className="tabular-nums text-status-bad">−{drop.toLocaleString()}</span>
-                    )}
+                    {drop != null && drop > 0 && <span className="tabular-nums text-status-bad">−{drop.toLocaleString()}</span>}
                   </span>
                 </div>
                 <div className="h-4 w-full overflow-hidden rounded-full bg-ink-100">
-                  <div
-                    className="h-full rounded-full transition-all"
-                    style={{ width: `${Math.max(pct, 0)}%`, backgroundColor: step.color }}
-                  />
+                  <div className="h-full rounded-full transition-all" style={{ width: `${Math.max(pct, 0)}%`, backgroundColor: step.color }} />
                 </div>
               </div>
             );
@@ -625,326 +591,45 @@ export function OutputPage() {
         </CardBody>
       </Card>
 
-      {/* ------------------------- Flow chart ------------------------- */}
       <Card>
-        <CardHeader
-          title="Input vs Output by stage"
-          subtitle="What each stage received against what it sent on, with its yield. Fabric and garment stages are shown separately -  kilograms and pieces can't share a scale."
-          action={
-            <FilterTabs
-              value={unitScope}
-              onChange={(v) => setUnitScope(v as "KG" | "PCS")}
-              tabs={[
-                { key: "PCS", label: `Garment (PCS)${pcsRows.length ? "" : " -  none"}` },
-                { key: "KG", label: `Fabric (KG)${kgRows.length ? "" : " -  none"}` },
-              ]}
-            />
-          }
-        />
+        <CardHeader title="Size-wise output" subtitle="Ordered → cut → packed per size, with the outstanding balance behind it." />
         <CardBody>
-          {flowRows.length === 0 ? (
-            <p className="py-10 text-center text-sm text-ink-400">
-              Nothing recorded yet for the {unitScope === "KG" ? "fabric" : "garment"} stages.
-            </p>
-          ) : (
-            <div className="h-96 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={flowRows} margin={{ top: 8, right: 12, left: 0, bottom: 60 }}>
-                  <defs>
-                    <linearGradient id="gradInput" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={CHART_BLUE_LIGHT} />
-                      <stop offset="100%" stopColor={CHART_BLUE} />
-                    </linearGradient>
-                    <linearGradient id="gradOutput" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={CHART_GREEN_LIGHT} />
-                      <stop offset="100%" stopColor={CHART_GREEN} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#EAECF0" vertical={false} />
-                  <XAxis
-                    dataKey="name"
-                    angle={-40}
-                    textAnchor="end"
-                    interval={0}
-                    height={80}
-                    tick={{ fontSize: 11, fill: "#667085" }}
-                  />
-                  <YAxis
-                    yAxisId="qty"
-                    tick={{ fontSize: 11, fill: "#667085" }}
-                    tickFormatter={(v: number) => compactNumber(v)}
-                  />
-                  {/* Yield rides on its own 0-100 axis so a 97% line doesn't
-                      vanish against a 28,000-piece bar. */}
-                  <YAxis
-                    yAxisId="pct"
-                    orientation="right"
-                    domain={[0, 100]}
-                    unit="%"
-                    tick={{ fontSize: 11, fill: "#98A2B3" }}
-                  />
-                  <Tooltip
-                    formatter={(value: number, key: string, item) =>
-                      key === "Efficiency"
-                        ? [`${value}%`, "Yield"]
-                        : [`${value.toLocaleString()} ${(item?.payload as { unit?: string })?.unit ?? ""}`, key]
-                    }
-                    contentStyle={{ borderRadius: 12, border: "1px solid #EAECF0", fontSize: 12 }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar yAxisId="qty" dataKey="Input" fill="url(#gradInput)" radius={[4, 4, 0, 0]} maxBarSize={38} />
-                  <Bar yAxisId="qty" dataKey="Output" fill="url(#gradOutput)" radius={[4, 4, 0, 0]} maxBarSize={38} />
-                  <Line
-                    yAxisId="pct"
-                    type="monotone"
-                    dataKey="Efficiency"
-                    name="Yield %"
-                    stroke={CHART_AMBER}
-                    strokeWidth={2}
-                    dot={{ r: 3, fill: CHART_AMBER }}
-                    connectNulls
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </CardBody>
-      </Card>
-
-      {/* ------------------------- Yield by stage ------------------------- */}
-      <Card>
-        <CardHeader
-          title="Yield by stage"
-          subtitle="Output as a share of input, worst first -  the stage to go and ask about."
-        />
-        <CardBody>
-          {efficiencyRows.length === 0 ? (
-            <p className="py-10 text-center text-sm text-ink-400">Nothing measurable yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {efficiencyRows.map((r) => (
-                <div key={r.name} className="flex items-center gap-3">
-                  <span className="w-40 shrink-0 truncate text-xs font-medium text-ink-700" title={r.name}>
-                    {r.name}
-                  </span>
-                  <div className="h-3.5 flex-1 overflow-hidden rounded-full bg-ink-100">
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${Math.min(Math.max(r.efficiency, 0), 100)}%`,
-                        backgroundColor: yieldColor(r.efficiency),
-                      }}
-                    />
-                  </div>
-                  <span
-                    className="w-14 shrink-0 text-right text-xs font-bold tabular-nums"
-                    style={{ color: yieldColor(r.efficiency) }}
-                  >
-                    {r.efficiency}%
-                  </span>
-                  <span className="w-28 shrink-0 text-right text-[11px] tabular-nums text-ink-400">
-                    {r.lost > 0 ? `−${r.lost.toLocaleString()} ${r.unit}` : "no loss"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardBody>
-      </Card>
-
-      {/* ------------------------- Size-wise ------------------------- */}
-      {/* The old "Where quantity was lost" bar chart lived here. It plotted KG
-          shortage beside PCS shortage on one axis -  the same flaw as the flow
-          chart -  and "Yield by stage" above now answers the same question
-          honestly, with the absolute loss per stage in its right column. */}
-      <div className="grid grid-cols-1 gap-6">
-        <Card>
-          <CardHeader
-            title="Size-wise output"
-            subtitle="Ordered → cut → packed per size, with the outstanding balance behind it."
-          />
-          <CardBody>
-            <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={sizeRows} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
-                  <defs>
-                    <linearGradient id="gradOrderedBar" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={CHART_BLUE_LIGHT} />
-                      <stop offset="100%" stopColor={CHART_BLUE} />
-                    </linearGradient>
-                    <linearGradient id="gradCutBar" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#FCD34D" />
-                      <stop offset="100%" stopColor={CHART_AMBER} />
-                    </linearGradient>
-                    <linearGradient id="gradPackedBar" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={CHART_GREEN_LIGHT} />
-                      <stop offset="100%" stopColor={CHART_GREEN} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#EAECF0" vertical={false} />
-                  <XAxis dataKey="sizeCode" tick={{ fontSize: 11, fill: "#667085" }} />
-                  <YAxis tick={{ fontSize: 11, fill: "#667085" }} tickFormatter={(v: number) => compactNumber(v)} />
-                  <Tooltip
-                    formatter={(value: number, key: string) => [`${value.toLocaleString()} PCS`, key]}
-                    contentStyle={{ borderRadius: 12, border: "1px solid #EAECF0", fontSize: 12 }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="ordered" name="Ordered" fill="url(#gradOrderedBar)" radius={[4, 4, 0, 0]} maxBarSize={26} />
-                  <Bar dataKey="cut" name="Cut" fill="url(#gradCutBar)" radius={[4, 4, 0, 0]} maxBarSize={26} />
-                  <Bar dataKey="packed" name="Packed" fill="url(#gradPackedBar)" radius={[4, 4, 0, 0]} maxBarSize={26} />
-                  <Bar dataKey="balance" name="Outstanding" fill={CHART_SLATE} radius={[4, 4, 0, 0]} maxBarSize={26} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardBody>
-        </Card>
-      </div>
-
-      {/* ------------------------- Stage table ------------------------- */}
-      <Card>
-        <CardHeader
-          title="Stage-by-stage comparison"
-          subtitle="The full reconciliation, from the yarn plan to the packed carton."
-        />
-        <CardBody>
-          <div className="overflow-x-auto rounded-xl border border-ink-100">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead>
-                <tr className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500">
-                  <th className="px-3 py-2.5 text-left font-semibold">Stage</th>
-                  <th className="px-3 py-2.5 text-left font-semibold">Unit</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Input</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Output</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Rejected</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Shortage</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Efficiency</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-ink-100">
-                {summary.rows.map((r) => (
-                  <tr key={r.key} className={`bg-white ${r.key === STAGE.cutting ? "border-t-2 border-t-brand/30" : ""}`}>
-                    <td className="px-3 py-2.5 font-medium text-ink-900">{r.label}</td>
-                    <td className="px-3 py-2.5">
-                      <Badge tone={r.unit === "KG" ? "neutral" : "brand"}>{r.unit}</Badge>
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">{r.input.toLocaleString()}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-status-good">
-                      {r.output.toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-status-bad">
-                      {r.rejected ? r.rejected.toLocaleString() : "- "}
-                    </td>
-                    <td
-                      className={`px-3 py-2.5 text-right font-semibold tabular-nums ${
-                        r.shortage > 0 ? "text-amber-600" : "text-ink-400"
-                      }`}
-                    >
-                      {r.shortage ? r.shortage.toLocaleString() : "- "}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">
-                      {r.efficiencyPct != null ? `${r.efficiencyPct}%` : "- "}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="h-72 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={sizeRows} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                <defs>
+                  <linearGradient id="gradOrderedBar" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={CHART_BLUE_LIGHT} />
+                    <stop offset="100%" stopColor={CHART_BLUE} />
+                  </linearGradient>
+                  <linearGradient id="gradCutBar" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#FCD34D" />
+                    <stop offset="100%" stopColor={CHART_AMBER} />
+                  </linearGradient>
+                  <linearGradient id="gradPackedBar" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={CHART_GREEN_LIGHT} />
+                    <stop offset="100%" stopColor={CHART_GREEN} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#EAECF0" vertical={false} />
+                <XAxis dataKey="sizeCode" tick={{ fontSize: 11, fill: "#667085" }} />
+                <YAxis tick={{ fontSize: 11, fill: "#667085" }} tickFormatter={(v: number) => compactNumber(v)} />
+                <Tooltip formatter={(value: number, key: string) => [`${value.toLocaleString()} PCS`, key]} contentStyle={{ borderRadius: 12, border: "1px solid #EAECF0", fontSize: 12 }} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="ordered" name="Ordered" fill="url(#gradOrderedBar)" radius={[4, 4, 0, 0]} maxBarSize={26} />
+                <Bar dataKey="cut" name="Cut" fill="url(#gradCutBar)" radius={[4, 4, 0, 0]} maxBarSize={26} />
+                <Bar dataKey="packed" name="Packed" fill="url(#gradPackedBar)" radius={[4, 4, 0, 0]} maxBarSize={26} />
+                <Bar dataKey="balance" name="Outstanding" fill={CHART_SLATE} radius={[4, 4, 0, 0]} maxBarSize={26} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </CardBody>
       </Card>
-
-      {/* ------------------------- Size table ------------------------- */}
-      <Card>
-        <CardHeader
-          title="Size-wise reconciliation"
-          subtitle={
-            sizeRows.every((s) => s.packed == null)
-              ? "Ordered → cut, per size. Sewing and Packing record one overall figure rather than a size breakdown, so those two columns read – rather than a false 0."
-              : "Ordered → cut → sewn → packed, per size."
-          }
-        />
-        <CardBody>
-          <div className="overflow-x-auto rounded-xl border border-ink-100">
-            <table className="w-full min-w-[560px] text-sm">
-              <thead>
-                <tr className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500">
-                  <th className="px-3 py-2.5 text-left font-semibold">Size</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Ordered</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Cut</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Sewn</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Packed</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Balance</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-ink-100">
-                {sizeRows.map((s) => (
-                  <tr key={s.sizeCode} className="bg-white">
-                    <td className="px-3 py-2.5 font-semibold text-ink-900">{s.sizeCode}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">{s.ordered.toLocaleString()}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">{s.cut.toLocaleString()}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">
-                      {s.sewn == null ? <span className="text-ink-300">- </span> : s.sewn.toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-status-good">
-                      {s.packed == null ? <span className="text-ink-300">- </span> : s.packed.toLocaleString()}
-                    </td>
-                    <td
-                      className={`px-3 py-2.5 text-right font-semibold tabular-nums ${
-                        s.balance == null ? "" : s.balance > 0 ? "text-amber-600" : "text-status-good"
-                      }`}
-                    >
-                      {s.balance == null ? <span className="text-ink-300">- </span> : s.balance.toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardBody>
-      </Card>
-
-      {/* ------------------------- Job Work ------------------------- */}
-      {jobWorkRows.length > 0 && (
-        <Card>
-          <CardHeader
-            title="Job Work"
-            subtitle="Externally-manufactured quantities logged against this order, by stage -  real entries, already counted in every figure above exactly like in-house production. Shown here separately for transparency, so it's clear how much of each stage's total came from outside."
-          />
-          <CardBody>
-            <div className="overflow-x-auto rounded-xl border border-ink-100">
-              <table className="w-full min-w-[420px] text-sm">
-                <thead>
-                  <tr className="bg-ink-50 text-[11px] uppercase tracking-wide text-ink-500">
-                    <th className="px-3 py-2.5 text-left font-semibold">Stage</th>
-                    <th className="px-3 py-2.5 text-left font-semibold">Unit</th>
-                    <th className="px-3 py-2.5 text-right font-semibold">Job Work Qty</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-ink-100">
-                  {jobWorkRows.map((r) => (
-                    <tr key={r.key} className={`bg-white ${r.key === STAGE.packing ? "border-t-2 border-t-brand/30" : ""}`}>
-                      <td className="px-3 py-2.5 font-medium text-ink-900">{r.label}</td>
-                      <td className="px-3 py-2.5">
-                        <Badge tone={r.unit === "KG" ? "neutral" : "brand"}>{r.unit}</Badge>
-                      </td>
-                      <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-amber-600">
-                        {r.qty.toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardBody>
-        </Card>
-      )}
 
       {/* ------------------------- Lot traceability ------------------------- */}
       {lotJourneys.length > 0 && (
         <Card>
-          <CardHeader
-            title="Lot traceability"
-            subtitle="Every lot, every stage it passed through, and what it lost on the way."
-          />
+          <CardHeader title="Lot traceability" subtitle="Every lot, every stage it passed through, and what it lost on the way." />
           <CardBody className="space-y-5">
             {lotChartRows.length > 0 && (
               <div className="h-56 w-full">
@@ -961,15 +646,12 @@ export function OutputPage() {
                 </ResponsiveContainer>
               </div>
             )}
-
             <div className="space-y-3">
               {lotJourneys.map((j) => (
                 <details key={j.lot.id} className="rounded-xl border border-ink-100 bg-white">
                   <summary className="flex cursor-pointer flex-wrap items-center gap-3 px-3 py-2.5">
-                    <span className="text-sm font-bold text-ink-900">{j.lot.lot_no}</span>
-                    <span className="text-xs text-ink-500">
-                      {j.steps.length} stage{j.steps.length === 1 ? "" : "s"}
-                    </span>
+                    <span className="font-mono text-sm font-bold text-ink-900">{j.lot.lot_no}</span>
+                    <span className="text-xs text-ink-500">{j.steps.length} stage{j.steps.length === 1 ? "" : "s"}</span>
                     {j.totalLoss > 0 && <Badge tone="warn">{j.totalLoss.toLocaleString()} lost</Badge>}
                   </summary>
                   <div className="overflow-x-auto border-t border-ink-100">
@@ -987,16 +669,11 @@ export function OutputPage() {
                         {j.steps.map((s) => (
                           <tr key={s.stage.id}>
                             <td className="px-3 py-2 font-medium text-ink-800">
-                              {s.stage.label}{" "}
-                              <span className="text-[10px] font-normal text-ink-400">{s.unit}</span>
+                              {s.stage.label} <span className="text-[10px] font-normal text-ink-400">{s.unit}</span>
                             </td>
                             <td className="px-3 py-2 text-right tabular-nums">{s.qtyIn.toLocaleString()}</td>
-                            <td className="px-3 py-2 text-right tabular-nums text-status-good">
-                              {s.qtyOut.toLocaleString()}
-                            </td>
-                            <td className="px-3 py-2 text-right tabular-nums text-status-bad">
-                              {s.qtyRejected.toLocaleString()}
-                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums text-status-good">{s.qtyOut.toLocaleString()}</td>
+                            <td className="px-3 py-2 text-right tabular-nums text-status-bad">{s.qtyRejected.toLocaleString()}</td>
                             <td className="px-3 py-2 text-right tabular-nums">{s.loss.toLocaleString()}</td>
                           </tr>
                         ))}
@@ -1010,110 +687,15 @@ export function OutputPage() {
         </Card>
       )}
 
-      {/* ------------------------- Audit ------------------------- */}
-      <Card>
-        <CardHeader
-          title="Activity & audit trail"
-          subtitle="Every create, update and deletion -  who, when, and why."
-        />
-        <CardBody>
-          {(auditQuery.data?.length ?? 0) === 0 ? (
-            <p className="py-8 text-center text-sm text-ink-400">No recorded activity yet.</p>
-          ) : (
-            <ol className="divide-y divide-ink-100">
-              {(auditQuery.data ?? []).slice(0, 40).map((row) => (
-                <li key={row.id} className="flex flex-wrap items-start gap-x-3 gap-y-1 py-2.5">
-                  <Badge
-                    tone={row.action === "create" ? "good" : row.action === "delete" ? "warn" : "info"}
-                  >
-                    {row.action}
-                  </Badge>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm text-ink-800">{row.summary}</p>
-                    {row.changes && (
-                      <p className="text-xs text-ink-500">
-                        {Object.entries(row.changes)
-                          .map(([f, c]) => `${f.replace(/_/g, " ")}: ${String(c.from ?? "- ")} → ${String(c.to ?? "- ")}`)
-                          .join(" · ")}
-                      </p>
-                    )}
-                    {row.notes && <p className="text-xs italic text-ink-500">"{row.notes}"</p>}
-                  </div>
-                  <p className="whitespace-nowrap text-xs text-ink-400">
-                    {usersById.get(row.user_id)?.name ?? "- "} ·{" "}
-                    {new Date(row.created_at).toLocaleString()}
-                  </p>
-                </li>
-              ))}
-            </ol>
-          )}
-        </CardBody>
-      </Card>
-
       <p className="pb-4 text-center text-xs text-ink-400">
-        Report generated {formatDisplayDate(new Date().toISOString().slice(0, 10))} · every figure
-        above is derived from the recorded entries.
+        Report generated {formatDisplayDate(new Date().toISOString().slice(0, 10))} · every figure above is derived from the recorded entries.
       </p>
     </div>
   );
 }
 
-function HeadlineCard({
-  label,
-  value,
-  unit,
-  icon,
-  tone,
-  hint,
-}: {
-  label: string;
-  value: number;
-  unit: string;
-  icon: string;
-  tone: IconTone;
-  /** Small note under the unit, e.g. how much of the figure came from Job Work. */
-  hint?: string;
-}) {
-  return (
-    <Card>
-      <CardBody className="flex items-center gap-3">
-        <span
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-lg shadow-md"
-          style={iconGradient[tone]}
-        >
-          {icon}
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-ink-400">{label}</p>
-          <p className="text-2xl font-extrabold tabular-nums text-ink-900">{value.toLocaleString()}</p>
-          <p className="text-[11px] font-medium text-ink-400">{unit}</p>
-          {hint && <p className="truncate text-[10px] font-medium text-amber-600">{hint}</p>}
-        </div>
-      </CardBody>
-    </Card>
-  );
-}
+type StatCardTone = "neutral" | "good" | "warn" | "bad" | "brand" | "shortage" | "rejected";
 
-function StatRow({
-  dotColor,
-  label,
-  value,
-  unit,
-}: {
-  dotColor: string;
-  label: string;
-  value: number;
-  unit: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 border-b border-ink-100 pb-2.5 last:border-0 last:pb-0">
-      <span className="flex min-w-0 items-center gap-2 text-sm text-ink-600">
-        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: dotColor }} />
-        <span className="truncate">{label}</span>
-      </span>
-      <span className="shrink-0 text-sm font-bold tabular-nums text-ink-900">
-        {value.toLocaleString()} <span className="text-xs font-medium text-ink-400">{unit}</span>
-      </span>
-    </div>
-  );
+function KpiTile({ label, value, unit, tone }: { label: string; value: number; unit: string; tone: StatCardTone }) {
+  return <StatCard label={label} value={value.toLocaleString()} hint={unit} tone={tone} />;
 }
